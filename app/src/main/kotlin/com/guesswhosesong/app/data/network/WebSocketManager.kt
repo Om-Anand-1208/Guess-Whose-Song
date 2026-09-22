@@ -1,0 +1,112 @@
+package com.guesswhosesong.app.data.network
+
+import com.guesswhosesong.shared.dto.*
+import io.ktor.client.*
+import io.ktor.client.plugins.websocket.*
+import io.ktor.websocket.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.*
+import org.slf4j.LoggerFactory
+
+private const val RECONNECT_DELAY_MS = 2_000L
+private const val MAX_RECONNECT_DELAY_MS = 30_000L
+
+/**
+ * Manages a single WebSocket connection to the backend.
+ * Exposes:
+ *  - [messages] — a SharedFlow of [ServerMessage] for the UI to collect.
+ *  - [send] — to send [ClientMessage]s.
+ *  - [connect] / [disconnect] — lifecycle management.
+ */
+class WebSocketManager(
+    private val httpClient: HttpClient,
+    private val wsBaseUrl: String
+) {
+    private val logger = LoggerFactory.getLogger(WebSocketManager::class.java)
+
+    private val _messages = MutableSharedFlow<ServerMessage>(extraBufferCapacity = 64)
+    val messages: SharedFlow<ServerMessage> = _messages.asSharedFlow()
+
+    private val outgoing = Channel<String>(Channel.BUFFERED)
+
+    private var connectionScope: CoroutineScope? = null
+    private var currentJoinCode: String? = null
+    private var currentToken: String? = null
+    private var currentDisplayName: String? = null
+
+    private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
+    val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
+
+    enum class ConnectionState { DISCONNECTED, CONNECTING, CONNECTED, RECONNECTING }
+
+    /**
+     * Connect to a room WebSocket.
+     * Automatically reconnects on drop with exponential backoff.
+     */
+    fun connect(joinCode: String, token: String, displayName: String) {
+        currentJoinCode = joinCode
+        currentToken = token
+        currentDisplayName = displayName
+
+        connectionScope?.cancel()
+        connectionScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+        connectionScope!!.launch {
+            var delay = RECONNECT_DELAY_MS
+            while (isActive) {
+                try {
+                    _connectionState.value = ConnectionState.CONNECTING
+                    httpClient.webSocket(
+                        urlString = "$wsBaseUrl/rooms/$joinCode/ws" +
+                            "?token=${token}&displayName=${displayName}"
+                    ) {
+                        _connectionState.value = ConnectionState.CONNECTED
+                        delay = RECONNECT_DELAY_MS // reset backoff on success
+
+                        // Fan out: send queued outgoing messages
+                        val sendJob = launch {
+                            for (msg in outgoing) {
+                                try { send(Frame.Text(msg)) }
+                                catch (e: Exception) { break }
+                            }
+                        }
+
+                        // Receive incoming messages
+                        for (frame in incoming) {
+                            if (frame is Frame.Text) {
+                                try {
+                                    val msg = frame.readText().toServerMessage()
+                                    _messages.emit(msg)
+                                } catch (e: Exception) {
+                                    logger.warn("Failed to parse server message: ${e.message}")
+                                }
+                            }
+                        }
+                        sendJob.cancel()
+                    }
+                } catch (e: Exception) {
+                    logger.warn("WebSocket error: ${e.message}. Reconnecting in ${delay}ms...")
+                }
+
+                if (!isActive) break
+                _connectionState.value = ConnectionState.RECONNECTING
+                kotlinx.coroutines.delay(delay)
+                delay = (delay * 2).coerceAtMost(MAX_RECONNECT_DELAY_MS)
+            }
+        }
+    }
+
+    /**
+     * Send a [ClientMessage] to the server.
+     * Messages are buffered if the socket is temporarily unavailable.
+     */
+    suspend fun send(message: ClientMessage) {
+        outgoing.send(message.toJson())
+    }
+
+    fun disconnect() {
+        connectionScope?.cancel()
+        connectionScope = null
+        _connectionState.value = ConnectionState.DISCONNECTED
+    }
+}

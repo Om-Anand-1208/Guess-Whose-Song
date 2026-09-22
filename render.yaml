@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: guess-whose-song-server
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8080
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: guess-whose-song-redis
+          property: connectionString
+      - key: FIREBASE_SERVICE_ACCOUNT_PATH
+        sync: false  # Set manually in Render dashboard
+      - key: SPOTIFY_CLIENT_ID
+        sync: false
+      - key: SPOTIFY_CLIENT_SECRET
+        sync: false
+      - key: SPOTIFY_REDIRECT_URI
+        sync: false
+
+  - type: redis
+    name: guess-whose-song-redis
+    plan: free
+    ipAllowList: []  # Internal connections only
+    maxmemoryPolicy: allkeys-lru
+

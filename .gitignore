@@ -1,0 +1,22 @@
+# Gradle
+.gradle/
+build/
+**/build/
+*.class
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Android
+/app/google-services.json
+local.properties
+
+# Server secrets
+service-account.json
+*.env
+.env
+
+# Logs
+*.log
