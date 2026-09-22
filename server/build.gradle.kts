@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
@@ -7,6 +10,18 @@ plugins {
 
 application {
     mainClass.set("com.guesswhosesong.server.ApplicationKt")
+}
+
+// Load .env if it exists for local development
+val envFile = file(".env")
+if (envFile.exists()) {
+    val props = Properties()
+    props.load(FileInputStream(envFile))
+    tasks.withType<JavaExec> {
+        props.forEach { (key, value) ->
+            environment(key.toString(), value.toString())
+        }
+    }
 }
 
 dependencies {

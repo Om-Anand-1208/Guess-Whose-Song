@@ -5,6 +5,8 @@ import com.guesswhosesong.server.itunes.ItunesClient
 import com.guesswhosesong.shared.models.SongEntry
 import com.guesswhosesong.shared.models.TrackSearchResult
 
+import java.util.concurrent.ConcurrentHashMap
+
 /**
  * Service that unifies Deezer and iTunes API lookups.
  * Priority: Deezer -> fallback to iTunes if no results.
@@ -14,12 +16,27 @@ class MusicService(
     private val itunesClient: ItunesClient = ItunesClient()
 ) {
 
+    // Simple thread-safe LRU cache using LinkedHashMap, bounded to 200 items.
+    private val searchCache = java.util.Collections.synchronizedMap(
+        object : java.util.LinkedHashMap<String, List<TrackSearchResult>>(200, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<TrackSearchResult>>?): Boolean {
+                return size > 200
+            }
+        }
+    )
+
     suspend fun search(query: String, limit: Int = 10): List<TrackSearchResult> {
+        val cacheKey = "${query.trim().lowercase()}_$limit"
+        searchCache[cacheKey]?.let { return it }
+
         val deezerResults = deezerClient.search(query, limit)
         if (deezerResults.isNotEmpty()) {
+            searchCache[cacheKey] = deezerResults
             return deezerResults
         }
-        return itunesClient.search(query, limit)
+        val itunesResults = itunesClient.search(query, limit)
+        searchCache[cacheKey] = itunesResults
+        return itunesResults
     }
 
     suspend fun getTopTracks(): List<TrackSearchResult> {

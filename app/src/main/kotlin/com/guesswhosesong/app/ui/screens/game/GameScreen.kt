@@ -151,12 +151,24 @@ fun MediaPlayerModule(
         }
     }
 
-    LaunchedEffect(isPlaying) {
-        if (!isPlaying) exoPlayer.pause()
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, exoPlayer) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_PAUSE || event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
+                exoPlayer.pause()
+            } else if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && isPlaying) {
+                exoPlayer.play()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            exoPlayer.release()
+        }
     }
 
-    DisposableEffect(exoPlayer) {
-        onDispose { exoPlayer.release() }
+    LaunchedEffect(isPlaying) {
+        if (!isPlaying) exoPlayer.pause() else exoPlayer.play()
     }
 
     Card(

@@ -100,7 +100,7 @@ fun SubmissionScreen(
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     OutlinedButton(
-                        onClick = { /* Spotify not connected unless spotifyConnected */ },
+                        onClick = { viewModel.surpriseMe() },
                         enabled = uiState.spotifyConnected,
                         modifier = Modifier.weight(1f)
                     ) {

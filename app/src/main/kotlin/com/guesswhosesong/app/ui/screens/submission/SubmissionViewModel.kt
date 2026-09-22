@@ -125,21 +125,36 @@ class SubmissionViewModel @Inject constructor(
     }
 
     /**
-     * Called for Surprise Me: picks a random song from the given Spotify suggestions.
+     * Called for Surprise Me: fetches Spotify top tracks from backend.
      * Updates pendingSong (reroll = call again).
      */
-    fun surpriseMe(suggestions: List<SpotifySuggestion>) {
-        if (suggestions.isEmpty()) return
-        val pick = suggestions.random()
-        val entry = SongEntry(
-            songId = "${pick.title}_${pick.artist}",
-            title = pick.title,
-            artist = pick.artist,
-            albumArtUrl = pick.albumArtUrl,
-            previewUrl = "", // will be resolved server-side on lock
-            submitterId = _uiState.value.selfPlayerId
-        )
-        _uiState.update { it.copy(pendingSong = entry) }
-        viewModelScope.launch { gameRepository.updatePendingSong(entry) }
+    fun surpriseMe() {
+        viewModelScope.launch {
+            _uiState.update { it.copy(isSearching = true, error = null) }
+            try {
+                // If the user hasn't authenticated Spotify on the backend, this might fail or return a fallback
+                val result = httpClient.get("$baseUrl/spotify/suggestions").body<Map<String, List<SpotifySuggestion>>>()
+                val suggestions = result["suggestions"] ?: emptyList()
+                if (suggestions.isEmpty()) {
+                    _uiState.update { it.copy(error = "No Spotify suggestions found") }
+                    return@launch
+                }
+                val pick = suggestions.random()
+                val entry = SongEntry(
+                    songId = "${pick.title}_${pick.artist}",
+                    title = pick.title,
+                    artist = pick.artist,
+                    albumArtUrl = pick.albumArtUrl,
+                    previewUrl = "", // will be resolved server-side on lock
+                    submitterId = _uiState.value.selfPlayerId
+                )
+                _uiState.update { it.copy(pendingSong = entry, searchResults = emptyList()) }
+                gameRepository.updatePendingSong(entry)
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "Surprise Me failed: ${e.message}") }
+            } finally {
+                _uiState.update { it.copy(isSearching = false) }
+            }
+        }
     }
 }
