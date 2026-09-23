@@ -1,11 +1,20 @@
+val isServerOnly = System.getenv("SERVER_ONLY") == "true"
+
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
     alias(libs.plugins.kotlin.serialization)
 }
 
+if (!isServerOnly) {
+    apply(plugin = "com.android.library")
+}
+
 kotlin {
     jvm() // for server
-    androidTarget() // for Android client
+    
+    if (!isServerOnly) {
+        androidTarget() // for Android client
+    }
 
     sourceSets {
         val commonMain by getting {
@@ -23,10 +32,12 @@ kotlin {
     }
 }
 
-android {
-    namespace = "com.guesswhosesong.shared"
-    compileSdk = 35
-    defaultConfig {
-        minSdk = 26
+if (!isServerOnly) {
+    configure<com.android.build.gradle.LibraryExtension> {
+        namespace = "com.guesswhosesong.shared"
+        compileSdk = 35
+        defaultConfig {
+            minSdk = 26
+        }
     }
 }

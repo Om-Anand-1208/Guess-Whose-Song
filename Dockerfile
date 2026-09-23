@@ -15,6 +15,7 @@ COPY shared/ shared/
 COPY server/ server/
 
 # Build the fat JAR
+ENV SERVER_ONLY=true
 RUN ./gradlew :server:shadowJar --no-daemon --stacktrace
 
 # ─── Runtime stage ─────────────────────────────────────────────────────────────
