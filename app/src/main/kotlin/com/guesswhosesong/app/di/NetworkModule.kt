@@ -22,8 +22,8 @@ object NetworkModule {
      * Base URL of the Ktor backend.
      * Change this to your Render / Cloud Run URL in production.
      */
-    const val BASE_URL = "http://10.0.2.2:8080" // Android emulator localhost alias
-    const val WS_BASE_URL = "ws://10.0.2.2:8080" // ws:// for dev; wss:// in production
+    const val BASE_URL = "https://style-survivor-ratings-distributed.trycloudflare.com"
+    const val WS_BASE_URL = "wss://style-survivor-ratings-distributed.trycloudflare.com"
 
     @Provides
     @Singleton

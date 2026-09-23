@@ -12,6 +12,10 @@ application {
     mainClass.set("com.guesswhosesong.server.ApplicationKt")
 }
 
+kotlin {
+    jvmToolchain(17)
+}
+
 // Load .env if it exists for local development
 val envFile = file(".env")
 if (envFile.exists()) {
@@ -53,11 +57,12 @@ dependencies {
     implementation(libs.kotlinx.coroutines.core)
 
     // Logging
-    implementation("ch.qos.logback:logback-classic:1.5.12")
+    implementation("ch.qos.logback:logback-classic:1.6.3")
 
     // Test
     testImplementation(libs.junit5.api)
     testRuntimeOnly(libs.junit5.engine)
+    testRuntimeOnly(libs.junit.platform.launcher)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.ktor.server.test.host)
 }

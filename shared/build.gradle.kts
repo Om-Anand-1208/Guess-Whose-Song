@@ -1,3 +1,5 @@
+import com.android.build.gradle.LibraryExtension
+
 val isServerOnly = System.getenv("SERVER_ONLY") == "true"
 
 plugins {
@@ -10,6 +12,7 @@ if (!isServerOnly) {
 }
 
 kotlin {
+    jvmToolchain(17)
     jvm() // for server
     
     if (!isServerOnly) {
@@ -33,9 +36,9 @@ kotlin {
 }
 
 if (!isServerOnly) {
-    configure<com.android.build.gradle.LibraryExtension> {
+    configure<LibraryExtension> {
         namespace = "com.guesswhosesong.shared"
-        compileSdk = 35
+        compileSdk = 37
         defaultConfig {
             minSdk = 26
         }

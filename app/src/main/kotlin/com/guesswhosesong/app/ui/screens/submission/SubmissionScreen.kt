@@ -101,7 +101,6 @@ fun SubmissionScreen(
                 ) {
                     OutlinedButton(
                         onClick = { viewModel.surpriseMe() },
-                        enabled = uiState.spotifyConnected,
                         modifier = Modifier.weight(1f)
                     ) {
                         Text("\uD83C\uDFB2 Surprise me")

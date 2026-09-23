@@ -15,7 +15,7 @@ data class SongEntry(
     val title: String,
     val artist: String,
     val albumArtUrl: String = "",
-    val deezerPreviewUrl: String,
+    val deezerPreviewUrl: String = "",
     val previewUrl: String,
     /** NEVER sent to clients until reveal phase */
     val submitterId: String = ""

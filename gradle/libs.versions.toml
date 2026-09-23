@@ -1,19 +1,19 @@
 [versions]
-kotlin = "2.0.21"
-ktor = "3.0.3"
-kotlinx-serialization = "1.7.3"
-kotlinx-coroutines = "1.9.0"
-redis-jedis = "5.2.0"
+kotlin = "2.4.20"
+ktor = "3.6.0"
+kotlinx-serialization = "1.11.0"
+kotlinx-coroutines = "1.11.0"
+redis-jedis = "8.0.1"
 firebase-admin = "9.4.3"
-android-gradle = "8.7.3"
-hilt = "2.52"
-ksp = "2.0.21-1.0.28"
-compose-bom = "2024.12.01"
-exoplayer = "1.5.1"
+android-gradle = "9.4.1"
+hilt = "2.60.1"
+ksp = "2.3.12"
+compose-bom = "2026.09.00"
+exoplayer = "1.11.1"
 coil = "2.7.0"
-navigation-compose = "2.8.5"
-firebase-bom = "33.7.0"
-junit = "5.11.4"
+navigation-compose = "2.10.2"
+firebase-bom = "34.19.0"
+junit = "6.1.3"
 
 [libraries]
 # Kotlin
@@ -47,10 +47,10 @@ firebase-admin = { module = "com.google.firebase:firebase-admin", version.ref = 
 
 # Android Firebase (client)
 firebase-bom = { module = "com.google.firebase:firebase-bom", version.ref = "firebase-bom" }
-firebase-auth-ktx = { module = "com.google.firebase:firebase-auth-ktx" }
-firebase-messaging-ktx = { module = "com.google.firebase:firebase-messaging-ktx" }
-firebase-crashlytics-ktx = { module = "com.google.firebase:firebase-crashlytics-ktx" }
-firebase-analytics-ktx = { module = "com.google.firebase:firebase-analytics-ktx" }
+firebase-auth-ktx = { module = "com.google.firebase:firebase-auth" }
+firebase-messaging-ktx = { module = "com.google.firebase:firebase-messaging" }
+firebase-crashlytics-ktx = { module = "com.google.firebase:firebase-crashlytics" }
+firebase-analytics-ktx = { module = "com.google.firebase:firebase-analytics" }
 
 # Android Compose
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }
@@ -75,28 +75,30 @@ coil-compose = { module = "io.coil-kt:coil-compose", version.ref = "coil" }
 # Hilt
 hilt-android = { module = "com.google.dagger:hilt-android", version.ref = "hilt" }
 hilt-android-compiler = { module = "com.google.dagger:hilt-android-compiler", version.ref = "hilt" }
-hilt-navigation-compose = { module = "androidx.hilt:hilt-navigation-compose", version = "1.2.0" }
+hilt-navigation-compose = { module = "androidx.hilt:hilt-navigation-compose", version = "1.4.0" }
 
 # AndroidX
-androidx-core-ktx = { module = "androidx.core:core-ktx", version = "1.15.0" }
-androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version = "2.8.7" }
-androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version = "2.8.7" }
-androidx-activity-compose = { module = "androidx.activity:activity-compose", version = "1.9.3" }
+androidx-core-ktx = { module = "androidx.core:core-ktx", version = "1.19.1" }
+androidx-lifecycle-runtime-ktx = { module = "androidx.lifecycle:lifecycle-runtime-ktx", version = "2.11.0" }
+androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version = "2.11.0" }
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version = "1.13.0" }
 
 # Test
 junit5-api = { module = "org.junit.jupiter:junit-jupiter-api", version.ref = "junit" }
 junit5-engine = { module = "org.junit.jupiter:junit-jupiter-engine", version.ref = "junit" }
+junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
 kotlinx-coroutines-test = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-test", version.ref = "kotlinx-coroutines" }
 
 [plugins]
 kotlin-multiplatform = { id = "org.jetbrains.kotlin.multiplatform", version.ref = "kotlin" }
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
 kotlin-serialization = { id = "org.jetbrains.kotlin.plugin.serialization", version.ref = "kotlin" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }
 android-application = { id = "com.android.application", version.ref = "android-gradle" }
 kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
 hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
 ksp = { id = "com.google.devtools.ksp", version.ref = "ksp" }
-google-services = { id = "com.google.gms.google-services", version = "4.4.2" }
-crashltyics = { id = "com.google.firebase.crashlytics", version = "3.0.2" }
-crashlytics = { id = "com.google.firebase.crashlytics", version = "3.0.2" }
-shadow = { id = "com.github.johnrengelman.shadow", version = "8.1.1" }
+google-services = { id = "com.google.gms.google-services", version = "4.5.0" }
+crashltyics = { id = "com.google.firebase.crashlytics", version = "3.0.8" }
+crashlytics = { id = "com.google.firebase.crashlytics", version = "3.0.8" }
+shadow = { id = "com.gradleup.shadow", version = "9.6.1" }
