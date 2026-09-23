@@ -21,3 +21,9 @@ service-account.json
 # Logs
 *.log
 firebase-adminsdk.json
+
+# VSCode
+.vscode/
+
+# Compiled Output
+bin/
