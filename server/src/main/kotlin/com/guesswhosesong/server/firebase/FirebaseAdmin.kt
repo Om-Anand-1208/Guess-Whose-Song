@@ -30,14 +30,22 @@ object FirebaseAdmin {
     }
 
     private fun buildCredentials(): GoogleCredentials {
-        val serviceAccountPath = System.getenv("FIREBASE_SERVICE_ACCOUNT_PATH")
-        return if (!serviceAccountPath.isNullOrBlank() && File(serviceAccountPath).exists()) {
-            GoogleCredentials.fromStream(FileInputStream(serviceAccountPath))
+        // 1. Check for raw JSON string
+        val serviceAccountJson = System.getenv("FIREBASE_SERVICE_ACCOUNT_JSON")
+        if (!serviceAccountJson.isNullOrBlank()) {
+            return GoogleCredentials.fromStream(serviceAccountJson.byteInputStream())
                 .createScoped(listOf("https://www.googleapis.com/auth/cloud-platform"))
-        } else {
-            // Falls back to GOOGLE_APPLICATION_CREDENTIALS or the default service account on GCP
-            GoogleCredentials.getApplicationDefault()
         }
+
+        // 2. Check for file path
+        val serviceAccountPath = System.getenv("FIREBASE_SERVICE_ACCOUNT_PATH")
+        if (!serviceAccountPath.isNullOrBlank() && File(serviceAccountPath).exists()) {
+            return GoogleCredentials.fromStream(FileInputStream(serviceAccountPath))
+                .createScoped(listOf("https://www.googleapis.com/auth/cloud-platform"))
+        }
+
+        // 3. Fallback to GOOGLE_APPLICATION_CREDENTIALS
+        return GoogleCredentials.getApplicationDefault()
     }
 
     /**
