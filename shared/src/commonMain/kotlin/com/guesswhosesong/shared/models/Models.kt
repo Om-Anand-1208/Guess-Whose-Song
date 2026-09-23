@@ -101,11 +101,8 @@ enum class SpotifyCategory {
     PLAYLIST
 }
 
-/** Deezer search result returned by backend proxy */
 /** Search result returned by backend proxy (from iTunes or fallback) */
 @Serializable
-data class DeezerTrack(
-    val id: Long,
 data class TrackSearchResult(
     val id: String,
     val title: String,

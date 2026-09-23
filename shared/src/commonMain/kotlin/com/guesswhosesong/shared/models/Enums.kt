@@ -22,7 +22,6 @@ enum class RoundPhase {
 enum class RoundLengthPreset(val songsPerPlayer: Int) {
     QUICK(1),
     STANDARD(3),
-    EXTENDED(5)
     EXTENDED(20)
 }
 
