@@ -20,3 +20,4 @@ service-account.json
 
 # Logs
 *.log
+firebase-adminsdk.json
