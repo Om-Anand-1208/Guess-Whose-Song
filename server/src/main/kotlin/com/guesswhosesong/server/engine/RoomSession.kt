@@ -7,13 +7,13 @@ import com.guesswhosesong.server.redis.RoomRepository
 import com.guesswhosesong.shared.dto.*
 import com.guesswhosesong.shared.models.*
 import io.ktor.websocket.*
+import io.ktor.server.websocket.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
 
-private const val DISCONNECT_GRACE_MS = 75_000L   // 75 seconds
 private const val DISCONNECT_GRACE_MS = 90_000L   // 90 seconds
 private const val REVEAL_HOLD_MS = 5_000L          // 5 seconds hold on reveal screen
 private const val MIN_PLAYERS_TO_START = 2
@@ -543,7 +543,7 @@ class RoomSession(
         val json = message.toJson()
         connections.entries.forEach { (_, socket) ->
             try {
-                socket.send(Frame.Text(json))
+                socket.send(json)
             } catch (e: Exception) {
                 // Connection dropped silently — onPlayerDisconnect handles cleanup
             }
@@ -553,7 +553,7 @@ class RoomSession(
     private suspend fun sendToPlayer(playerId: String, message: ServerMessage) {
         val json = message.toJson()
         try {
-            connections[playerId]?.send(Frame.Text(json))
+            connections[playerId]?.send(json)
         } catch (e: Exception) {
             logger.warn("[${room.joinCode}] Failed to send to $playerId: ${e.message}")
         }
