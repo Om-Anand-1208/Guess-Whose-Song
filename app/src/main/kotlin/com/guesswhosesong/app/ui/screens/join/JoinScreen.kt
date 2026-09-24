@@ -42,8 +42,12 @@ fun JoinScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
+            .statusBarsPadding()
+            .displayCutoutPadding()
+            .navigationBarsPadding()
+            .imePadding()
             .verticalScroll(scrollState)
-            .padding(horizontal = 28.dp, vertical = 32.dp),
+            .padding(horizontal = 28.dp, vertical = 16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {

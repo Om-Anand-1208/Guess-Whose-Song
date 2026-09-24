@@ -108,7 +108,14 @@ fun GameScreen(
         if (!isPlayingPreview) exoPlayer?.pause() else exoPlayer?.play()
     }
 
-    Column(modifier = Modifier.fillMaxSize()) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .displayCutoutPadding()
+            .navigationBarsPadding()
+            .imePadding()
+    ) {
         when (uiState.roundPhase) {
             RoundPhase.PLAYING_PREVIEW -> {
                 HeroPreviewScreen(
