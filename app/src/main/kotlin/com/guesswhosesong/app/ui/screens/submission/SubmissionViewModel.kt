@@ -2,7 +2,9 @@ package com.guesswhosesong.app.ui.screens.submission
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.guesswhosesong.app.data.firebase.FirebaseAuthManager
 import com.guesswhosesong.app.data.repository.GameRepository
+import com.guesswhosesong.app.data.spotify.SpotifyAuthManager
 import com.guesswhosesong.shared.dto.*
 import com.guesswhosesong.shared.models.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -18,6 +20,7 @@ data class SubmissionUiState(
     val selfPlayerId: String = "",
     val searchQuery: String = "",
     val searchResults: List<TrackSearchResult> = emptyList(),
+    val spotifySuggestions: List<SpotifySuggestion> = emptyList(),
     val pendingSong: SongEntry? = null,
     val songLocked: Boolean = false,
     val isSearching: Boolean = false,
@@ -35,7 +38,9 @@ sealed class SubmissionEvent {
 @HiltViewModel
 class SubmissionViewModel @Inject constructor(
     private val gameRepository: GameRepository,
-    private val httpClient: HttpClient
+    private val httpClient: HttpClient,
+    private val authManager: FirebaseAuthManager,
+    private val spotifyAuthManager: SpotifyAuthManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(SubmissionUiState())
@@ -54,16 +59,33 @@ class SubmissionViewModel @Inject constructor(
         viewModelScope.launch {
             gameRepository.messages.collect { message ->
                 when (message) {
-                    is RoomJoined -> _uiState.update {
-                        it.copy(
-                            room = message.room,
-                            selfPlayerId = message.selfPlayerId,
-                            totalCount = message.room.players.size
-                        )
+                    is RoomJoined -> {
+                        val selfId = message.selfPlayerId
+                        val isSpotify = message.room.players.find { it.id == selfId }?.spotifyConnected == true
+                        _uiState.update {
+                            it.copy(
+                                room = message.room,
+                                selfPlayerId = selfId,
+                                totalCount = message.room.players.size,
+                                spotifyConnected = isSpotify
+                            )
+                        }
+                        if (isSpotify) loadSpotifySuggestions()
                     }
                     is RoomUpdated -> {
                         val room = message.room
-                        _uiState.update { it.copy(room = room, totalCount = room.players.size) }
+                        val selfId = _uiState.value.selfPlayerId
+                        val isSpotify = room.players.find { it.id == selfId }?.spotifyConnected == true
+                        _uiState.update {
+                            it.copy(
+                                room = room,
+                                totalCount = room.players.size,
+                                spotifyConnected = isSpotify
+                            )
+                        }
+                        if (isSpotify && _uiState.value.spotifySuggestions.isEmpty()) {
+                            loadSpotifySuggestions()
+                        }
                         if (room.state == RoomState.PLAYING) {
                             _events.emit(SubmissionEvent.NavigateToGame)
                         }
@@ -76,6 +98,37 @@ class SubmissionViewModel @Inject constructor(
                     }
                     else -> {}
                 }
+            }
+        }
+        viewModelScope.launch {
+            spotifyAuthManager.isConnected.collect { connected ->
+                if (connected) {
+                    _uiState.update { it.copy(spotifyConnected = true) }
+                    gameRepository.connectSpotify("")
+                    loadSpotifySuggestions()
+                }
+            }
+        }
+    }
+
+    fun connectSpotify() {
+        val uid = _uiState.value.selfPlayerId
+        if (uid.isNotBlank()) {
+            spotifyAuthManager.launchOAuth(uid)
+        }
+    }
+
+    fun loadSpotifySuggestions() {
+        viewModelScope.launch {
+            try {
+                val token = authManager.getIdToken()
+                val result = httpClient.get("$baseUrl/spotify/top") {
+                    header("Authorization", "Bearer $token")
+                }.body<Map<String, List<SpotifySuggestion>>>()
+                val tracks = result["tracks"] ?: emptyList()
+                _uiState.update { it.copy(spotifySuggestions = tracks) }
+            } catch (e: Exception) {
+                // If Spotify top fails, gracefully degrade
             }
         }
     }
@@ -104,11 +157,24 @@ class SubmissionViewModel @Inject constructor(
 
     fun selectSong(track: TrackSearchResult) {
         val entry = SongEntry(
-            songId = track.id.toString(),
+            songId = track.id,
             title = track.title,
             artist = track.artist,
             albumArtUrl = track.albumArtUrl,
             previewUrl = track.previewUrl,
+            submitterId = _uiState.value.selfPlayerId
+        )
+        _uiState.update { it.copy(pendingSong = entry, searchResults = emptyList()) }
+        viewModelScope.launch { gameRepository.updatePendingSong(entry) }
+    }
+
+    fun selectSpotifyTrack(suggestion: SpotifySuggestion) {
+        val entry = SongEntry(
+            songId = "${suggestion.title}_${suggestion.artist}",
+            title = suggestion.title,
+            artist = suggestion.artist,
+            albumArtUrl = suggestion.albumArtUrl,
+            previewUrl = "", // will be resolved server-side on lock
             submitterId = _uiState.value.selfPlayerId
         )
         _uiState.update { it.copy(pendingSong = entry, searchResults = emptyList()) }
@@ -125,31 +191,27 @@ class SubmissionViewModel @Inject constructor(
     }
 
     /**
-     * Called for Surprise Me: fetches Spotify top tracks from backend.
-     * Updates pendingSong (reroll = call again).
+     * Surprise Me: picks from user's personal Spotify top tracks if connected,
+     * or popular top tracks from the server if not.
      */
     fun surpriseMe() {
         viewModelScope.launch {
             _uiState.update { it.copy(isSearching = true, error = null) }
             try {
-                // If the user hasn't authenticated Spotify on the backend, this might fail or return a fallback
-                val result = httpClient.get("$baseUrl/spotify/suggestions").body<Map<String, List<SpotifySuggestion>>>()
-                val suggestions = result["suggestions"] ?: emptyList()
-                if (suggestions.isEmpty()) {
-                    _uiState.update { it.copy(error = "No Spotify suggestions found") }
-                    return@launch
+                val spotifyList = _uiState.value.spotifySuggestions
+                if (_uiState.value.spotifyConnected && spotifyList.isNotEmpty()) {
+                    val pick = spotifyList.random()
+                    selectSpotifyTrack(pick)
+                } else {
+                    val result = httpClient.get("$baseUrl/music/top").body<Map<String, List<TrackSearchResult>>>()
+                    val tracks = result["tracks"] ?: emptyList()
+                    if (tracks.isEmpty()) {
+                        _uiState.update { it.copy(error = "No suggestions found") }
+                        return@launch
+                    }
+                    val pick = tracks.random()
+                    selectSong(pick)
                 }
-                val pick = suggestions.random()
-                val entry = SongEntry(
-                    songId = "${pick.title}_${pick.artist}",
-                    title = pick.title,
-                    artist = pick.artist,
-                    albumArtUrl = pick.albumArtUrl,
-                    previewUrl = "", // will be resolved server-side on lock
-                    submitterId = _uiState.value.selfPlayerId
-                )
-                _uiState.update { it.copy(pendingSong = entry, searchResults = emptyList()) }
-                gameRepository.updatePendingSong(entry)
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "Surprise Me failed: ${e.message}") }
             } finally {

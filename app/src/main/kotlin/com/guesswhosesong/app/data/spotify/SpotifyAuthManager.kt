@@ -5,9 +5,12 @@ import android.content.Intent
 import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
 import com.guesswhosesong.app.di.NetworkModule
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import javax.inject.Inject
+import javax.inject.Singleton
 
 /**
  * Manages the optional Spotify OAuth flow.
@@ -15,7 +18,10 @@ import kotlinx.coroutines.flow.asStateFlow
  * The server handles the code exchange; on success, the Android app receives a deep link:
  * guesswhosesong://spotify-callback?success=true
  */
-class SpotifyAuthManager(private val context: Context) {
+@Singleton
+class SpotifyAuthManager @Inject constructor(
+    @ApplicationContext private val context: Context
+) {
 
     private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
@@ -26,9 +32,9 @@ class SpotifyAuthManager(private val context: Context) {
      */
     fun launchOAuth(firebaseUid: String) {
         val authUrl = "${NetworkModule.BASE_URL}/spotify/auth?state=$firebaseUid"
-        CustomTabsIntent.Builder()
-            .build()
-            .launchUrl(context, Uri.parse(authUrl))
+        val customTabsIntent = CustomTabsIntent.Builder().build()
+        customTabsIntent.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        customTabsIntent.launchUrl(context, Uri.parse(authUrl))
     }
 
     /**

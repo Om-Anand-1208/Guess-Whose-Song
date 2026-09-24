@@ -103,5 +103,22 @@ fun Route.spotifyRoutes(redis: RedisClient) {
             val tracks = spotifyClient.getPlaylistTracks(token, playlistId)
             call.respond(mapOf("tracks" to tracks))
         }
+
+        /**
+         * GET /spotify/suggestions
+         * Fallback for Surprise Me when Spotify is not connected.
+         */
+        get("/suggestions") {
+            val musicService = com.guesswhosesong.server.music.MusicService()
+            val tracks = musicService.getTopTracks().map {
+                com.guesswhosesong.shared.models.SpotifySuggestion(
+                    title = it.title,
+                    artist = it.artist,
+                    albumArtUrl = it.albumArtUrl,
+                    category = com.guesswhosesong.shared.models.SpotifyCategory.TOP_TRACKS
+                )
+            }
+            call.respond(mapOf("suggestions" to tracks))
+        }
     }
 }

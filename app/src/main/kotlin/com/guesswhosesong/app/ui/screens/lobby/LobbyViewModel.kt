@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.guesswhosesong.app.data.firebase.FirebaseAuthManager
 import com.guesswhosesong.app.data.network.WebSocketManager
 import com.guesswhosesong.app.data.repository.GameRepository
+import com.guesswhosesong.app.data.spotify.SpotifyAuthManager
 import com.guesswhosesong.shared.dto.*
 import com.guesswhosesong.shared.models.*
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -16,7 +17,8 @@ data class LobbyUiState(
     val room: Room? = null,
     val selfPlayerId: String = "",
     val isConnected: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val isSpotifyConnected: Boolean = false
 )
 
 sealed class LobbyEvent {
@@ -28,7 +30,8 @@ sealed class LobbyEvent {
 @HiltViewModel
 class LobbyViewModel @Inject constructor(
     private val gameRepository: GameRepository,
-    private val authManager: FirebaseAuthManager
+    private val authManager: FirebaseAuthManager,
+    private val spotifyAuthManager: SpotifyAuthManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(LobbyUiState())
@@ -56,11 +59,22 @@ class LobbyViewModel @Inject constructor(
             gameRepository.messages.collect { message ->
                 when (message) {
                     is RoomJoined -> {
-                        _uiState.update { it.copy(room = message.room, selfPlayerId = message.selfPlayerId, isConnected = true) }
+                        val selfId = message.selfPlayerId
+                        val isSpotify = message.room.players.find { it.id == selfId }?.spotifyConnected == true
+                        _uiState.update {
+                            it.copy(
+                                room = message.room,
+                                selfPlayerId = selfId,
+                                isConnected = true,
+                                isSpotifyConnected = isSpotify
+                            )
+                        }
                     }
                     is RoomUpdated -> {
                         val newRoom = message.room
-                        _uiState.update { it.copy(room = newRoom) }
+                        val selfId = _uiState.value.selfPlayerId
+                        val isSpotify = newRoom.players.find { it.id == selfId }?.spotifyConnected == true
+                        _uiState.update { it.copy(room = newRoom, isSpotifyConnected = isSpotify) }
                         // Navigate when state changes
                         when (newRoom.state) {
                             RoomState.SUBMISSION -> _events.emit(LobbyEvent.NavigateToSubmission)
@@ -79,6 +93,28 @@ class LobbyViewModel @Inject constructor(
                     it.copy(isConnected = state == WebSocketManager.ConnectionState.CONNECTED)
                 }
             }
+        }
+        viewModelScope.launch {
+            gameRepository.lastError.collect { err ->
+                if (err != null) {
+                    _uiState.update { it.copy(error = err) }
+                }
+            }
+        }
+        viewModelScope.launch {
+            spotifyAuthManager.isConnected.collect { connected ->
+                if (connected) {
+                    _uiState.update { it.copy(isSpotifyConnected = true) }
+                    gameRepository.connectSpotify("")
+                }
+            }
+        }
+    }
+
+    fun connectSpotify() {
+        val uid = _uiState.value.selfPlayerId
+        if (uid.isNotBlank()) {
+            spotifyAuthManager.launchOAuth(uid)
         }
     }
 

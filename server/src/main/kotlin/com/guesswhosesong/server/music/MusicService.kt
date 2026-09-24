@@ -40,8 +40,8 @@ class MusicService(
     }
 
     suspend fun getTopTracks(): List<TrackSearchResult> {
-        // Fallback to iTunes for generic top tracks since Deezer top charts require specific region lookups or playlists
-        return itunesClient.search("Hits 2024", 20)
+        val hits = itunesClient.search("Pop Hits", 30)
+        return if (hits.isNotEmpty()) hits else itunesClient.search("Top Songs", 30)
     }
 
     /**

@@ -2,18 +2,18 @@ package com.guesswhosesong.server.deezer
 
 import com.guesswhosesong.shared.models.TrackSearchResult
 import io.ktor.client.*
-import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
-import io.ktor.client.plugins.contentnegotiation.*
 import io.ktor.client.request.*
-import io.ktor.serialization.kotlinx.json.*
+import io.ktor.client.statement.*
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import org.slf4j.LoggerFactory
 
 private val deezerJson = Json {
     ignoreUnknownKeys = true
     isLenient = true
+    coerceInputValues = true
 }
 
 @Serializable
@@ -23,29 +23,27 @@ private data class DeezerSearchResponse(
 
 @Serializable
 private data class DeezerRawTrack(
-    val id: Long = 0L,
-    val title: String = "",
-    @SerialName("preview") val previewUrl: String = "",
-    val artist: DeezerArtist = DeezerArtist(),
-    val album: DeezerAlbum = DeezerAlbum()
+    val id: Long? = null,
+    val title: String? = null,
+    @SerialName("preview") val previewUrl: String? = null,
+    val artist: DeezerArtist? = null,
+    val album: DeezerAlbum? = null
 )
 
 @Serializable
 private data class DeezerArtist(
-    val name: String = ""
+    val name: String? = null
 )
 
 @Serializable
 private data class DeezerAlbum(
-    @SerialName("cover_medium") val coverMedium: String = ""
+    @SerialName("cover_medium") val coverMedium: String? = null
 )
 
 class DeezerClient {
+    private val logger = LoggerFactory.getLogger(DeezerClient::class.java)
 
     private val httpClient = HttpClient(CIO) {
-        install(ContentNegotiation) {
-            json(deezerJson)
-        }
         engine {
             requestTimeout = 10_000
         }
@@ -57,26 +55,29 @@ class DeezerClient {
      */
     suspend fun search(query: String, limit: Int = 10): List<TrackSearchResult> {
         return try {
-            val response: DeezerSearchResponse = httpClient.get("https://api.deezer.com/search/track") {
+            val responseText: String = httpClient.get("https://api.deezer.com/search") {
                 parameter("q", query)
                 parameter("limit", limit)
-            }.body()
+                header("User-Agent", "Mozilla/5.0")
+            }.bodyAsText()
+
+            val response = deezerJson.decodeFromString<DeezerSearchResponse>(responseText)
             response.data
-                .filter { it.previewUrl.isNotBlank() }
+                .filter { !it.previewUrl.isNullOrBlank() && !it.title.isNullOrBlank() }
                 .map { raw ->
                     TrackSearchResult(
-                        id = raw.id.toString(),
-                        title = raw.title,
-                        artist = raw.artist.name,
-                        albumArtUrl = raw.album.coverMedium,
-                        previewUrl = raw.previewUrl
+                        id = (raw.id ?: 0L).toString(),
+                        title = raw.title ?: "",
+                        artist = raw.artist?.name ?: "Unknown Artist",
+                        albumArtUrl = raw.album?.coverMedium ?: "",
+                        previewUrl = raw.previewUrl ?: ""
                     )
                 }
         } catch (e: Exception) {
+            logger.error("Deezer search failed for query '$query': ${e.message}", e)
             emptyList()
         }
     }
 
     fun close() = httpClient.close()
 }
-

@@ -171,8 +171,7 @@ class RoomSession(
             is PlayAgain -> handlePlayAgain(playerId)
             is EndRoom -> handleEndRoom(playerId)
             is ConnectSpotify -> handleConnectSpotify(playerId)
-            is SubmitSong -> { /* handled via UpdatePendingSong + LockSong */ }
-            else -> logger.warn("[${room.joinCode}] Unhandled message type: ${message.type}")
+            else -> logger.warn("[${room.joinCode}] Unhandled message type: ${message::class.simpleName}")
         }
     }
 
@@ -543,7 +542,7 @@ class RoomSession(
         val json = message.toJson()
         connections.entries.forEach { (_, socket) ->
             try {
-                socket.send(json)
+                socket.send(io.ktor.websocket.Frame.Text(json))
             } catch (e: Exception) {
                 // Connection dropped silently — onPlayerDisconnect handles cleanup
             }
@@ -553,7 +552,7 @@ class RoomSession(
     private suspend fun sendToPlayer(playerId: String, message: ServerMessage) {
         val json = message.toJson()
         try {
-            connections[playerId]?.send(json)
+            connections[playerId]?.send(io.ktor.websocket.Frame.Text(json))
         } catch (e: Exception) {
             logger.warn("[${room.joinCode}] Failed to send to $playerId: ${e.message}")
         }

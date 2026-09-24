@@ -6,12 +6,10 @@ import kotlinx.serialization.Serializable
 
 /**
  * All messages sent FROM the Ktor server TO Android clients over WebSocket.
- * Discriminated by the [type] field.
+ * Discriminated automatically by the [type] field using @SerialName.
  */
 @Serializable
-sealed class ServerMessage {
-    abstract val type: String
-}
+sealed class ServerMessage
 
 // ─── Connection / Room ──────────────────────────────────────────────────────
 
@@ -19,7 +17,6 @@ sealed class ServerMessage {
 @Serializable
 @SerialName("ROOM_JOINED")
 data class RoomJoined(
-    override val type: String = "ROOM_JOINED",
     val room: Room,
     val selfPlayerId: String
 ) : ServerMessage()
@@ -28,22 +25,21 @@ data class RoomJoined(
 @Serializable
 @SerialName("ROOM_UPDATED")
 data class RoomUpdated(
-    override val type: String = "ROOM_UPDATED",
     val room: Room
 ) : ServerMessage()
 
 /** Sent to a kicked player before closing their connection */
 @Serializable
 @SerialName("KICKED")
-data class Kicked(
-    override val type: String = "KICKED"
-) : ServerMessage()
+class Kicked : ServerMessage() {
+    override fun equals(other: Any?): Boolean = other is Kicked
+    override fun hashCode(): Int = javaClass.hashCode()
+}
 
 /** Notifies clients that a new host has been assigned */
 @Serializable
 @SerialName("HOST_CHANGED")
 data class HostChanged(
-    override val type: String = "HOST_CHANGED",
     val newHostId: String,
     val newHostName: String
 ) : ServerMessage()
@@ -54,7 +50,6 @@ data class HostChanged(
 @Serializable
 @SerialName("SUBMISSION_STARTED")
 data class SubmissionStarted(
-    override val type: String = "SUBMISSION_STARTED",
     val deadlineEpochMillis: Long
 ) : ServerMessage()
 
@@ -62,7 +57,6 @@ data class SubmissionStarted(
 @Serializable
 @SerialName("SUBMISSION_PROGRESS")
 data class SubmissionProgress(
-    override val type: String = "SUBMISSION_PROGRESS",
     val lockedCount: Int,
     val totalCount: Int
 ) : ServerMessage()
@@ -73,7 +67,6 @@ data class SubmissionProgress(
 @Serializable
 @SerialName("ROUND_PREVIEW_STARTED")
 data class RoundPreviewStarted(
-    override val type: String = "ROUND_PREVIEW_STARTED",
     val roundIndex: Int,
     val totalRounds: Int,
     val title: String,
@@ -87,7 +80,6 @@ data class RoundPreviewStarted(
 @Serializable
 @SerialName("VOTING_STARTED")
 data class VotingStarted(
-    override val type: String = "VOTING_STARTED",
     val roundIndex: Int,
     val players: List<Player>, // full list, anonymized (no pendingSong)
     val votingDeadlineEpochMillis: Long
@@ -97,7 +89,6 @@ data class VotingStarted(
 @Serializable
 @SerialName("VOTE_COUNT_UPDATED")
 data class VoteCountUpdated(
-    override val type: String = "VOTE_COUNT_UPDATED",
     val votedCount: Int,
     val totalCount: Int
 ) : ServerMessage()
@@ -106,7 +97,6 @@ data class VoteCountUpdated(
 @Serializable
 @SerialName("ROUND_REVEALED")
 data class RoundRevealed(
-    override val type: String = "ROUND_REVEALED",
     val roundIndex: Int,
     val songEntry: SongEntry, // now includes submitterId
     val submitterName: String,
@@ -119,22 +109,21 @@ data class RoundRevealed(
 @Serializable
 @SerialName("GAME_RESULTS")
 data class GameResults(
-    override val type: String = "GAME_RESULTS",
     val players: List<Player> // sorted by score desc
 ) : ServerMessage()
 
 @Serializable
 @SerialName("ROOM_ENDED")
-data class RoomEnded(
-    override val type: String = "ROOM_ENDED"
-) : ServerMessage()
+class RoomEnded : ServerMessage() {
+    override fun equals(other: Any?): Boolean = other is RoomEnded
+    override fun hashCode(): Int = javaClass.hashCode()
+}
 
 // ─── Chat ────────────────────────────────────────────────────────────────────
 
 @Serializable
 @SerialName("CHAT_RECEIVED")
 data class ChatReceived(
-    override val type: String = "CHAT_RECEIVED",
     val message: ChatMessage
 ) : ServerMessage()
 
@@ -143,7 +132,6 @@ data class ChatReceived(
 @Serializable
 @SerialName("ERROR")
 data class ErrorMessage(
-    override val type: String = "ERROR",
     val code: String,
     val message: String
 ) : ServerMessage()
@@ -152,6 +140,7 @@ data class ErrorMessage(
 
 @Serializable
 @SerialName("PONG")
-data class Pong(
-    override val type: String = "PONG"
-) : ServerMessage()
+class Pong : ServerMessage() {
+    override fun equals(other: Any?): Boolean = other is Pong
+    override fun hashCode(): Int = javaClass.hashCode()
+}

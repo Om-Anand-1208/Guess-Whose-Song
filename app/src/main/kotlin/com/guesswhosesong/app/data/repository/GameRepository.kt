@@ -14,6 +14,7 @@ class GameRepository(private val wsManager: WebSocketManager) {
 
     val messages: SharedFlow<ServerMessage> = wsManager.messages
     val connectionState = wsManager.connectionState
+    val lastError = wsManager.lastError
 
     fun connect(joinCode: String, token: String, displayName: String) {
         wsManager.connect(joinCode, token, displayName)

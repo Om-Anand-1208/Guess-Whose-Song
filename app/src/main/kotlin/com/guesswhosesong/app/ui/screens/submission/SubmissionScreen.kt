@@ -3,6 +3,7 @@ package com.guesswhosesong.app.ui.screens.submission
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -12,8 +13,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import coil.compose.AsyncImage
@@ -54,8 +58,70 @@ fun SubmissionScreen(
                 progress = { if (uiState.totalCount > 0) uiState.lockedCount.toFloat() / uiState.totalCount else 0f },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 16.dp)
+                    .padding(bottom = 12.dp)
             )
+
+            // Spotify Banner
+            if (!uiState.spotifyConnected) {
+                OutlinedCard(
+                    onClick = viewModel::connectSpotify,
+                    colors = CardDefaults.outlinedCardColors(
+                        containerColor = Color(0xFF1DB954).copy(alpha = 0.08f)
+                    ),
+                    border = CardDefaults.outlinedCardBorder().copy(
+                        brush = SolidColor(Color(0xFF1DB954))
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 12.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("\uD83C\uDFA7", style = MaterialTheme.typography.titleMedium)
+                        Spacer(Modifier.width(10.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                "Connect Spotify",
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFF1DB954)
+                            )
+                            Text(
+                                "Auto-import your top songs for this round",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                            )
+                        }
+                        Text("\u2192", color = Color(0xFF1DB954), fontWeight = FontWeight.Bold)
+                    }
+                }
+            } else if (uiState.spotifySuggestions.isNotEmpty()) {
+                Text(
+                    "Your Spotify Top Songs:",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF1DB954),
+                    modifier = Modifier.padding(bottom = 4.dp)
+                )
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier.padding(bottom = 12.dp)
+                ) {
+                    items(uiState.spotifySuggestions.take(15)) { suggestion ->
+                        SuggestionChip(
+                            onClick = { viewModel.selectSpotifyTrack(suggestion) },
+                            label = {
+                                Text(
+                                    "${suggestion.title} - ${suggestion.artist}",
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        )
+                    }
+                }
+            }
 
             uiState.pendingSong?.let { song ->
                 SelectedSongCard(song = song, locked = uiState.songLocked)

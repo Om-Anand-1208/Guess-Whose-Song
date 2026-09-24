@@ -26,6 +26,14 @@ private data class CreateRoomResponse(
     val playerId: String
 )
 
+@Serializable
+private data class RoomSummaryResponse(
+    val joinCode: String,
+    val state: String,
+    val playerCount: Int,
+    val playerLimit: Int
+)
+
 fun Route.roomRoutes(roomManager: RoomManager) {
 
     route("/rooms") {
@@ -69,12 +77,14 @@ fun Route.roomRoutes(roomManager: RoomManager) {
             val session = roomManager.findRoom(joinCode)
                 ?: throw RoomNotFoundException(joinCode)
             val room = session.room
-            call.respond(mapOf(
-                "joinCode" to room.joinCode,
-                "state" to room.state.name,
-                "playerCount" to room.players.size,
-                "playerLimit" to room.settings.playerLimit
-            ))
+            call.respond(
+                RoomSummaryResponse(
+                    joinCode = room.joinCode,
+                    state = room.state.name,
+                    playerCount = room.players.size,
+                    playerLimit = room.settings.playerLimit
+                )
+            )
         }
 
         /**
@@ -93,6 +103,7 @@ fun Route.roomRoutes(roomManager: RoomManager) {
             val playerId = try {
                 FirebaseAdmin.verifyIdToken(token)
             } catch (e: Exception) {
+                application.log.error("Failed to verify WebSocket token: ${e.message}", e)
                 close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "Invalid token"))
                 return@webSocket
             }
@@ -100,6 +111,7 @@ fun Route.roomRoutes(roomManager: RoomManager) {
             // Find or reject room
             val session = roomManager.findRoom(joinCode)
             if (session == null) {
+                application.log.error("Room not found for code: $joinCode")
                 close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "Room not found"))
                 return@webSocket
             }

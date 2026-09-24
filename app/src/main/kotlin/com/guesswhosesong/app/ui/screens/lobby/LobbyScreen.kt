@@ -70,6 +70,15 @@ fun LobbyScreen(
                 LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
             }
 
+            val errorMsg = uiState.error
+            if (errorMsg != null) {
+                Text(
+                    text = errorMsg,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(vertical = 8.dp)
+                )
+            }
+
             Text(
                 text = "Players (${room?.players?.size ?: 0}/${room?.settings?.playerLimit ?: 10})",
                 style = MaterialTheme.typography.titleMedium,
@@ -89,6 +98,47 @@ fun LobbyScreen(
                             { viewModel.kickPlayer(player.id) }
                         } else null
                     )
+                }
+            }
+
+            // Spotify Connection
+            if (!uiState.isSpotifyConnected) {
+                Button(
+                    onClick = viewModel::connectSpotify,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = androidx.compose.ui.graphics.Color(0xFF1DB954)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp)
+                ) {
+                    Text("\uD83C\uDFA7 Connect Spotify", color = androidx.compose.ui.graphics.Color.White)
+                }
+            } else {
+                OutlinedCard(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(vertical = 6.dp),
+                    colors = CardDefaults.outlinedCardColors(
+                        containerColor = androidx.compose.ui.graphics.Color(0xFF1DB954).copy(alpha = 0.12f)
+                    )
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "\u2713 Spotify Connected",
+                            color = androidx.compose.ui.graphics.Color(0xFF1DB954),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            "Top tracks ready",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
                 }
             }
 

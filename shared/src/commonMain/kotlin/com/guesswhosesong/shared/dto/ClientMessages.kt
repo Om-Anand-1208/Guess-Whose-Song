@@ -6,23 +6,21 @@ import kotlinx.serialization.Serializable
 
 /**
  * All messages sent FROM the Android client TO the Ktor server over WebSocket.
- * Discriminated by the [type] field.
+ * Discriminated automatically by the [type] field using @SerialName.
  */
 @Serializable
-sealed class ClientMessage {
-    abstract val type: String
-}
+sealed class ClientMessage
 
 @Serializable
 @SerialName("START_GAME")
-data class StartGame(
-    override val type: String = "START_GAME"
-) : ClientMessage()
+class StartGame : ClientMessage() {
+    override fun equals(other: Any?): Boolean = other is StartGame
+    override fun hashCode(): Int = javaClass.hashCode()
+}
 
 @Serializable
 @SerialName("SUBMIT_SONG")
 data class SubmitSong(
-    override val type: String = "SUBMIT_SONG",
     val song: SongEntry
 ) : ClientMessage()
 
@@ -33,60 +31,57 @@ data class SubmitSong(
 @Serializable
 @SerialName("UPDATE_PENDING_SONG")
 data class UpdatePendingSong(
-    override val type: String = "UPDATE_PENDING_SONG",
     val song: SongEntry
 ) : ClientMessage()
 
 @Serializable
 @SerialName("LOCK_SONG")
-data class LockSong(
-    override val type: String = "LOCK_SONG"
-) : ClientMessage()
+class LockSong : ClientMessage() {
+    override fun equals(other: Any?): Boolean = other is LockSong
+    override fun hashCode(): Int = javaClass.hashCode()
+}
 
 @Serializable
 @SerialName("CAST_VOTE")
 data class CastVote(
-    override val type: String = "CAST_VOTE",
     val guessedPlayerId: String
 ) : ClientMessage()
 
 @Serializable
 @SerialName("SEND_CHAT")
 data class SendChat(
-    override val type: String = "SEND_CHAT",
     val text: String
 ) : ClientMessage()
 
 @Serializable
 @SerialName("UPDATE_SETTINGS")
 data class UpdateSettings(
-    override val type: String = "UPDATE_SETTINGS",
     val settings: RoomSettings
 ) : ClientMessage()
 
 @Serializable
 @SerialName("KICK_PLAYER")
 data class KickPlayer(
-    override val type: String = "KICK_PLAYER",
     val targetPlayerId: String
 ) : ClientMessage()
 
 @Serializable
 @SerialName("PLAY_AGAIN")
-data class PlayAgain(
-    override val type: String = "PLAY_AGAIN"
-) : ClientMessage()
+class PlayAgain : ClientMessage() {
+    override fun equals(other: Any?): Boolean = other is PlayAgain
+    override fun hashCode(): Int = javaClass.hashCode()
+}
 
 @Serializable
 @SerialName("END_ROOM")
-data class EndRoom(
-    override val type: String = "END_ROOM"
-) : ClientMessage()
+class EndRoom : ClientMessage() {
+    override fun equals(other: Any?): Boolean = other is EndRoom
+    override fun hashCode(): Int = javaClass.hashCode()
+}
 
 @Serializable
 @SerialName("CONNECT_SPOTIFY")
 data class ConnectSpotify(
-    override val type: String = "CONNECT_SPOTIFY",
     /** The Spotify access token obtained client-side via PKCE OAuth */
     val accessToken: String
 ) : ClientMessage()

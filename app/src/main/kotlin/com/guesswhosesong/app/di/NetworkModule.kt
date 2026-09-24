@@ -22,8 +22,8 @@ object NetworkModule {
      * Base URL of the Ktor backend.
      * Change this to your Render / Cloud Run URL in production.
      */
-    const val BASE_URL = "https://style-survivor-ratings-distributed.trycloudflare.com"
-    const val WS_BASE_URL = "wss://style-survivor-ratings-distributed.trycloudflare.com"
+    const val BASE_URL = "https://acquaint-capital-bling.ngrok-free.dev"
+    const val WS_BASE_URL = "wss://acquaint-capital-bling.ngrok-free.dev"
 
     @Provides
     @Singleton
