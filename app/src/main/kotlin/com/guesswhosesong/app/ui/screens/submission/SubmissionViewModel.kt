@@ -59,9 +59,30 @@ class SubmissionViewModel @Inject constructor(
     private val baseUrl = com.guesswhosesong.app.di.NetworkModule.BASE_URL
 
     init {
+        val cachedRoom = gameRepository.currentRoom.value
+        val selfId = gameRepository.selfPlayerId.value
+        val isSpotify = cachedRoom?.players?.find { it.id == selfId }?.spotifyConnected == true
+        val maxPicks = cachedRoom?.settings?.roundLengthPreset?.songsPerPlayer ?: 3
+        val existingSongs = gameRepository.pendingSongs.value
+
+        _uiState.update {
+            it.copy(
+                room = cachedRoom,
+                selfPlayerId = selfId,
+                totalCount = cachedRoom?.players?.size ?: 0,
+                spotifyConnected = isSpotify,
+                maxSongs = maxPicks,
+                pendingSongs = existingSongs,
+                pendingSong = existingSongs.firstOrNull()
+            )
+        }
+
         observeMessages()
         loadPopularSuggestions()
         observeSearchQuery()
+        if (isSpotify) {
+            loadSpotifySuggestions()
+        }
     }
 
     private fun observeMessages() {
@@ -85,12 +106,13 @@ class SubmissionViewModel @Inject constructor(
                     }
                     is RoomUpdated -> {
                         val room = message.room
-                        val selfId = _uiState.value.selfPlayerId
+                        val selfId = _uiState.value.selfPlayerId.ifBlank { gameRepository.selfPlayerId.value }
                         val isSpotify = room.players.find { it.id == selfId }?.spotifyConnected == true
                         val maxPicks = room.settings.roundLengthPreset.songsPerPlayer
                         _uiState.update {
                             it.copy(
                                 room = room,
+                                selfPlayerId = selfId,
                                 totalCount = room.players.size,
                                 spotifyConnected = isSpotify,
                                 maxSongs = maxPicks
@@ -221,13 +243,14 @@ class SubmissionViewModel @Inject constructor(
             return
         }
 
+        val selfId = _uiState.value.selfPlayerId.ifBlank { gameRepository.selfPlayerId.value }
         val entry = SongEntry(
             songId = track.id,
             title = track.title,
             artist = track.artist,
             albumArtUrl = track.albumArtUrl,
             previewUrl = track.previewUrl,
-            submitterId = _uiState.value.selfPlayerId
+            submitterId = selfId
         )
 
         val updated = if (max == 1) {
@@ -235,7 +258,7 @@ class SubmissionViewModel @Inject constructor(
         } else if (current.size < max) {
             current + entry
         } else {
-            _uiState.update { it.copy(error = "You've already picked $max songs. Remove one to add another.") }
+            _uiState.update { it.copy(error = "All $max song slots filled. Remove a song to pick another.") }
             return
         }
 
@@ -250,7 +273,6 @@ class SubmissionViewModel @Inject constructor(
         }
         viewModelScope.launch {
             gameRepository.updatePendingSongs(updated)
-            gameRepository.updatePendingSong(entry)
         }
     }
 
@@ -263,13 +285,14 @@ class SubmissionViewModel @Inject constructor(
             return
         }
 
+        val selfId = _uiState.value.selfPlayerId.ifBlank { gameRepository.selfPlayerId.value }
         val entry = SongEntry(
             songId = "${suggestion.title}_${suggestion.artist}",
             title = suggestion.title,
             artist = suggestion.artist,
             albumArtUrl = suggestion.albumArtUrl,
             previewUrl = "", // will be resolved server-side on lock
-            submitterId = _uiState.value.selfPlayerId
+            submitterId = selfId
         )
 
         val updated = if (max == 1) {
@@ -277,7 +300,7 @@ class SubmissionViewModel @Inject constructor(
         } else if (current.size < max) {
             current + entry
         } else {
-            _uiState.update { it.copy(error = "You've already picked $max songs. Remove one to add another.") }
+            _uiState.update { it.copy(error = "All $max song slots filled. Remove a song to pick another.") }
             return
         }
 
@@ -291,7 +314,6 @@ class SubmissionViewModel @Inject constructor(
         }
         viewModelScope.launch {
             gameRepository.updatePendingSongs(updated)
-            gameRepository.updatePendingSong(entry)
         }
     }
 

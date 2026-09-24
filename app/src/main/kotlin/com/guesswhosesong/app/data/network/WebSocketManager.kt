@@ -67,6 +67,7 @@ class WebSocketManager(
                         urlString = "$wsBaseUrl/rooms/$joinCode/ws?token=$encodedToken&displayName=$encodedName"
                     ) {
                         _connectionState.value = ConnectionState.CONNECTED
+                        _lastError.value = null
                         delay = RECONNECT_DELAY_MS // reset backoff on success
 
                         // Fan out: send queued outgoing messages
@@ -116,5 +117,6 @@ class WebSocketManager(
         connectionScope?.cancel()
         connectionScope = null
         _connectionState.value = ConnectionState.DISCONNECTED
+        _lastError.value = null
     }
 }

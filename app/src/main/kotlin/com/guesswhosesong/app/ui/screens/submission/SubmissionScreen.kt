@@ -1,5 +1,6 @@
 package com.guesswhosesong.app.ui.screens.submission
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -122,15 +123,22 @@ fun SubmissionScreen(
                         modifier = Modifier.padding(bottom = 12.dp)
                     ) {
                         items(uiState.spotifySuggestions.take(15)) { suggestion ->
-                            val isAdded = songs.any {
+                            val slotIndex = songs.indexOfFirst {
                                 it.title.equals(suggestion.title, ignoreCase = true) &&
                                 it.artist.equals(suggestion.artist, ignoreCase = true)
                             }
+                            val isAdded = slotIndex != -1
+                            val isFull = songs.size >= uiState.maxSongs && !isAdded
                             SuggestionChip(
-                                onClick = { viewModel.selectSpotifyTrack(suggestion) },
+                                onClick = { if (!isAdded && !isFull) viewModel.selectSpotifyTrack(suggestion) },
+                                enabled = !isFull || isAdded,
                                 label = {
                                     Text(
-                                        "${if (isAdded) "✓ " else "+ "}${suggestion.title} - ${suggestion.artist}",
+                                        when {
+                                            isAdded -> "✓ #${slotIndex + 1}: ${suggestion.title}"
+                                            isFull -> suggestion.title
+                                            else -> "+ #${songs.size + 1}: ${suggestion.title}"
+                                        },
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
@@ -167,44 +175,13 @@ fun SubmissionScreen(
                 }
             }
 
-            // Selected Songs List
-            if (songs.isNotEmpty()) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 6.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        "Your Song Picks (${songs.size}/${uiState.maxSongs}):",
-                        style = MaterialTheme.typography.titleSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                    if (!uiState.songLocked && songs.size < uiState.maxSongs) {
-                        Text(
-                            "Pick ${uiState.maxSongs - songs.size} more",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    }
-                }
-
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier.padding(bottom = 12.dp)
-                ) {
-                    songs.forEachIndexed { index, song ->
-                        SelectedSongCard(
-                            index = index + 1,
-                            song = song,
-                            locked = uiState.songLocked,
-                            onRemove = { viewModel.removeSong(song.songId) }
-                        )
-                    }
-                }
-            }
+            // Song Slots Section (Always visible so users see all required slots)
+            SongSlotsSection(
+                songs = songs,
+                maxSongs = uiState.maxSongs,
+                locked = uiState.songLocked,
+                onRemoveSong = viewModel::removeSong
+            )
 
             if (!uiState.songLocked) {
                 OutlinedTextField(
@@ -213,9 +190,9 @@ fun SubmissionScreen(
                     label = {
                         Text(
                             if (songs.size < uiState.maxSongs)
-                                "Search song ${songs.size + 1} of ${uiState.maxSongs}"
+                                "Search song for Slot #${songs.size + 1}"
                             else
-                                "Search songs"
+                                "Search songs (all slots full)"
                         )
                     },
                     placeholder = { Text("e.g. Blinding Lights, Attention...") },
@@ -257,10 +234,16 @@ fun SubmissionScreen(
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             items(uiState.popularSuggestions) { track ->
-                                val isAdded = songs.any { it.songId == track.id || (it.title.equals(track.title, ignoreCase = true) && it.artist.equals(track.artist, ignoreCase = true)) }
+                                val slotIndex = songs.indexOfFirst {
+                                    it.songId == track.id || (it.title.equals(track.title, ignoreCase = true) && it.artist.equals(track.artist, ignoreCase = true))
+                                }
+                                val isAdded = slotIndex != -1
+                                val isFull = songs.size >= uiState.maxSongs && !isAdded
                                 TrackListItem(
                                     track = track,
                                     isAdded = isAdded,
+                                    slotNumber = if (isAdded) slotIndex + 1 else if (!isFull) songs.size + 1 else null,
+                                    isFull = isFull,
                                     onClick = { viewModel.selectSong(track) }
                                 )
                             }
@@ -288,10 +271,16 @@ fun SubmissionScreen(
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             items(uiState.searchResults) { track ->
-                                val isAdded = songs.any { it.songId == track.id || (it.title.equals(track.title, ignoreCase = true) && it.artist.equals(track.artist, ignoreCase = true)) }
+                                val slotIndex = songs.indexOfFirst {
+                                    it.songId == track.id || (it.title.equals(track.title, ignoreCase = true) && it.artist.equals(track.artist, ignoreCase = true))
+                                }
+                                val isAdded = slotIndex != -1
+                                val isFull = songs.size >= uiState.maxSongs && !isAdded
                                 TrackListItem(
                                     track = track,
                                     isAdded = isAdded,
+                                    slotNumber = if (isAdded) slotIndex + 1 else if (!isFull) songs.size + 1 else null,
+                                    isFull = isFull,
                                     onClick = { viewModel.selectSong(track) }
                                 )
                             }
@@ -337,6 +326,142 @@ fun SubmissionScreen(
                     color = MaterialTheme.colorScheme.error,
                     style = MaterialTheme.typography.bodySmall,
                     modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+fun SongSlotsSection(
+    songs: List<SongEntry>,
+    maxSongs: Int,
+    locked: Boolean,
+    onRemoveSong: (String) -> Unit
+) {
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 12.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 8.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Your Song Picks",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+                Spacer(Modifier.width(8.dp))
+                Surface(
+                    color = if (songs.size >= maxSongs) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Text(
+                        text = "${songs.size} / $maxSongs",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (songs.size >= maxSongs) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                    )
+                }
+            }
+            if (!locked) {
+                if (songs.size < maxSongs) {
+                    Text(
+                        "Pick ${maxSongs - songs.size} more",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.tertiary
+                    )
+                } else {
+                    Text(
+                        "All slots filled!",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.Medium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
+        }
+
+        Column(
+            verticalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            for (i in 0 until maxSongs) {
+                if (i < songs.size) {
+                    val song = songs[i]
+                    SelectedSongCard(
+                        index = i + 1,
+                        song = song,
+                        locked = locked,
+                        onRemove = { onRemoveSong(song.songId) }
+                    )
+                } else if (!locked) {
+                    val isNext = i == songs.size
+                    EmptySongSlotCard(
+                        slotNumber = i + 1,
+                        isNextSlot = isNext
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EmptySongSlotCard(
+    slotNumber: Int,
+    isNextSlot: Boolean
+) {
+    OutlinedCard(
+        border = BorderStroke(
+            width = if (isNextSlot) 1.5.dp else 1.dp,
+            color = if (isNextSlot) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
+                    else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
+        ),
+        colors = CardDefaults.outlinedCardColors(
+            containerColor = if (isNextSlot) MaterialTheme.colorScheme.primary.copy(alpha = 0.04f)
+                             else MaterialTheme.colorScheme.surface
+        ),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                color = if (isNextSlot) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier.size(28.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "#$slotNumber",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isNextSlot) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = if (isNextSlot) "👉 Tap a song below for slot #$slotNumber" else "Slot #$slotNumber (Empty)",
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = if (isNextSlot) FontWeight.Medium else FontWeight.Normal,
+                    color = if (isNextSlot) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                )
+                Text(
+                    text = if (isNextSlot) "Search or pick from suggestions" else "Waiting for previous slot",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
                 )
             }
         }
@@ -426,6 +551,8 @@ fun SelectedSongCard(
 fun TrackListItem(
     track: TrackSearchResult,
     isAdded: Boolean,
+    slotNumber: Int?,
+    isFull: Boolean,
     onClick: () -> Unit
 ) {
     ListItem(
@@ -459,10 +586,22 @@ fun TrackListItem(
                     shape = MaterialTheme.shapes.small
                 ) {
                     Text(
-                        "✓ Added",
+                        if (slotNumber != null) "✓ Slot #$slotNumber" else "✓ Picked",
                         color = MaterialTheme.colorScheme.onPrimaryContainer,
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            } else if (isFull) {
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        "Full",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                        style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
                 }
@@ -472,10 +611,13 @@ fun TrackListItem(
                     contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
                     modifier = Modifier.height(32.dp)
                 ) {
-                    Text("+ Add", style = MaterialTheme.typography.labelSmall)
+                    Text(
+                        if (slotNumber != null) "+ Pick #$slotNumber" else "+ Pick",
+                        style = MaterialTheme.typography.labelSmall
+                    )
                 }
             }
         },
-        modifier = Modifier.clickable(onClick = onClick)
+        modifier = Modifier.clickable(enabled = !isAdded && !isFull, onClick = onClick)
     )
 }

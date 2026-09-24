@@ -26,13 +26,30 @@ class ResultsViewModel @Inject constructor(
     private val gameRepository: GameRepository
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(ResultsUiState())
-    val uiState: StateFlow<ResultsUiState> = _uiState.asStateFlow()
+    private val _uiState: MutableStateFlow<ResultsUiState>
+    val uiState: StateFlow<ResultsUiState>
 
     private val _events = MutableSharedFlow<ResultsEvent>()
     val events: SharedFlow<ResultsEvent> = _events.asSharedFlow()
 
     init {
+        val cachedResults = gameRepository.latestGameResults.value
+        val cachedRoom = gameRepository.currentRoom.value
+        val selfId = gameRepository.selfPlayerId.value
+        val initialPlayers = cachedResults?.players
+            ?: cachedRoom?.players?.sortedByDescending { it.score }
+            ?: emptyList()
+        val isHost = cachedRoom?.players?.find { it.id == selfId }?.isHost ?: false
+
+        _uiState = MutableStateFlow(
+            ResultsUiState(
+                players = initialPlayers,
+                selfPlayerId = selfId,
+                isHost = isHost
+            )
+        )
+        uiState = _uiState.asStateFlow()
+
         viewModelScope.launch {
             gameRepository.messages.collect { message ->
                 when (message) {
@@ -40,13 +57,13 @@ class ResultsViewModel @Inject constructor(
                         _uiState.update { it.copy(players = message.players) }
                     }
                     is RoomJoined -> {
-                        val isHost = message.room.players.find { it.id == message.selfPlayerId }?.isHost ?: false
-                        _uiState.update { it.copy(selfPlayerId = message.selfPlayerId, isHost = isHost) }
+                        val host = message.room.players.find { it.id == message.selfPlayerId }?.isHost ?: false
+                        _uiState.update { it.copy(selfPlayerId = message.selfPlayerId, isHost = host) }
                     }
                     is RoomUpdated -> {
-                        val selfId = _uiState.value.selfPlayerId
-                        val isHost = message.room.players.find { it.id == selfId }?.isHost ?: false
-                        _uiState.update { it.copy(isHost = isHost) }
+                        val currentSelfId = _uiState.value.selfPlayerId.ifBlank { gameRepository.selfPlayerId.value }
+                        val host = message.room.players.find { it.id == currentSelfId }?.isHost ?: false
+                        _uiState.update { it.copy(isHost = host) }
                         if (message.room.state == RoomState.SUBMISSION) {
                             _events.emit(ResultsEvent.NavigateToSubmission)
                         }

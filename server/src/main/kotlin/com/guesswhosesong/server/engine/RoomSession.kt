@@ -246,8 +246,10 @@ class RoomSession(
                         p.pendingSongs
                     } else if (p.pendingSongs.size < maxSongs) {
                         p.pendingSongs + entry
-                    } else {
+                    } else if (maxSongs == 1) {
                         listOf(entry)
+                    } else {
+                        p.pendingSongs
                     }
                     p.copy(pendingSong = entry, pendingSongs = updatedSongs)
                 }

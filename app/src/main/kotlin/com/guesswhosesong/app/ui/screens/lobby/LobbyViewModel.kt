@@ -89,16 +89,18 @@ class LobbyViewModel @Inject constructor(
         }
         viewModelScope.launch {
             gameRepository.connectionState.collect { state ->
+                val isConnected = state == WebSocketManager.ConnectionState.CONNECTED
                 _uiState.update {
-                    it.copy(isConnected = state == WebSocketManager.ConnectionState.CONNECTED)
+                    it.copy(
+                        isConnected = isConnected,
+                        error = if (isConnected) null else it.error
+                    )
                 }
             }
         }
         viewModelScope.launch {
             gameRepository.lastError.collect { err ->
-                if (err != null) {
-                    _uiState.update { it.copy(error = err) }
-                }
+                _uiState.update { it.copy(error = err) }
             }
         }
         viewModelScope.launch {
