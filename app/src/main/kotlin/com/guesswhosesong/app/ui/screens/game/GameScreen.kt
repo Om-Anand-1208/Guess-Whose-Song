@@ -14,7 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Send
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -87,16 +87,14 @@ fun GameScreen(
                 }
             }
             RoundPhase.VOTING -> {
-                VotingHeader(
-                    votedCount = uiState.votedCount,
-                    totalCount = uiState.totalVoters,
-                    deadlineMs = uiState.votingDeadlineEpochMs
-                )
-                VoteGrid(
+                VotingSection(
                     players = uiState.players,
                     selfPlayerId = uiState.selfPlayerId,
-                    selectedPlayerId = uiState.votedPlayerId,
-                    onVote = viewModel::castVote,
+                    votedPlayerId = uiState.votedPlayerId,
+                    votedCount = uiState.votedCount,
+                    totalCount = uiState.totalVoters,
+                    deadlineMs = uiState.votingDeadlineEpochMs,
+                    onConfirmVote = viewModel::castVote,
                     modifier = Modifier.weight(1f)
                 )
             }
@@ -225,14 +223,122 @@ fun VotingHeader(votedCount: Int, totalCount: Int, deadlineMs: Long) {
 }
 
 @Composable
+fun VotingSection(
+    players: List<Player>,
+    selfPlayerId: String,
+    votedPlayerId: String?,
+    votedCount: Int,
+    totalCount: Int,
+    deadlineMs: Long,
+    onConfirmVote: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var selectedCandidateId by remember(players, votedPlayerId) {
+        mutableStateOf(votedPlayerId)
+    }
+
+    val hasVoted = votedPlayerId != null
+    val targetPlayerId = if (hasVoted) votedPlayerId else selectedCandidateId
+    val targetPlayer = players.find { it.id == targetPlayerId }
+
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp)
+    ) {
+        VotingHeader(
+            votedCount = votedCount,
+            totalCount = totalCount,
+            deadlineMs = deadlineMs
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        VoteGrid(
+            players = players,
+            selfPlayerId = selfPlayerId,
+            selectedPlayerId = targetPlayerId,
+            enabled = !hasVoted,
+            onSelect = { candidateId ->
+                if (!hasVoted) {
+                    selectedCandidateId = candidateId
+                }
+            },
+            modifier = Modifier.weight(1f)
+        )
+
+        Spacer(Modifier.height(10.dp))
+
+        // Confirm vote button or confirmed status banner
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            if (hasVoted) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Text(
+                            text = "✓ Vote submitted for ${targetPlayer?.displayName ?: "player"}!",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = "($votedCount/$totalCount ready)",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            } else {
+                Button(
+                    onClick = {
+                        selectedCandidateId?.let { onConfirmVote(it) }
+                    },
+                    enabled = selectedCandidateId != null,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(52.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    if (targetPlayer != null) {
+                        Text(
+                            "Vote for ${targetPlayer.displayName} 🗳️",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                    } else {
+                        Text(
+                            "Tap a player above to select",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun VoteGrid(
     players: List<Player>,
     selfPlayerId: String,
     selectedPlayerId: String?,
-    onVote: (String) -> Unit,
+    enabled: Boolean,
+    onSelect: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val canVote = selectedPlayerId == null
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         modifier = modifier.padding(horizontal = 12.dp),
@@ -244,8 +350,8 @@ fun VoteGrid(
                 player = player,
                 isSelf = player.id == selfPlayerId,
                 isSelected = player.id == selectedPlayerId,
-                enabled = canVote,
-                onClick = { if (canVote) onVote(player.id) }
+                enabled = enabled,
+                onClick = { onSelect(player.id) }
             )
         }
     }
@@ -281,15 +387,24 @@ fun PlayerVoteCard(
             Box(
                 modifier = Modifier
                     .size(40.dp)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f), CircleShape),
+                    .background(
+                        if (isSelected) MaterialTheme.colorScheme.primary
+                        else MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                        CircleShape
+                    ),
                 contentAlignment = Alignment.Center
             ) {
-                Text(player.displayName.take(2).uppercase(), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                if (isSelected) {
+                    Text("✓", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                } else {
+                    Text(player.displayName.take(2).uppercase(), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
             }
             Spacer(Modifier.height(6.dp))
             Text(
                 text = player.displayName + if (isSelf) " (you)" else "",
                 style = MaterialTheme.typography.bodySmall,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -400,7 +515,7 @@ fun ChatDock(
                 )
                 Spacer(Modifier.width(8.dp))
                 IconButton(onClick = onSend) {
-                    Icon(Icons.Default.Send, "Send")
+                    Icon(Icons.AutoMirrored.Filled.Send, "Send")
                 }
             }
         }

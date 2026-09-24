@@ -41,6 +41,10 @@ class RoomSession(
     var room: Room = initialRoom
         private set
 
+    @Volatile
+    private var currentRoundPhase: RoundPhase = RoundPhase.PLAYING_PREVIEW
+
+
     /** Map of playerId -> WebSocketSession. Multiple tabs not supported (last wins). */
     private val connections = ConcurrentHashMap<String, DefaultWebSocketServerSession>()
 
@@ -272,15 +276,25 @@ class RoomSession(
     private var allVotedSignal = CompletableDeferred<Unit>()
 
     private suspend fun handleCastVote(voterId: String, guessedPlayerId: String) {
-        if (room.state != RoomState.PLAYING) return
+        if (room.state != RoomState.PLAYING) {
+            logger.warn("[${room.joinCode}] Vote rejected from $voterId: room not in PLAYING state (${room.state})")
+            return
+        }
         val currentRound = getCurrentRound() ?: return
-        if (currentRound.phase != RoundPhase.VOTING) return
-        if (currentVotes.containsKey(voterId)) return // already voted
+        if (currentRound.phase != RoundPhase.VOTING) {
+            logger.warn("[${room.joinCode}] Vote rejected from $voterId: not in VOTING phase (current: ${currentRound.phase})")
+            return
+        }
+        if (currentVotes.containsKey(voterId)) {
+            logger.warn("[${room.joinCode}] Duplicate vote ignored from $voterId")
+            return
+        }
 
         currentVotes[voterId] = guessedPlayerId
         val votedCount = currentVotes.size
         val totalCount = room.players.count { it.connected }
 
+        logger.info("[${room.joinCode}] Vote cast by $voterId for $guessedPlayerId ($votedCount/$totalCount)")
         broadcastAll(VoteCountUpdated(votedCount = votedCount, totalCount = totalCount))
 
         if (votedCount >= totalCount) {
@@ -320,6 +334,7 @@ class RoomSession(
             )
             persist()
         }
+        currentRoundPhase = RoundPhase.PLAYING_PREVIEW
         broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
         scope.launch { runSubmissionPhase() }
     }
@@ -418,6 +433,7 @@ class RoomSession(
         val song = room.songPool[index]
 
         // ── Phase 1: PLAYING_PREVIEW ──────────────────────────────────────────
+        currentRoundPhase = RoundPhase.PLAYING_PREVIEW
         broadcastAll(
             RoundPreviewStarted(
                 roundIndex = index,
@@ -433,6 +449,7 @@ class RoomSession(
         delay(31_000L)
 
         // ── Phase 2: VOTING ───────────────────────────────────────────────────
+        currentRoundPhase = RoundPhase.VOTING
         currentVotes.clear()
         allVotedSignal = CompletableDeferred()
 
@@ -458,6 +475,7 @@ class RoomSession(
         }
 
         // ── Phase 3: REVEALING ────────────────────────────────────────────────
+        currentRoundPhase = RoundPhase.REVEALING
         val (voteResults, scoreDeltas) = ScoreEngine.computeRoundResults(song, finalVotes, room.players)
 
         mutex.withLock {
@@ -512,7 +530,7 @@ class RoomSession(
 
     private fun getCurrentRound(): Round? {
         val song = room.songPool.getOrNull(room.currentRoundIndex) ?: return null
-        return Round(roundIndex = room.currentRoundIndex, songEntry = song)
+        return Round(roundIndex = room.currentRoundIndex, songEntry = song, phase = currentRoundPhase)
     }
 
     /**

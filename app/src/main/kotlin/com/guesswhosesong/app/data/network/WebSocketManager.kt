@@ -8,6 +8,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.*
 import org.slf4j.LoggerFactory
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val RECONNECT_DELAY_MS = 2_000L
 private const val MAX_RECONNECT_DELAY_MS = 30_000L
@@ -72,7 +73,7 @@ class WebSocketManager(
                         val sendJob = launch {
                             for (msg in outgoingMessages) {
                                 try { send(Frame.Text(msg)) }
-                                catch (e: Exception) { break }
+                                catch (_: Exception) { break }
                             }
                         }
 
@@ -97,7 +98,7 @@ class WebSocketManager(
 
                 if (!isActive) break
                 _connectionState.value = ConnectionState.RECONNECTING
-                kotlinx.coroutines.delay(delay)
+                delay(delay.milliseconds)
                 delay = (delay * 2).coerceAtMost(MAX_RECONNECT_DELAY_MS)
             }
         }

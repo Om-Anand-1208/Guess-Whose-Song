@@ -2,7 +2,6 @@ package com.guesswhosesong.app.data.spotify
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import androidx.browser.customtabs.CustomTabsIntent
 import com.guesswhosesong.app.di.NetworkModule
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -11,6 +10,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 import javax.inject.Singleton
+import androidx.core.net.toUri
+import androidx.core.content.edit
 
 /**
  * Manages the optional Spotify OAuth flow.
@@ -36,9 +37,9 @@ class SpotifyAuthManager @Inject constructor(
         try {
             val customTabsIntent = CustomTabsIntent.Builder().build()
             customTabsIntent.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            customTabsIntent.launchUrl(context, Uri.parse(authUrl))
+            customTabsIntent.launchUrl(context, authUrl.toUri())
         } catch (_: Exception) {
-            val fallbackIntent = Intent(Intent.ACTION_VIEW, Uri.parse(authUrl)).apply {
+            val fallbackIntent = Intent(Intent.ACTION_VIEW, authUrl.toUri()).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             context.startActivity(fallbackIntent)
@@ -49,12 +50,12 @@ class SpotifyAuthManager @Inject constructor(
      * Called when the deep-link callback arrives (from MainActivity or a NavController handler).
      */
     fun onCallbackReceived(success: Boolean) {
-        prefs.edit().putBoolean("is_connected", success).apply()
+        prefs.edit { putBoolean("is_connected", success) }
         _isConnected.value = success
     }
 
     fun disconnect() {
-        prefs.edit().putBoolean("is_connected", false).apply()
+        prefs.edit { putBoolean("is_connected", false) }
         _isConnected.value = false
     }
 }
