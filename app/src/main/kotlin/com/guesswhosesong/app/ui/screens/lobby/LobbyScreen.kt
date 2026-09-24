@@ -11,7 +11,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.guesswhosesong.shared.models.Player
 import com.guesswhosesong.shared.models.RoomSettings
 
@@ -149,7 +149,7 @@ fun LobbyScreen(
                         .fillMaxWidth()
                         .height(56.dp)
                         .padding(top = 8.dp),
-                    enabled = (room?.players?.size ?: 0) >= 2
+                    enabled = room.players.size >= 2
                 ) {
                     Text("Start Game", style = MaterialTheme.typography.titleMedium)
                 }

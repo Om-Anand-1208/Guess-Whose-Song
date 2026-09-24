@@ -56,7 +56,6 @@ class GameViewModel @Inject constructor(
                     is RoomJoined -> _uiState.update {
                         it.copy(selfPlayerId = message.selfPlayerId, room = message.room)
                     }
-                    is RoomUpdated -> _uiState.update { it.copy(room = message.room) }
 
                     is RoundPreviewStarted -> _uiState.update {
                         it.copy(
