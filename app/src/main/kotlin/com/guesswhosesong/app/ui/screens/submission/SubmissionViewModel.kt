@@ -2,7 +2,7 @@ package com.guesswhosesong.app.ui.screens.submission
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.guesswhosesong.app.data.firebase.FirebaseAuthManager
+import com.guesswhosesong.app.data.player.PlayerIdentityManager
 import com.guesswhosesong.app.data.repository.GameRepository
 import com.guesswhosesong.app.data.spotify.SpotifyAuthManager
 import com.guesswhosesong.shared.dto.*
@@ -11,6 +11,8 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.request.*
+import io.ktor.http.*
+import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -20,6 +22,7 @@ data class SubmissionUiState(
     val selfPlayerId: String = "",
     val searchQuery: String = "",
     val searchResults: List<TrackSearchResult> = emptyList(),
+    val popularSuggestions: List<TrackSearchResult> = emptyList(),
     val spotifySuggestions: List<SpotifySuggestion> = emptyList(),
     val pendingSong: SongEntry? = null,
     val songLocked: Boolean = false,
@@ -35,11 +38,12 @@ sealed class SubmissionEvent {
     data object NavigateToGame : SubmissionEvent()
 }
 
+@OptIn(FlowPreview::class)
 @HiltViewModel
 class SubmissionViewModel @Inject constructor(
     private val gameRepository: GameRepository,
     private val httpClient: HttpClient,
-    private val authManager: FirebaseAuthManager,
+    private val playerIdentityManager: PlayerIdentityManager,
     private val spotifyAuthManager: SpotifyAuthManager
 ) : ViewModel() {
 
@@ -49,10 +53,13 @@ class SubmissionViewModel @Inject constructor(
     private val _events = MutableSharedFlow<SubmissionEvent>()
     val events: SharedFlow<SubmissionEvent> = _events.asSharedFlow()
 
+    private val searchQueryFlow = MutableStateFlow("")
     private val baseUrl = com.guesswhosesong.app.di.NetworkModule.BASE_URL
 
     init {
         observeMessages()
+        loadPopularSuggestions()
+        observeSearchQuery()
     }
 
     private fun observeMessages() {
@@ -111,23 +118,57 @@ class SubmissionViewModel @Inject constructor(
         }
     }
 
+    private fun observeSearchQuery() {
+        viewModelScope.launch {
+            searchQueryFlow
+                .debounce(350)
+                .distinctUntilChanged()
+                .collect { query ->
+                    val trimmed = query.trim()
+                    if (trimmed.isNotBlank()) {
+                        executeSearch(trimmed)
+                    } else {
+                        _uiState.update { it.copy(searchResults = emptyList(), isSearching = false) }
+                    }
+                }
+        }
+    }
+
+    fun loadPopularSuggestions() {
+        viewModelScope.launch {
+            try {
+                val response = httpClient.get("$baseUrl/music/top")
+                if (response.status == HttpStatusCode.OK) {
+                    val result = response.body<Map<String, List<TrackSearchResult>>>()
+                    val tracks = result["tracks"] ?: emptyList()
+                    _uiState.update { it.copy(popularSuggestions = tracks) }
+                }
+            } catch (_: Exception) {
+                // Ignore top suggestions loading error
+            }
+        }
+    }
+
     fun connectSpotify() {
-        val uid = _uiState.value.selfPlayerId
-        if (uid.isNotBlank()) {
-            spotifyAuthManager.launchOAuth(uid)
+        val playerId = _uiState.value.selfPlayerId
+        if (playerId.isNotBlank()) {
+            spotifyAuthManager.launchOAuth(playerId)
         }
     }
 
     fun loadSpotifySuggestions() {
         viewModelScope.launch {
             try {
-                val token = authManager.getIdToken()
-                val result = httpClient.get("$baseUrl/spotify/top") {
+                val token = playerIdentityManager.getToken()
+                val response = httpClient.get("$baseUrl/spotify/top") {
                     header("Authorization", "Bearer $token")
-                }.body<Map<String, List<SpotifySuggestion>>>()
-                val tracks = result["tracks"] ?: emptyList()
-                _uiState.update { it.copy(spotifySuggestions = tracks) }
-            } catch (e: Exception) {
+                }
+                if (response.status == HttpStatusCode.OK) {
+                    val result = response.body<Map<String, List<SpotifySuggestion>>>()
+                    val tracks = result["tracks"] ?: emptyList()
+                    _uiState.update { it.copy(spotifySuggestions = tracks) }
+                }
+            } catch (_: Exception) {
                 // If Spotify top fails, gracefully degrade
             }
         }
@@ -135,23 +176,33 @@ class SubmissionViewModel @Inject constructor(
 
     fun onSearchQueryChanged(query: String) {
         _uiState.update { it.copy(searchQuery = query, error = null) }
+        searchQueryFlow.value = query
     }
 
     fun searchSong() {
         val query = _uiState.value.searchQuery.trim()
         if (query.isBlank()) return
         viewModelScope.launch {
-            _uiState.update { it.copy(isSearching = true, error = null) }
-            try {
-                val result = httpClient.get("$baseUrl/music/search") {
-                    parameter("q", query)
-                }.body<Map<String, List<TrackSearchResult>>>()
-                _uiState.update { it.copy(searchResults = result["tracks"] ?: emptyList()) }
-            } catch (e: Exception) {
-                _uiState.update { it.copy(error = "Search failed: ${e.message}") }
-            } finally {
-                _uiState.update { it.copy(isSearching = false) }
+            executeSearch(query)
+        }
+    }
+
+    private suspend fun executeSearch(query: String) {
+        _uiState.update { it.copy(isSearching = true, error = null) }
+        try {
+            val response = httpClient.get("$baseUrl/music/search") {
+                parameter("q", query)
             }
+            if (response.status == HttpStatusCode.OK) {
+                val result = response.body<Map<String, List<TrackSearchResult>>>()
+                _uiState.update { it.copy(searchResults = result["tracks"] ?: emptyList()) }
+            } else {
+                _uiState.update { it.copy(error = "Search returned status ${response.status.value}") }
+            }
+        } catch (e: Exception) {
+            _uiState.update { it.copy(error = "Search failed: ${e.message}") }
+        } finally {
+            _uiState.update { it.copy(isSearching = false) }
         }
     }
 
@@ -203,13 +254,20 @@ class SubmissionViewModel @Inject constructor(
                     val pick = spotifyList.random()
                     selectSpotifyTrack(pick)
                 } else {
-                    val result = httpClient.get("$baseUrl/music/top").body<Map<String, List<TrackSearchResult>>>()
-                    val tracks = result["tracks"] ?: emptyList()
-                    if (tracks.isEmpty()) {
+                    val topList = if (_uiState.value.popularSuggestions.isNotEmpty()) {
+                        _uiState.value.popularSuggestions
+                    } else {
+                        val resp = httpClient.get("$baseUrl/music/top")
+                        if (resp.status == HttpStatusCode.OK) {
+                            val result = resp.body<Map<String, List<TrackSearchResult>>>()
+                            result["tracks"] ?: emptyList()
+                        } else emptyList()
+                    }
+                    if (topList.isEmpty()) {
                         _uiState.update { it.copy(error = "No suggestions found") }
                         return@launch
                     }
-                    val pick = tracks.random()
+                    val pick = topList.random()
                     selectSong(pick)
                 }
             } catch (e: Exception) {

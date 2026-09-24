@@ -1,7 +1,6 @@
 package com.guesswhosesong.server
 
 import com.guesswhosesong.server.engine.RoomManager
-import com.guesswhosesong.server.firebase.FirebaseAdmin
 import com.guesswhosesong.server.plugins.*
 import com.guesswhosesong.server.redis.RedisClient
 import io.ktor.server.application.*
@@ -17,7 +16,6 @@ fun main() {
 fun Application.module() {
     // Initialize singletons
     val redisClient = RedisClient.fromEnv()
-    FirebaseAdmin.initialize()
     val roomManager = RoomManager(redisClient)
 
     // Install Ktor plugins
@@ -30,4 +28,3 @@ fun Application.module() {
     // Mount routes
     configureRouting(roomManager, redisClient)
 }
-

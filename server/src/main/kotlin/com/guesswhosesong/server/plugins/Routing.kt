@@ -23,5 +23,8 @@ fun Application.configureRouting(roomManager: RoomManager, redisClient: RedisCli
 
         // Spotify OAuth + data routes (optional — gracefully unavailable if not configured)
         spotifyRoutes(redisClient)
+
+        // Client crash logging
+        crashLogRoutes()
     }
 }

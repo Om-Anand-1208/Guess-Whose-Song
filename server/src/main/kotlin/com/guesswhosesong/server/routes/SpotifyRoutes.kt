@@ -1,6 +1,5 @@
 package com.guesswhosesong.server.routes
 
-import com.guesswhosesong.server.firebase.FirebaseAdmin
 import com.guesswhosesong.server.redis.RedisClient
 import com.guesswhosesong.server.spotify.SpotifyClient
 import com.guesswhosesong.server.spotify.SpotifyOAuth
@@ -57,10 +56,10 @@ fun Route.spotifyRoutes(redis: RedisClient) {
             }
         }
 
-        /** Helper to extract and verify the Bearer token from the Authorization header */
+        /** Helper to extract the Bearer token (playerId) from the Authorization header */
         fun ApplicationCall.playerIdFromToken(): String? {
-            val token = request.authorization()?.removePrefix("Bearer ") ?: return null
-            return try { FirebaseAdmin.verifyIdToken(token) } catch (e: Exception) { null }
+            val token = request.authorization()?.removePrefix("Bearer ")?.trim() ?: return null
+            return if (token.isNotBlank()) token else null
         }
 
         fun ApplicationCall.spotifyToken(playerId: String): String? =

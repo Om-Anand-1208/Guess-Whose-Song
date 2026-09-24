@@ -2,7 +2,7 @@ package com.guesswhosesong.app.ui.screens.join
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.guesswhosesong.app.data.firebase.FirebaseAuthManager
+import com.guesswhosesong.app.data.player.PlayerIdentityManager
 import com.guesswhosesong.app.data.repository.RoomRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -23,7 +23,7 @@ sealed class JoinEvent {
 @HiltViewModel
 class JoinViewModel @Inject constructor(
     private val roomRepository: RoomRepository,
-    private val authManager: FirebaseAuthManager
+    private val playerIdentityManager: PlayerIdentityManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(JoinUiState())
@@ -49,19 +49,19 @@ class JoinViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
-                val uid = authManager.signInAnonymously()
-                val token = authManager.getIdToken()
+                val playerId = playerIdentityManager.getPlayerId()
+                val token = playerIdentityManager.getToken()
                 val result = roomRepository.createRoom(name, token)
                 result.fold(
                     onSuccess = { response ->
-                        _events.emit(JoinEvent.NavigateToLobby(response.joinCode, uid, name))
+                        _events.emit(JoinEvent.NavigateToLobby(response.joinCode, playerId, name))
                     },
                     onFailure = { e ->
                         _uiState.update { it.copy(error = "Failed to create room: ${e.message}") }
                     }
                 )
             } catch (e: Exception) {
-                _uiState.update { it.copy(error = "Auth error: ${e.message}") }
+                _uiState.update { it.copy(error = "Error: ${e.message}") }
             } finally {
                 _uiState.update { it.copy(isLoading = false) }
             }
@@ -82,10 +82,10 @@ class JoinViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
-                val uid = authManager.signInAnonymously()
-                _events.emit(JoinEvent.NavigateToLobby(code, uid, name))
+                val playerId = playerIdentityManager.getPlayerId()
+                _events.emit(JoinEvent.NavigateToLobby(code, playerId, name))
             } catch (e: Exception) {
-                _uiState.update { it.copy(error = "Auth error: ${e.message}") }
+                _uiState.update { it.copy(error = "Error: ${e.message}") }
             } finally {
                 _uiState.update { it.copy(isLoading = false) }
             }

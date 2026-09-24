@@ -1,7 +1,6 @@
 package com.guesswhosesong.server.routes
 
 import com.guesswhosesong.server.engine.RoomManager
-import com.guesswhosesong.server.firebase.FirebaseAdmin
 import com.guesswhosesong.server.plugins.RoomNotFoundException
 import com.guesswhosesong.server.plugins.UnauthorizedException
 import com.guesswhosesong.shared.dto.toClientMessage
@@ -41,17 +40,16 @@ fun Route.roomRoutes(roomManager: RoomManager) {
         /**
          * POST /rooms
          * Body: { displayName: String }
-         * Header: Authorization: Bearer <Firebase ID token>
+         * Header: Authorization: Bearer <playerId>
          * Creates a new room and returns the join code.
          */
         post {
-            val token = call.request.authorization()?.removePrefix("Bearer ")
+            val token = call.request.authorization()?.removePrefix("Bearer ")?.trim()
                 ?: throw UnauthorizedException("Missing Authorization header")
-            val playerId = try {
-                FirebaseAdmin.verifyIdToken(token)
-            } catch (e: Exception) {
-                throw UnauthorizedException("Invalid Firebase token")
+            if (token.isBlank()) {
+                throw UnauthorizedException("Invalid token")
             }
+            val playerId = token
 
             val body = call.receive<CreateRoomRequest>()
             if (body.displayName.isBlank() || body.displayName.length > 24) {
@@ -88,22 +86,19 @@ fun Route.roomRoutes(roomManager: RoomManager) {
         }
 
         /**
-         * WS /rooms/{joinCode}/ws?token=<Firebase ID token>&displayName=<name>
+         * WS /rooms/{joinCode}/ws?token=<playerId>&displayName=<name>
          * Upgrades to WebSocket. The token is used to identify the player.
          */
         webSocket("{joinCode}/ws") {
             val joinCode = call.parameters["joinCode"]?.uppercase()
                 ?: return@webSocket close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "Missing joinCode"))
-            val token = call.request.queryParameters["token"]
+            val token = call.request.queryParameters["token"]?.trim()
                 ?: return@webSocket close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "Missing token"))
             val displayName = call.request.queryParameters["displayName"]?.trim()?.take(24)
                 ?: return@webSocket close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "Missing displayName"))
 
-            // Verify Firebase token
-            val playerId = try {
-                FirebaseAdmin.verifyIdToken(token)
-            } catch (e: Exception) {
-                application.log.error("Failed to verify WebSocket token: ${e.message}", e)
+            val playerId = if (token.isNotBlank()) token else {
+                application.log.error("WebSocket connection rejected: blank token")
                 close(CloseReason(CloseReason.Codes.CANNOT_ACCEPT, "Invalid token"))
                 return@webSocket
             }

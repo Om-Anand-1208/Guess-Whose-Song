@@ -2,8 +2,8 @@ package com.guesswhosesong.app.ui.screens.lobby
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.guesswhosesong.app.data.firebase.FirebaseAuthManager
 import com.guesswhosesong.app.data.network.WebSocketManager
+import com.guesswhosesong.app.data.player.PlayerIdentityManager
 import com.guesswhosesong.app.data.repository.GameRepository
 import com.guesswhosesong.app.data.spotify.SpotifyAuthManager
 import com.guesswhosesong.shared.dto.*
@@ -30,7 +30,7 @@ sealed class LobbyEvent {
 @HiltViewModel
 class LobbyViewModel @Inject constructor(
     private val gameRepository: GameRepository,
-    private val authManager: FirebaseAuthManager,
+    private val playerIdentityManager: PlayerIdentityManager,
     private val spotifyAuthManager: SpotifyAuthManager
 ) : ViewModel() {
 
@@ -43,9 +43,9 @@ class LobbyViewModel @Inject constructor(
     fun connect(joinCode: String, displayName: String) {
         viewModelScope.launch {
             try {
-                val uid = authManager.signInAnonymously()
-                val token = authManager.getIdToken()
-                _uiState.update { it.copy(selfPlayerId = uid) }
+                val playerId = playerIdentityManager.getPlayerId()
+                val token = playerIdentityManager.getToken()
+                _uiState.update { it.copy(selfPlayerId = playerId) }
                 gameRepository.connect(joinCode, token, displayName)
                 observeMessages()
             } catch (e: Exception) {
@@ -112,9 +112,9 @@ class LobbyViewModel @Inject constructor(
     }
 
     fun connectSpotify() {
-        val uid = _uiState.value.selfPlayerId
-        if (uid.isNotBlank()) {
-            spotifyAuthManager.launchOAuth(uid)
+        val playerId = _uiState.value.selfPlayerId
+        if (playerId.isNotBlank()) {
+            spotifyAuthManager.launchOAuth(playerId)
         }
     }
 

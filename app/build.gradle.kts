@@ -5,8 +5,6 @@ plugins {
     alias(libs.plugins.kotlin.serialization)
     alias(libs.plugins.hilt)
     alias(libs.plugins.ksp)
-    alias(libs.plugins.google.services)
-    alias(libs.plugins.crashlytics)
 }
 
 android {
@@ -61,13 +59,6 @@ android {
 
 dependencies {
     implementation(project(":shared"))
-
-    // Firebase
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.auth.ktx)
-    implementation(libs.firebase.messaging.ktx)
-    implementation(libs.firebase.crashlytics.ktx)
-    implementation(libs.firebase.analytics.ktx)
 
     // Compose BOM
     implementation(platform(libs.compose.bom))

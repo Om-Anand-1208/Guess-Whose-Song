@@ -28,10 +28,10 @@ class SpotifyAuthManager @Inject constructor(
 
     /**
      * Opens Spotify OAuth in a Chrome Custom Tab.
-     * Pass the Firebase UID as the state param so the server can link the token to the player.
+     * Pass the playerId as the state param so the server can link the token to the player.
      */
-    fun launchOAuth(firebaseUid: String) {
-        val authUrl = "${NetworkModule.BASE_URL}/spotify/auth?state=$firebaseUid"
+    fun launchOAuth(playerId: String) {
+        val authUrl = "${NetworkModule.BASE_URL}/spotify/auth?state=$playerId"
         val customTabsIntent = CustomTabsIntent.Builder().build()
         customTabsIntent.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         customTabsIntent.launchUrl(context, Uri.parse(authUrl))

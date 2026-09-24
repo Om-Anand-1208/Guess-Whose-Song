@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -133,10 +134,17 @@ fun SubmissionScreen(
                     value = uiState.searchQuery,
                     onValueChange = viewModel::onSearchQueryChanged,
                     label = { Text("Search any song") },
+                    placeholder = { Text("e.g. Blinding Lights, Attention...") },
                     singleLine = true,
                     trailingIcon = {
-                        IconButton(onClick = viewModel::searchSong) {
-                            Icon(Icons.Default.Search, "Search")
+                        if (uiState.searchQuery.isNotEmpty()) {
+                            IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
+                                Icon(Icons.Default.Close, "Clear search")
+                            }
+                        } else {
+                            IconButton(onClick = viewModel::searchSong) {
+                                Icon(Icons.Default.Search, "Search")
+                            }
                         }
                     },
                     keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
@@ -148,14 +156,52 @@ fun SubmissionScreen(
 
                 if (uiState.isSearching) {
                     LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                    Spacer(Modifier.height(4.dp))
                 }
 
-                LazyColumn(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    items(uiState.searchResults) { track ->
-                        TrackListItem(track = track, onClick = { viewModel.selectSong(track) })
+                if (uiState.searchQuery.isBlank()) {
+                    if (uiState.popularSuggestions.isNotEmpty()) {
+                        Text(
+                            "Popular Suggestions:",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.padding(vertical = 4.dp)
+                        )
+                        LazyColumn(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            items(uiState.popularSuggestions) { track ->
+                                TrackListItem(track = track, onClick = { viewModel.selectSong(track) })
+                            }
+                        }
+                    } else {
+                        Spacer(Modifier.weight(1f))
+                    }
+                } else {
+                    if (!uiState.isSearching && uiState.searchResults.isEmpty()) {
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .fillMaxWidth(),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "No songs found for \"${uiState.searchQuery}\"",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                            )
+                        }
+                    } else {
+                        LazyColumn(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            items(uiState.searchResults) { track ->
+                                TrackListItem(track = track, onClick = { viewModel.selectSong(track) })
+                            }
+                        }
                     }
                 }
 

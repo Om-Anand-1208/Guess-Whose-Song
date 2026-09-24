@@ -50,9 +50,6 @@ dependencies {
     // Redis
     implementation(libs.redis.jedis)
 
-    // Firebase Admin
-    implementation(libs.firebase.admin)
-
     // Coroutines
     implementation(libs.kotlinx.coroutines.core)
 
@@ -76,4 +73,5 @@ tasks.shadowJar {
     archiveClassifier.set("")
     archiveVersion.set("")
     mergeServiceFiles()
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
 }
