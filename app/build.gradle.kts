@@ -76,6 +76,7 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.activity.compose)
+    implementation("androidx.browser:browser:1.8.0")
 
     // Navigation
     implementation(libs.navigation.compose)
