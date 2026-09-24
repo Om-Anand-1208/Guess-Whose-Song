@@ -31,6 +31,7 @@ data class Player(
     val spotifyConnected: Boolean = false,
     /** Continuously overwritten during submission; auto-locks on timer expiry */
     val pendingSong: SongEntry? = null,
+    val pendingSongs: List<SongEntry> = emptyList(),
     val songLocked: Boolean = false,
     val joinedAt: Long = 0L // epoch millis, used for host reassignment ordering
 )

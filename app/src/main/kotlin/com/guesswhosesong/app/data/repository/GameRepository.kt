@@ -25,6 +25,7 @@ class GameRepository(private val wsManager: WebSocketManager) {
     suspend fun startGame() = wsManager.send(StartGame())
     suspend fun submitSong(song: SongEntry) = wsManager.send(SubmitSong(song = song))
     suspend fun updatePendingSong(song: SongEntry) = wsManager.send(UpdatePendingSong(song = song))
+    suspend fun updatePendingSongs(songs: List<SongEntry>) = wsManager.send(UpdatePendingSongs(songs = songs))
     suspend fun lockSong() = wsManager.send(LockSong())
     suspend fun castVote(guessedPlayerId: String) = wsManager.send(CastVote(guessedPlayerId = guessedPlayerId))
     suspend fun sendChat(text: String) = wsManager.send(SendChat(text = text))

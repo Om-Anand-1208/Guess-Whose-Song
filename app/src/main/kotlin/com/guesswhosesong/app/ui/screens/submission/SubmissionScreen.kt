@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
@@ -14,6 +15,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.font.FontWeight
@@ -32,6 +34,8 @@ fun SubmissionScreen(
     onNavigateToGame: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val songs = if (uiState.pendingSongs.isNotEmpty()) uiState.pendingSongs
+                else listOfNotNull(uiState.pendingSong)
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -42,7 +46,13 @@ fun SubmissionScreen(
     }
 
     Scaffold(
-        topBar = { TopAppBar(title = { Text("Pick Your Song") }) }
+        topBar = {
+            TopAppBar(
+                title = {
+                    Text("Pick Your Songs (${songs.size}/${uiState.maxSongs})")
+                }
+            )
+        }
     ) { padding ->
         Column(
             modifier = Modifier
@@ -81,7 +91,7 @@ fun SubmissionScreen(
                         modifier = Modifier.padding(12.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("\uD83C\uDFA7", style = MaterialTheme.typography.titleMedium)
+                        Text("🎧", style = MaterialTheme.typography.titleMedium)
                         Spacer(Modifier.width(10.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
@@ -95,7 +105,7 @@ fun SubmissionScreen(
                                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
                             )
                         }
-                        Text("\u2192", color = Color(0xFF1DB954), fontWeight = FontWeight.Bold)
+                        Text("→", color = Color(0xFF1DB954), fontWeight = FontWeight.Bold)
                     }
                 }
             } else {
@@ -112,15 +122,23 @@ fun SubmissionScreen(
                         modifier = Modifier.padding(bottom = 12.dp)
                     ) {
                         items(uiState.spotifySuggestions.take(15)) { suggestion ->
+                            val isAdded = songs.any {
+                                it.title.equals(suggestion.title, ignoreCase = true) &&
+                                it.artist.equals(suggestion.artist, ignoreCase = true)
+                            }
                             SuggestionChip(
                                 onClick = { viewModel.selectSpotifyTrack(suggestion) },
                                 label = {
                                     Text(
-                                        "${suggestion.title} - ${suggestion.artist}",
+                                        "${if (isAdded) "✓ " else "+ "}${suggestion.title} - ${suggestion.artist}",
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis
                                     )
-                                }
+                                },
+                                colors = if (isAdded) SuggestionChipDefaults.suggestionChipColors(
+                                    containerColor = Color(0xFF1DB954).copy(alpha = 0.2f),
+                                    labelColor = Color(0xFF1DB954)
+                                ) else SuggestionChipDefaults.suggestionChipColors()
                             )
                         }
                     }
@@ -149,16 +167,57 @@ fun SubmissionScreen(
                 }
             }
 
-            uiState.pendingSong?.let { song ->
-                SelectedSongCard(song = song, locked = uiState.songLocked)
-                Spacer(Modifier.height(12.dp))
+            // Selected Songs List
+            if (songs.isNotEmpty()) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 6.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        "Your Song Picks (${songs.size}/${uiState.maxSongs}):",
+                        style = MaterialTheme.typography.titleSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                    if (!uiState.songLocked && songs.size < uiState.maxSongs) {
+                        Text(
+                            "Pick ${uiState.maxSongs - songs.size} more",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier.padding(bottom = 12.dp)
+                ) {
+                    songs.forEachIndexed { index, song ->
+                        SelectedSongCard(
+                            index = index + 1,
+                            song = song,
+                            locked = uiState.songLocked,
+                            onRemove = { viewModel.removeSong(song.songId) }
+                        )
+                    }
+                }
             }
 
             if (!uiState.songLocked) {
                 OutlinedTextField(
                     value = uiState.searchQuery,
                     onValueChange = viewModel::onSearchQueryChanged,
-                    label = { Text("Search any song") },
+                    label = {
+                        Text(
+                            if (songs.size < uiState.maxSongs)
+                                "Search song ${songs.size + 1} of ${uiState.maxSongs}"
+                            else
+                                "Search songs"
+                        )
+                    },
                     placeholder = { Text("e.g. Blinding Lights, Attention...") },
                     singleLine = true,
                     trailingIcon = {
@@ -198,7 +257,12 @@ fun SubmissionScreen(
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             items(uiState.popularSuggestions) { track ->
-                                TrackListItem(track = track, onClick = { viewModel.selectSong(track) })
+                                val isAdded = songs.any { it.songId == track.id || (it.title.equals(track.title, ignoreCase = true) && it.artist.equals(track.artist, ignoreCase = true)) }
+                                TrackListItem(
+                                    track = track,
+                                    isAdded = isAdded,
+                                    onClick = { viewModel.selectSong(track) }
+                                )
                             }
                         }
                     } else {
@@ -224,7 +288,12 @@ fun SubmissionScreen(
                             verticalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             items(uiState.searchResults) { track ->
-                                TrackListItem(track = track, onClick = { viewModel.selectSong(track) })
+                                val isAdded = songs.any { it.songId == track.id || (it.title.equals(track.title, ignoreCase = true) && it.artist.equals(track.artist, ignoreCase = true)) }
+                                TrackListItem(
+                                    track = track,
+                                    isAdded = isAdded,
+                                    onClick = { viewModel.selectSong(track) }
+                                )
                             }
                         }
                     }
@@ -240,71 +309,172 @@ fun SubmissionScreen(
                         onClick = { viewModel.surpriseMe() },
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("\uD83C\uDFB2 Surprise me")
+                        Text("🎲 Surprise me")
                     }
 
                     Button(
                         onClick = viewModel::lockSong,
-                        enabled = uiState.pendingSong != null,
+                        enabled = songs.isNotEmpty(),
                         modifier = Modifier.weight(1f)
                     ) {
-                        Text("\u2713 Lock in")
+                        Text("✓ Lock in (${songs.size}/${uiState.maxSongs})")
                     }
                 }
             } else {
                 Spacer(Modifier.weight(1f))
                 Text(
-                    "Song locked! Waiting for others...",
+                    "All ${songs.size} song(s) locked! Waiting for others...",
                     style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
                     modifier = Modifier.align(Alignment.CenterHorizontally)
                 )
                 Spacer(Modifier.weight(1f))
             }
 
             uiState.error?.let { error ->
-                Text(error, color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall)
+                Text(
+                    error,
+                    color = MaterialTheme.colorScheme.error,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(top = 4.dp)
+                )
             }
         }
     }
 }
 
 @Composable
-fun SelectedSongCard(song: SongEntry, locked: Boolean) {
+fun SelectedSongCard(
+    index: Int,
+    song: SongEntry,
+    locked: Boolean,
+    onRemove: () -> Unit
+) {
     Card(
         colors = CardDefaults.cardColors(
             containerColor = if (locked) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surface
+            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
         ),
         modifier = Modifier.fillMaxWidth()
     ) {
-        Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(
+                color = if (locked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
+                shape = MaterialTheme.shapes.small,
+                modifier = Modifier.size(28.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text(
+                        text = "#$index",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = if (locked) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
+            Spacer(Modifier.width(10.dp))
             AsyncImage(
                 model = song.albumArtUrl,
                 contentDescription = null,
-                modifier = Modifier.size(56.dp)
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(6.dp))
             )
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(song.title, fontWeight = FontWeight.Bold)
-                Text(song.artist, style = MaterialTheme.typography.bodySmall)
+                Text(
+                    song.title,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    song.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
             }
-            if (locked) Text("\u2713", color = MaterialTheme.colorScheme.primary)
+            if (!locked) {
+                IconButton(
+                    onClick = onRemove,
+                    modifier = Modifier.size(32.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Remove song",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            } else {
+                Text(
+                    "✓ Ready",
+                    style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
         }
     }
 }
 
 @Composable
-fun TrackListItem(track: TrackSearchResult, onClick: () -> Unit) {
+fun TrackListItem(
+    track: TrackSearchResult,
+    isAdded: Boolean,
+    onClick: () -> Unit
+) {
     ListItem(
-        headlineContent = { Text(track.title) },
-        supportingContent = { Text(track.artist) },
+        headlineContent = {
+            Text(
+                track.title,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
+        supportingContent = {
+            Text(
+                track.artist,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        },
         leadingContent = {
             AsyncImage(
                 model = track.albumArtUrl,
                 contentDescription = null,
-                modifier = Modifier.size(48.dp)
+                modifier = Modifier
+                    .size(44.dp)
+                    .clip(RoundedCornerShape(6.dp))
             )
+        },
+        trailingContent = {
+            if (isAdded) {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = MaterialTheme.shapes.small
+                ) {
+                    Text(
+                        "✓ Added",
+                        color = MaterialTheme.colorScheme.onPrimaryContainer,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            } else {
+                FilledTonalButton(
+                    onClick = onClick,
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    modifier = Modifier.height(32.dp)
+                ) {
+                    Text("+ Add", style = MaterialTheme.typography.labelSmall)
+                }
+            }
         },
         modifier = Modifier.clickable(onClick = onClick)
     )

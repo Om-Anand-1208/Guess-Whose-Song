@@ -120,5 +120,22 @@ class RoomSessionLogicTest {
         assertTrue(updated.find { it.id == "p2" }!!.isHost)
         assertFalse(updated.find { it.id == "p3" }!!.isHost)
     }
+
+    // ─── Multi-song Pool Verification ──────────────────────────────────────────
+
+    @Test
+    fun `multi-song pending songs are resolved correctly`() {
+        val s1 = SongEntry("1", "Song A", "Artist 1", previewUrl = "https://ex.com/1.mp3", submitterId = "p1")
+        val s2 = SongEntry("2", "Song B", "Artist 1", previewUrl = "https://ex.com/2.mp3", submitterId = "p1")
+        val s3 = SongEntry("3", "Song C", "Artist 2", previewUrl = "https://ex.com/3.mp3", submitterId = "p2")
+
+        val p1 = player("p1", "Alice").copy(pendingSongs = listOf(s1, s2), songLocked = true)
+        val p2 = player("p2", "Bob").copy(pendingSongs = listOf(s3), songLocked = true)
+
+        val allSongs = listOf(p1, p2).flatMap { it.pendingSongs }
+        assertEquals(3, allSongs.size)
+        assertEquals(2, allSongs.count { it.submitterId == "p1" })
+        assertEquals(1, allSongs.count { it.submitterId == "p2" })
+    }
 }
 

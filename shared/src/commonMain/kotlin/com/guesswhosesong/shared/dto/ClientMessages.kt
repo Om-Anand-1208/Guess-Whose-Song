@@ -35,6 +35,12 @@ data class UpdatePendingSong(
 ) : ClientMessage()
 
 @Serializable
+@SerialName("UPDATE_PENDING_SONGS")
+data class UpdatePendingSongs(
+    val songs: List<SongEntry>
+) : ClientMessage()
+
+@Serializable
 @SerialName("LOCK_SONG")
 class LockSong : ClientMessage() {
     override fun equals(other: Any?): Boolean = other is LockSong

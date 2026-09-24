@@ -24,7 +24,9 @@ data class SubmissionUiState(
     val searchResults: List<TrackSearchResult> = emptyList(),
     val popularSuggestions: List<TrackSearchResult> = emptyList(),
     val spotifySuggestions: List<SpotifySuggestion> = emptyList(),
+    val pendingSongs: List<SongEntry> = emptyList(),
     val pendingSong: SongEntry? = null,
+    val maxSongs: Int = 3,
     val songLocked: Boolean = false,
     val isSearching: Boolean = false,
     val lockedCount: Int = 0,
@@ -69,12 +71,14 @@ class SubmissionViewModel @Inject constructor(
                     is RoomJoined -> {
                         val selfId = message.selfPlayerId
                         val isSpotify = message.room.players.find { it.id == selfId }?.spotifyConnected == true
+                        val maxPicks = message.room.settings.roundLengthPreset.songsPerPlayer
                         _uiState.update {
                             it.copy(
                                 room = message.room,
                                 selfPlayerId = selfId,
                                 totalCount = message.room.players.size,
-                                spotifyConnected = isSpotify
+                                spotifyConnected = isSpotify,
+                                maxSongs = maxPicks
                             )
                         }
                         if (isSpotify) loadSpotifySuggestions()
@@ -83,11 +87,13 @@ class SubmissionViewModel @Inject constructor(
                         val room = message.room
                         val selfId = _uiState.value.selfPlayerId
                         val isSpotify = room.players.find { it.id == selfId }?.spotifyConnected == true
+                        val maxPicks = room.settings.roundLengthPreset.songsPerPlayer
                         _uiState.update {
                             it.copy(
                                 room = room,
                                 totalCount = room.players.size,
-                                spotifyConnected = isSpotify
+                                spotifyConnected = isSpotify,
+                                maxSongs = maxPicks
                             )
                         }
                         if (isSpotify && _uiState.value.spotifySuggestions.isEmpty()) {
@@ -207,6 +213,14 @@ class SubmissionViewModel @Inject constructor(
     }
 
     fun selectSong(track: TrackSearchResult) {
+        val current = _uiState.value.pendingSongs
+        val max = _uiState.value.maxSongs
+
+        if (current.any { it.songId == track.id || (it.title.equals(track.title, ignoreCase = true) && it.artist.equals(track.artist, ignoreCase = true)) }) {
+            _uiState.update { it.copy(error = "\"${track.title}\" is already in your picks") }
+            return
+        }
+
         val entry = SongEntry(
             songId = track.id,
             title = track.title,
@@ -215,11 +229,40 @@ class SubmissionViewModel @Inject constructor(
             previewUrl = track.previewUrl,
             submitterId = _uiState.value.selfPlayerId
         )
-        _uiState.update { it.copy(pendingSong = entry, searchResults = emptyList()) }
-        viewModelScope.launch { gameRepository.updatePendingSong(entry) }
+
+        val updated = if (max == 1) {
+            listOf(entry)
+        } else if (current.size < max) {
+            current + entry
+        } else {
+            _uiState.update { it.copy(error = "You've already picked $max songs. Remove one to add another.") }
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                pendingSongs = updated,
+                pendingSong = updated.firstOrNull(),
+                searchResults = emptyList(),
+                searchQuery = "",
+                error = null
+            )
+        }
+        viewModelScope.launch {
+            gameRepository.updatePendingSongs(updated)
+            gameRepository.updatePendingSong(entry)
+        }
     }
 
     fun selectSpotifyTrack(suggestion: SpotifySuggestion) {
+        val current = _uiState.value.pendingSongs
+        val max = _uiState.value.maxSongs
+
+        if (current.any { it.title.equals(suggestion.title, ignoreCase = true) && it.artist.equals(suggestion.artist, ignoreCase = true) }) {
+            _uiState.update { it.copy(error = "\"${suggestion.title}\" is already in your picks") }
+            return
+        }
+
         val entry = SongEntry(
             songId = "${suggestion.title}_${suggestion.artist}",
             title = suggestion.title,
@@ -228,13 +271,49 @@ class SubmissionViewModel @Inject constructor(
             previewUrl = "", // will be resolved server-side on lock
             submitterId = _uiState.value.selfPlayerId
         )
-        _uiState.update { it.copy(pendingSong = entry, searchResults = emptyList()) }
-        viewModelScope.launch { gameRepository.updatePendingSong(entry) }
+
+        val updated = if (max == 1) {
+            listOf(entry)
+        } else if (current.size < max) {
+            current + entry
+        } else {
+            _uiState.update { it.copy(error = "You've already picked $max songs. Remove one to add another.") }
+            return
+        }
+
+        _uiState.update {
+            it.copy(
+                pendingSongs = updated,
+                pendingSong = updated.firstOrNull(),
+                searchResults = emptyList(),
+                error = null
+            )
+        }
+        viewModelScope.launch {
+            gameRepository.updatePendingSongs(updated)
+            gameRepository.updatePendingSong(entry)
+        }
+    }
+
+    fun removeSong(songId: String) {
+        val current = _uiState.value.pendingSongs
+        val updated = current.filterNot { it.songId == songId }
+        _uiState.update {
+            it.copy(
+                pendingSongs = updated,
+                pendingSong = updated.firstOrNull(),
+                error = null
+            )
+        }
+        viewModelScope.launch {
+            gameRepository.updatePendingSongs(updated)
+        }
     }
 
     fun lockSong() {
-        if (_uiState.value.pendingSong == null) {
-            _uiState.update { it.copy(error = "Pick a song first") }
+        val current = _uiState.value.pendingSongs
+        if (current.isEmpty() && _uiState.value.pendingSong == null) {
+            _uiState.update { it.copy(error = "Pick at least one song first") }
             return
         }
         _uiState.update { it.copy(songLocked = true) }
@@ -242,34 +321,85 @@ class SubmissionViewModel @Inject constructor(
     }
 
     /**
-     * Surprise Me: picks from user's personal Spotify top tracks if connected,
-     * or popular top tracks from the server if not.
+     * Surprise Me: fills empty pick slots using personal Spotify top tracks if connected,
+     * or popular top tracks from the server if not. If already full, replaces all with a fresh set.
      */
     fun surpriseMe() {
         viewModelScope.launch {
             _uiState.update { it.copy(isSearching = true, error = null) }
             try {
-                val spotifyList = _uiState.value.spotifySuggestions
-                if (_uiState.value.spotifyConnected && spotifyList.isNotEmpty()) {
-                    val pick = spotifyList.random()
-                    selectSpotifyTrack(pick)
-                } else {
-                    val topList = if (_uiState.value.popularSuggestions.isNotEmpty()) {
-                        _uiState.value.popularSuggestions
-                    } else {
-                        val resp = httpClient.get("$baseUrl/music/top")
-                        if (resp.status == HttpStatusCode.OK) {
-                            val result = resp.body<Map<String, List<TrackSearchResult>>>()
-                            result["tracks"] ?: emptyList()
-                        } else emptyList()
-                    }
-                    if (topList.isEmpty()) {
-                        _uiState.update { it.copy(error = "No suggestions found") }
-                        return@launch
-                    }
-                    val pick = topList.random()
-                    selectSong(pick)
+                val max = _uiState.value.maxSongs
+                val current = _uiState.value.pendingSongs.toMutableList()
+                val slotsNeeded = if (current.size >= max) max else (max - current.size)
+                if (current.size >= max) {
+                    current.clear()
                 }
+
+                val spotifyList = _uiState.value.spotifySuggestions
+                val topList = if (_uiState.value.popularSuggestions.isNotEmpty()) {
+                    _uiState.value.popularSuggestions
+                } else {
+                    val resp = httpClient.get("$baseUrl/music/top")
+                    if (resp.status == HttpStatusCode.OK) {
+                        val result = resp.body<Map<String, List<TrackSearchResult>>>()
+                        result["tracks"] ?: emptyList()
+                    } else emptyList()
+                }
+
+                val newEntries = mutableListOf<SongEntry>()
+                if (_uiState.value.spotifyConnected && spotifyList.isNotEmpty()) {
+                    val candidates = spotifyList.filterNot { s ->
+                        current.any { it.title.equals(s.title, ignoreCase = true) && it.artist.equals(s.artist, ignoreCase = true) }
+                    }.shuffled()
+                    for (cand in candidates.take(slotsNeeded)) {
+                        newEntries.add(
+                            SongEntry(
+                                songId = "${cand.title}_${cand.artist}",
+                                title = cand.title,
+                                artist = cand.artist,
+                                albumArtUrl = cand.albumArtUrl,
+                                previewUrl = "",
+                                submitterId = _uiState.value.selfPlayerId
+                            )
+                        )
+                    }
+                }
+
+                val stillNeeded = slotsNeeded - newEntries.size
+                if (stillNeeded > 0 && topList.isNotEmpty()) {
+                    val candidates = topList.filterNot { t ->
+                        current.any { it.songId == t.id } || newEntries.any { it.songId == t.id }
+                    }.shuffled()
+                    for (track in candidates.take(stillNeeded)) {
+                        newEntries.add(
+                            SongEntry(
+                                songId = track.id,
+                                title = track.title,
+                                artist = track.artist,
+                                albumArtUrl = track.albumArtUrl,
+                                previewUrl = track.previewUrl,
+                                submitterId = _uiState.value.selfPlayerId
+                            )
+                        )
+                    }
+                }
+
+                if (newEntries.isEmpty() && current.isEmpty()) {
+                    _uiState.update { it.copy(error = "No suggestions available") }
+                    return@launch
+                }
+
+                val updated = current + newEntries
+                _uiState.update {
+                    it.copy(
+                        pendingSongs = updated,
+                        pendingSong = updated.firstOrNull(),
+                        searchResults = emptyList(),
+                        error = null
+                    )
+                }
+                gameRepository.updatePendingSongs(updated)
+                updated.firstOrNull()?.let { gameRepository.updatePendingSong(it) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "Surprise Me failed: ${e.message}") }
             } finally {

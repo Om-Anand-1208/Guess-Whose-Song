@@ -172,6 +172,7 @@ class RoomSession(
             is UpdateSettings -> handleUpdateSettings(playerId, message.settings)
             is KickPlayer -> handleKickPlayer(playerId, message.targetPlayerId)
             is UpdatePendingSong -> handleUpdatePendingSong(playerId, message.song)
+            is UpdatePendingSongs -> handleUpdatePendingSongs(playerId, message.songs)
             is LockSong -> handleLockSong(playerId)
             is CastVote -> handleCastVote(playerId, message.guessedPlayerId)
             is SendChat -> handleSendChat(playerId, player.displayName, message.text)
@@ -235,15 +236,44 @@ class RoomSession(
 
     private suspend fun handleUpdatePendingSong(playerId: String, song: SongEntry) {
         if (room.state != RoomState.SUBMISSION) return
+        val entry = song.copy(submitterId = playerId)
+        val maxSongs = room.settings.roundLengthPreset.songsPerPlayer
 
         mutex.withLock {
             room = room.copy(players = room.players.map { p ->
-                if (p.id == playerId) p.copy(pendingSong = song.copy(submitterId = playerId))
+                if (p.id == playerId) {
+                    val updatedSongs = if (p.pendingSongs.any { it.songId == entry.songId || (it.title.equals(entry.title, ignoreCase = true) && it.artist.equals(entry.artist, ignoreCase = true)) }) {
+                        p.pendingSongs
+                    } else if (p.pendingSongs.size < maxSongs) {
+                        p.pendingSongs + entry
+                    } else {
+                        listOf(entry)
+                    }
+                    p.copy(pendingSong = entry, pendingSongs = updatedSongs)
+                }
                 else p
             })
             // No persist on every reroll — only persist on lock or timer expiry
         }
         // Broadcast progress
+        val lockedCount = room.players.count { it.songLocked }
+        broadcastAll(SubmissionProgress(lockedCount = lockedCount, totalCount = room.players.size))
+    }
+
+    private suspend fun handleUpdatePendingSongs(playerId: String, songs: List<SongEntry>) {
+        if (room.state != RoomState.SUBMISSION) return
+        val maxSongs = room.settings.roundLengthPreset.songsPerPlayer
+        val limited = songs.take(maxSongs).map { it.copy(submitterId = playerId) }
+
+        mutex.withLock {
+            room = room.copy(players = room.players.map { p ->
+                if (p.id == playerId) p.copy(
+                    pendingSongs = limited,
+                    pendingSong = limited.firstOrNull()
+                )
+                else p
+            })
+        }
         val lockedCount = room.players.count { it.songLocked }
         broadcastAll(SubmissionProgress(lockedCount = lockedCount, totalCount = room.players.size))
     }
@@ -329,7 +359,7 @@ class RoomSession(
                 songPool = emptyList(),
                 currentRoundIndex = 0,
                 players = room.players.map { p ->
-                    p.copy(score = 0, pendingSong = null, songLocked = false)
+                    p.copy(score = 0, pendingSong = null, pendingSongs = emptyList(), songLocked = false)
                 }
             )
             persist()
@@ -379,7 +409,8 @@ class RoomSession(
         // Auto-lock any players who haven't locked in
         mutex.withLock {
             room = room.copy(players = room.players.map { p ->
-                if (!p.songLocked && p.pendingSong != null) p.copy(songLocked = true)
+                val hasSongs = p.pendingSongs.isNotEmpty() || p.pendingSong != null
+                if (!p.songLocked && hasSongs) p.copy(songLocked = true)
                 else p
             })
         }
@@ -388,13 +419,19 @@ class RoomSession(
         logger.info("[${room.joinCode}] Resolving Deezer preview URLs...")
         val resolvedEntries = mutableListOf<SongEntry>()
         room.players.filter { it.songLocked }.forEach { player ->
-            val pending = player.pendingSong ?: return@forEach
-            val resolved = musicService.resolveEntry(pending)
-            if (resolved != null) {
-                resolvedEntries.add(resolved.copy(submitterId = player.id))
+            val songsToResolve = if (player.pendingSongs.isNotEmpty()) {
+                player.pendingSongs
             } else {
-                logger.warn("[${room.joinCode}] No Deezer match for: ${pending.title} - ${pending.artist}")
-                // Song is dropped from the pool (player chose an unresolvable song)
+                listOfNotNull(player.pendingSong)
+            }
+            songsToResolve.forEach { pending ->
+                val resolved = musicService.resolveEntry(pending)
+                if (resolved != null) {
+                    resolvedEntries.add(resolved.copy(submitterId = player.id))
+                } else {
+                    logger.warn("[${room.joinCode}] No Deezer match for: ${pending.title} - ${pending.artist}")
+                    // Song is dropped from the pool (player chose an unresolvable song)
+                }
             }
         }
 
@@ -454,7 +491,7 @@ class RoomSession(
         allVotedSignal = CompletableDeferred()
 
         val votingDeadline = System.currentTimeMillis() + room.settings.votingTimerSeconds * 1000L
-        val players = room.players.map { it.copy(pendingSong = null) } // anonymized
+        val players = room.players.map { it.copy(pendingSong = null, pendingSongs = emptyList()) } // anonymized
 
         broadcastAll(
             VotingStarted(
@@ -540,7 +577,7 @@ class RoomSession(
     private fun sanitizedRoom(playerId: String): Room {
         return room.copy(
             songPool = room.songPool.map { it.copy(submitterId = "") },
-            players = room.players.map { it.copy(pendingSong = null) }
+            players = room.players.map { it.copy(pendingSong = null, pendingSongs = emptyList()) }
         )
     }
 
@@ -551,7 +588,7 @@ class RoomSession(
     private fun sanitizedRoomForBroadcast(): Room {
         return room.copy(
             songPool = room.songPool.map { it.copy(submitterId = "") },
-            players = room.players.map { it.copy(pendingSong = null) }
+            players = room.players.map { it.copy(pendingSong = null, pendingSongs = emptyList()) }
         )
     }
 
