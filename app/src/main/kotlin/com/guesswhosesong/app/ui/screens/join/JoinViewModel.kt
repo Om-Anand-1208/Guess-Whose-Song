@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.guesswhosesong.app.data.player.PlayerIdentityManager
 import com.guesswhosesong.app.data.repository.RoomRepository
+import com.guesswhosesong.app.data.spotify.SpotifyAuthManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -13,7 +14,8 @@ data class JoinUiState(
     val displayName: String = "",
     val joinCode: String = "",
     val isLoading: Boolean = false,
-    val error: String? = null
+    val error: String? = null,
+    val isSpotifyConnected: Boolean = false
 )
 
 sealed class JoinEvent {
@@ -23,7 +25,8 @@ sealed class JoinEvent {
 @HiltViewModel
 class JoinViewModel @Inject constructor(
     private val roomRepository: RoomRepository,
-    private val playerIdentityManager: PlayerIdentityManager
+    private val playerIdentityManager: PlayerIdentityManager,
+    private val spotifyAuthManager: SpotifyAuthManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(JoinUiState())
@@ -31,6 +34,23 @@ class JoinViewModel @Inject constructor(
 
     private val _events = MutableSharedFlow<JoinEvent>()
     val events: SharedFlow<JoinEvent> = _events.asSharedFlow()
+
+    init {
+        viewModelScope.launch {
+            spotifyAuthManager.isConnected.collect { connected ->
+                _uiState.update { it.copy(isSpotifyConnected = connected) }
+            }
+        }
+    }
+
+    fun connectSpotify() {
+        val playerId = playerIdentityManager.getPlayerId()
+        spotifyAuthManager.launchOAuth(playerId)
+    }
+
+    fun disconnectSpotify() {
+        spotifyAuthManager.disconnect()
+    }
 
     fun onDisplayNameChanged(name: String) {
         _uiState.update { it.copy(displayName = name.take(24), error = null) }

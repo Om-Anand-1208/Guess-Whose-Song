@@ -97,29 +97,53 @@ fun SubmissionScreen(
                         Text("\u2192", color = Color(0xFF1DB954), fontWeight = FontWeight.Bold)
                     }
                 }
-            } else if (uiState.spotifySuggestions.isNotEmpty()) {
-                Text(
-                    "Your Spotify Top Songs:",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFF1DB954),
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(bottom = 12.dp)
-                ) {
-                    items(uiState.spotifySuggestions.take(15)) { suggestion ->
-                        SuggestionChip(
-                            onClick = { viewModel.selectSpotifyTrack(suggestion) },
-                            label = {
-                                Text(
-                                    "${suggestion.title} - ${suggestion.artist}",
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                            }
+            } else {
+                if (uiState.spotifySuggestions.isNotEmpty()) {
+                    Text(
+                        "Your Spotify Top Songs:",
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color(0xFF1DB954),
+                        modifier = Modifier.padding(bottom = 4.dp)
+                    )
+                    LazyRow(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    ) {
+                        items(uiState.spotifySuggestions.take(15)) { suggestion ->
+                            SuggestionChip(
+                                onClick = { viewModel.selectSpotifyTrack(suggestion) },
+                                label = {
+                                    Text(
+                                        "${suggestion.title} - ${suggestion.artist}",
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                            )
+                        }
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            "✓ Spotify Connected",
+                            style = MaterialTheme.typography.labelMedium,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color(0xFF1DB954)
                         )
+                        Spacer(Modifier.weight(1f))
+                        TextButton(onClick = viewModel::loadSpotifySuggestions) {
+                            Text(
+                                "Refresh top songs",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFF1DB954)
+                            )
+                        }
                     }
                 }
             }

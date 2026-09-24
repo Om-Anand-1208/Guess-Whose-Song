@@ -22,8 +22,9 @@ import javax.inject.Singleton
 class SpotifyAuthManager @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
+    private val prefs = context.getSharedPreferences("gws_spotify", Context.MODE_PRIVATE)
 
-    private val _isConnected = MutableStateFlow(false)
+    private val _isConnected = MutableStateFlow(prefs.getBoolean("is_connected", false))
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
 
     /**
@@ -41,6 +42,12 @@ class SpotifyAuthManager @Inject constructor(
      * Called when the deep-link callback arrives (from MainActivity or a NavController handler).
      */
     fun onCallbackReceived(success: Boolean) {
+        prefs.edit().putBoolean("is_connected", success).apply()
         _isConnected.value = success
+    }
+
+    fun disconnect() {
+        prefs.edit().putBoolean("is_connected", false).apply()
+        _isConnected.value = false
     }
 }

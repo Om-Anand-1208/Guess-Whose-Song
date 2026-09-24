@@ -1,12 +1,17 @@
 package com.guesswhosesong.app.ui.screens.join
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -23,6 +28,7 @@ fun JoinScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val keyboard = LocalSoftwareKeyboardController.current
+    val scrollState = rememberScrollState()
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -36,14 +42,15 @@ fun JoinScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(32.dp),
+            .verticalScroll(scrollState)
+            .padding(horizontal = 28.dp, vertical = 32.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
         Text(
             text = "\uD83C\uDFB5",
-            fontSize = 64.sp,
-            modifier = Modifier.padding(bottom = 8.dp)
+            fontSize = 56.sp,
+            modifier = Modifier.padding(bottom = 6.dp)
         )
         Text(
             text = "Guess Whose Song",
@@ -55,8 +62,77 @@ fun JoinScreen(
             text = "The anonymous music guessing game",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-            modifier = Modifier.padding(bottom = 40.dp)
+            modifier = Modifier.padding(bottom = 24.dp)
         )
+
+        // Spotify Connect / Login Button
+        if (!uiState.isSpotifyConnected) {
+            Button(
+                onClick = viewModel::connectSpotify,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFF1DB954)
+                ),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp)
+            ) {
+                Text(
+                    "\uD83C\uDFA7 Connect with Spotify",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp
+                )
+            }
+            Text(
+                "Link your Spotify to use your top songs in games",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+                modifier = Modifier.padding(top = 4.dp, bottom = 20.dp),
+                textAlign = TextAlign.Center
+            )
+        } else {
+            OutlinedCard(
+                colors = CardDefaults.outlinedCardColors(
+                    containerColor = Color(0xFF1DB954).copy(alpha = 0.10f)
+                ),
+                border = CardDefaults.outlinedCardBorder().copy(
+                    brush = SolidColor(Color(0xFF1DB954))
+                ),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 20.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("\u2713", color = Color(0xFF1DB954), fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                    Spacer(Modifier.width(8.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            "Spotify Connected",
+                            fontWeight = FontWeight.Bold,
+                            color = Color(0xFF1DB954),
+                            fontSize = 14.sp
+                        )
+                        Text(
+                            "Your top tracks will appear in rounds",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+                        )
+                    }
+                    TextButton(onClick = viewModel::disconnectSpotify) {
+                        Text(
+                            "Disconnect",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                    }
+                }
+            }
+        }
 
         OutlinedTextField(
             value = uiState.displayName,
@@ -70,7 +146,7 @@ fun JoinScreen(
             modifier = Modifier.fillMaxWidth()
         )
 
-        Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(20.dp))
 
         Button(
             onClick = {

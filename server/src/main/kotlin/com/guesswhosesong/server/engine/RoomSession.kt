@@ -27,7 +27,7 @@ private const val SUBMISSION_TIMEOUT_MS = 120_000L // 2 minutes for submission p
  */
 class RoomSession(
     initialRoom: Room,
-    redisClient: RedisClient
+    private val redisClient: RedisClient
 ) {
     private val logger = LoggerFactory.getLogger(RoomSession::class.java)
     private val mutex = Mutex()
@@ -59,12 +59,14 @@ class RoomSession(
         // Cancel any pending disconnect grace timer
         disconnectJobs.remove(playerId)?.cancel()
 
+        val hasSpotify = redisClient.get("spotify_token:$playerId") != null
+
         mutex.withLock {
             val existingPlayer = room.players.find { it.id == playerId }
             room = if (existingPlayer != null) {
                 // Reconnect: mark as connected
                 room.copy(players = room.players.map { p ->
-                    if (p.id == playerId) p.copy(connected = true) else p
+                    if (p.id == playerId) p.copy(connected = true, spotifyConnected = p.spotifyConnected || hasSpotify) else p
                 })
             } else {
                 // New player joining
@@ -72,6 +74,7 @@ class RoomSession(
                     id = playerId,
                     displayName = displayName,
                     isHost = room.players.isEmpty(),
+                    spotifyConnected = hasSpotify,
                     joinedAt = System.currentTimeMillis()
                 )
                 room.copy(players = room.players + newPlayer)
