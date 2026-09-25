@@ -4,6 +4,9 @@ import com.guesswhosesong.shared.models.*
 
 object ScoreEngine {
 
+    const val DECOY_ID = GameConstants.DECOY_ID
+    const val DECOY_NAME = GameConstants.DECOY_NAME
+
     /**
      * Compute vote results and score deltas for the current round.
      *
@@ -18,30 +21,81 @@ object ScoreEngine {
         players: List<Player>
     ): Pair<List<VoteResult>, List<ScoreDelta>> {
         val playerById = players.associateBy { it.id }
+        val isDecoySong = songEntry.submitterId == DECOY_ID
 
+        // 1. Evaluate individual votes
         val voteResults = players.map { voter ->
             val guessedId = votes[voter.id] ?: ""
-            val guessedPlayer = playerById[guessedId]
+            val guessedPlayerName = when (guessedId) {
+                DECOY_ID -> DECOY_NAME
+                else -> playerById[guessedId]?.displayName ?: "(no vote)"
+            }
+
+            val isSubmitter = (voter.id == songEntry.submitterId)
+            // Submitter can never score by voting on their own song
+            val isCorrect = if (isSubmitter) {
+                false
+            } else {
+                guessedId == songEntry.submitterId
+            }
+
             VoteResult(
                 voterId = voter.id,
                 voterName = voter.displayName,
                 guessedPlayerId = guessedId,
-                guessedPlayerName = guessedPlayer?.displayName ?: "(no vote)",
-                correct = guessedId == songEntry.submitterId
+                guessedPlayerName = guessedPlayerName,
+                correct = isCorrect
             )
         }
 
-        val scoreDeltas = voteResults
+        val scoreDeltas = mutableListOf<ScoreDelta>()
+
+        // 2. Award 1 point to each correct guesser (who isn't the submitter)
+        voteResults
             .filter { it.correct }
-            .map { result ->
-                val voter = playerById[result.voterId]!!
-                ScoreDelta(
-                    playerId = voter.id,
-                    playerName = voter.displayName,
-                    delta = 1,
-                    newTotal = voter.score + 1
+            .forEach { result ->
+                val voter = playerById[result.voterId] ?: return@forEach
+                scoreDeltas.add(
+                    ScoreDelta(
+                        playerId = voter.id,
+                        playerName = voter.displayName,
+                        delta = 1,
+                        newTotal = voter.score + 1
+                    )
                 )
             }
+
+        // 3. Submitter bonus: 1 point if it's a real player's song and NO ONE else guessed them!
+        if (!isDecoySong) {
+            val submitterPlayer = playerById[songEntry.submitterId]
+            if (submitterPlayer != null) {
+                val otherPlayers = players.filter { it.id != songEntry.submitterId }
+                val othersGuessedSubmitter = otherPlayers.count { votes[it.id] == songEntry.submitterId }
+                if (othersGuessedSubmitter == 0) {
+                    val existingDelta = scoreDeltas.find { it.playerId == submitterPlayer.id }
+                    if (existingDelta != null) {
+                        scoreDeltas.remove(existingDelta)
+                        scoreDeltas.add(
+                            ScoreDelta(
+                                playerId = submitterPlayer.id,
+                                playerName = submitterPlayer.displayName,
+                                delta = existingDelta.delta + 1,
+                                newTotal = submitterPlayer.score + existingDelta.delta + 1
+                            )
+                        )
+                    } else {
+                        scoreDeltas.add(
+                            ScoreDelta(
+                                playerId = submitterPlayer.id,
+                                playerName = submitterPlayer.displayName,
+                                delta = 1,
+                                newTotal = submitterPlayer.score + 1
+                            )
+                        )
+                    }
+                }
+            }
+        }
 
         return Pair(voteResults, scoreDeltas)
     }

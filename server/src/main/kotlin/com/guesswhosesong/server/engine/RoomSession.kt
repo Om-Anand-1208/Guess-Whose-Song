@@ -102,6 +102,37 @@ class RoomSession(
             sendToPlayer(playerId, ChatReceived(message = msg))
         }
 
+        // If game is in progress, sync current round to the player
+        if (room.state == RoomState.PLAYING) {
+            val song = room.songPool.getOrNull(room.currentRoundIndex)
+            if (song != null) {
+                if (currentRoundPhase == RoundPhase.PLAYING_PREVIEW) {
+                    sendToPlayer(
+                        playerId,
+                        RoundPreviewStarted(
+                            roundIndex = room.currentRoundIndex,
+                            totalRounds = room.songPool.size,
+                            title = song.title,
+                            artist = song.artist,
+                            albumArtUrl = song.albumArtUrl,
+                            previewUrl = song.previewUrl,
+                            previewDurationMs = 30_000L
+                        )
+                    )
+                } else if (currentRoundPhase == RoundPhase.VOTING) {
+                    val players = room.players.map { it.copy(pendingSong = null, pendingSongs = emptyList()) }
+                    sendToPlayer(
+                        playerId,
+                        VotingStarted(
+                            roundIndex = room.currentRoundIndex,
+                            players = players,
+                            votingDeadlineEpochMillis = currentVotingDeadline
+                        )
+                    )
+                }
+            }
+        }
+
         logger.info("[${room.joinCode}] Player connected: $displayName ($playerId)")
     }
 
@@ -246,10 +277,8 @@ class RoomSession(
                         p.pendingSongs
                     } else if (p.pendingSongs.size < maxSongs) {
                         p.pendingSongs + entry
-                    } else if (maxSongs == 1) {
-                        listOf(entry)
                     } else {
-                        p.pendingSongs
+                        listOf(entry)
                     }
                     p.copy(pendingSong = entry, pendingSongs = updatedSongs)
                 }
@@ -306,6 +335,7 @@ class RoomSession(
     /** Accumulates votes for the current round */
     private val currentVotes = ConcurrentHashMap<String, String>() // voterId -> guessedPlayerId
     private var allVotedSignal = CompletableDeferred<Unit>()
+    private var currentVotingDeadline: Long = 0L
 
     private suspend fun handleCastVote(voterId: String, guessedPlayerId: String) {
         if (room.state != RoomState.PLAYING) {
@@ -390,9 +420,10 @@ class RoomSession(
 
     // ─── State Machine ────────────────────────────────────────────────────────
 
-    private val submissionCompleteSignal = CompletableDeferred<Unit>()
+    private var submissionCompleteSignal = CompletableDeferred<Unit>()
 
     private suspend fun runSubmissionPhase() {
+        submissionCompleteSignal = CompletableDeferred()
         val songsPerPlayer = room.settings.roundLengthPreset.songsPerPlayer
         val deadlineMs = System.currentTimeMillis() + SUBMISSION_TIMEOUT_MS
 
@@ -443,6 +474,33 @@ class RoomSession(
             return
         }
 
+        // Add 1-2 Decoy tracks into the pool to keep deduction guessing balanced
+        try {
+            val numDecoys = if (resolvedEntries.size <= 4) 1 else 2
+            val topTracks = musicService.getTopTracks().filterNot { top ->
+                resolvedEntries.any {
+                    it.title.equals(top.title, ignoreCase = true) && it.artist.equals(top.artist, ignoreCase = true)
+                }
+            }.shuffled().take(numDecoys)
+
+            for (track in topTracks) {
+                val decoyEntry = SongEntry(
+                    songId = track.id,
+                    title = track.title,
+                    artist = track.artist,
+                    albumArtUrl = track.albumArtUrl,
+                    previewUrl = track.previewUrl,
+                    submitterId = ScoreEngine.DECOY_ID
+                )
+                val resolvedDecoy = musicService.resolveEntry(decoyEntry) ?: decoyEntry
+                if (resolvedDecoy.previewUrl.isNotBlank()) {
+                    resolvedEntries.add(resolvedDecoy.copy(submitterId = ScoreEngine.DECOY_ID))
+                }
+            }
+        } catch (e: Exception) {
+            logger.warn("[${room.joinCode}] Could not inject decoy tracks: ${e.message}")
+        }
+
         val shuffled = resolvedEntries.shuffled()
         mutex.withLock {
             room = room.copy(
@@ -453,6 +511,9 @@ class RoomSession(
             persist()
         }
         broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
+
+        // Allow clients time to receive RoomUpdated and navigate from submission to game screen
+        delay(1_500)
 
         runPlayingPhase()
     }
@@ -493,6 +554,7 @@ class RoomSession(
         allVotedSignal = CompletableDeferred()
 
         val votingDeadline = System.currentTimeMillis() + room.settings.votingTimerSeconds * 1000L
+        currentVotingDeadline = votingDeadline
         val players = room.players.map { it.copy(pendingSong = null, pendingSongs = emptyList()) } // anonymized
 
         broadcastAll(
@@ -524,11 +586,17 @@ class RoomSession(
             persist()
         }
 
+        val submitterName = if (song.submitterId == ScoreEngine.DECOY_ID) {
+            ScoreEngine.DECOY_NAME
+        } else {
+            room.players.find { it.id == song.submitterId }?.displayName ?: "Unknown"
+        }
+
         broadcastAll(
             RoundRevealed(
                 roundIndex = index,
                 songEntry = song, // includes submitterId — now safe to reveal
-                submitterName = room.players.find { it.id == song.submitterId }?.displayName ?: "Unknown",
+                submitterName = submitterName,
                 voteResults = voteResults,
                 scoreDeltas = scoreDeltas
             )

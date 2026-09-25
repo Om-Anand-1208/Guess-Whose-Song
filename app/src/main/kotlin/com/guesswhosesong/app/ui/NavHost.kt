@@ -59,11 +59,11 @@ fun GWSNavHost() {
                 displayName = displayName,
                 onNavigateToSubmission = {
                     navController.navigate(Routes.SUBMISSION) {
-                        popUpTo(Routes.JOIN)
+                        popUpTo(Routes.LOBBY) { inclusive = true }
                     }
                 },
                 onKicked = {
-                    navController.navigate(Routes.JOIN) { popUpTo(Routes.JOIN) { inclusive = true } }
+                    navController.navigate(Routes.JOIN) { popUpTo(0) { inclusive = true } }
                 }
             )
         }
@@ -72,7 +72,7 @@ fun GWSNavHost() {
             SubmissionScreen(
                 onNavigateToGame = {
                     navController.navigate(Routes.GAME) {
-                        popUpTo(Routes.JOIN)
+                        popUpTo(Routes.SUBMISSION) { inclusive = true }
                     }
                 }
             )
@@ -82,12 +82,12 @@ fun GWSNavHost() {
             GameScreen(
                 onNavigateToResults = {
                     navController.navigate(Routes.RESULTS) {
-                        popUpTo(Routes.JOIN)
+                        popUpTo(Routes.GAME) { inclusive = true }
                     }
                 },
                 onNavigateToSubmission = {
                     navController.navigate(Routes.SUBMISSION) {
-                        popUpTo(Routes.JOIN)
+                        popUpTo(Routes.GAME) { inclusive = true }
                     }
                 }
             )
@@ -97,11 +97,11 @@ fun GWSNavHost() {
             ResultsScreen(
                 onNavigateToSubmission = {
                     navController.navigate(Routes.SUBMISSION) {
-                        popUpTo(Routes.JOIN)
+                        popUpTo(Routes.RESULTS) { inclusive = true }
                     }
                 },
                 onNavigateToJoin = {
-                    navController.navigate(Routes.JOIN) { popUpTo(Routes.JOIN) { inclusive = true } }
+                    navController.navigate(Routes.JOIN) { popUpTo(0) { inclusive = true } }
                 }
             )
         }

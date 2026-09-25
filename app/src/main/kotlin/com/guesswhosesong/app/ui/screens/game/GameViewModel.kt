@@ -26,7 +26,8 @@ data class GameUiState(
     val votingDeadlineEpochMs: Long = 0L,
     val revealData: RoundRevealed? = null,
     val chatMessages: List<ChatMessage> = emptyList(),
-    val room: Room? = null
+    val room: Room? = null,
+    val isSelfSong: Boolean = false
 )
 
 sealed class GameEvent {
@@ -46,6 +47,39 @@ class GameViewModel @Inject constructor(
     val events: SharedFlow<GameEvent> = _events.asSharedFlow()
 
     init {
+        val cachedRoom = gameRepository.currentRoom.value
+        val selfId = gameRepository.selfPlayerId.value
+        val cachedPreview = gameRepository.currentRoundPreview.value
+        val cachedVoting = gameRepository.currentVotingStarted.value
+        val cachedReveal = gameRepository.currentRoundRevealed.value
+
+        val previewTitle = cachedPreview?.title ?: ""
+        val previewArtist = cachedPreview?.artist ?: ""
+        val isSelfSong = gameRepository.isMySong(previewTitle, previewArtist)
+
+        _uiState.update {
+            it.copy(
+                selfPlayerId = selfId,
+                room = cachedRoom,
+                roundPhase = when {
+                    cachedReveal != null -> RoundPhase.REVEALING
+                    cachedVoting != null -> RoundPhase.VOTING
+                    else -> RoundPhase.PLAYING_PREVIEW
+                },
+                roundIndex = cachedPreview?.roundIndex ?: cachedRoom?.currentRoundIndex ?: 0,
+                totalRounds = cachedPreview?.totalRounds ?: cachedRoom?.songPool?.size ?: 0,
+                title = previewTitle,
+                artist = previewArtist,
+                albumArtUrl = cachedPreview?.albumArtUrl ?: "",
+                previewUrl = cachedPreview?.previewUrl ?: "",
+                players = cachedVoting?.players ?: cachedRoom?.players ?: emptyList(),
+                votingDeadlineEpochMs = cachedVoting?.votingDeadlineEpochMillis ?: 0L,
+                totalVoters = cachedVoting?.players?.size ?: 0,
+                revealData = cachedReveal,
+                isSelfSong = isSelfSong
+            )
+        }
+
         observeMessages()
     }
 
@@ -54,10 +88,15 @@ class GameViewModel @Inject constructor(
             gameRepository.messages.collect { message ->
                 when (message) {
                     is RoomJoined -> _uiState.update {
-                        it.copy(selfPlayerId = message.selfPlayerId, room = message.room)
+                        it.copy(
+                            selfPlayerId = message.selfPlayerId,
+                            room = message.room,
+                            totalRounds = if (it.totalRounds > 0) it.totalRounds else message.room.songPool.size
+                        )
                     }
 
                     is RoundPreviewStarted -> _uiState.update {
+                        val isSelfSong = gameRepository.isMySong(message.title, message.artist)
                         it.copy(
                             roundPhase = RoundPhase.PLAYING_PREVIEW,
                             roundIndex = message.roundIndex,
@@ -68,7 +107,8 @@ class GameViewModel @Inject constructor(
                             previewUrl = message.previewUrl,
                             votedPlayerId = null,
                             votedCount = 0,
-                            revealData = null
+                            revealData = null,
+                            isSelfSong = isSelfSong
                         )
                     }
 
@@ -97,7 +137,12 @@ class GameViewModel @Inject constructor(
 
                     is RoomUpdated -> {
                         val room = message.room
-                        _uiState.update { it.copy(room = room) }
+                        _uiState.update {
+                            it.copy(
+                                room = room,
+                                totalRounds = if (it.totalRounds > 0) it.totalRounds else room.songPool.size
+                            )
+                        }
                         if (room.state == RoomState.SUBMISSION) {
                             _events.emit(GameEvent.NavigateToSubmission)
                         }

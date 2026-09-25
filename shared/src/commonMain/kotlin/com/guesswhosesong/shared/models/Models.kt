@@ -2,6 +2,11 @@ package com.guesswhosesong.shared.models
 
 import kotlinx.serialization.Serializable
 
+object GameConstants {
+    const val DECOY_ID = "decoy"
+    const val DECOY_NAME = "Nobody / Decoy ❓"
+}
+
 @Serializable
 data class RoomSettings(
     val roundLengthPreset: RoundLengthPreset = RoundLengthPreset.STANDARD,

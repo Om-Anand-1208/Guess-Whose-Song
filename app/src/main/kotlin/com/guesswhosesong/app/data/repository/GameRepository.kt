@@ -36,6 +36,18 @@ class GameRepository(private val wsManager: WebSocketManager) {
     private val _pendingSongs = MutableStateFlow<List<SongEntry>>(emptyList())
     val pendingSongs: StateFlow<List<SongEntry>> = _pendingSongs.asStateFlow()
 
+    private val _mySubmittedSongs = MutableStateFlow<List<SongEntry>>(emptyList())
+    val mySubmittedSongs: StateFlow<List<SongEntry>> = _mySubmittedSongs.asStateFlow()
+
+    private val _currentRoundPreview = MutableStateFlow<RoundPreviewStarted?>(null)
+    val currentRoundPreview: StateFlow<RoundPreviewStarted?> = _currentRoundPreview.asStateFlow()
+
+    private val _currentVotingStarted = MutableStateFlow<VotingStarted?>(null)
+    val currentVotingStarted: StateFlow<VotingStarted?> = _currentVotingStarted.asStateFlow()
+
+    private val _currentRoundRevealed = MutableStateFlow<RoundRevealed?>(null)
+    val currentRoundRevealed: StateFlow<RoundRevealed?> = _currentRoundRevealed.asStateFlow()
+
     init {
         scope.launch {
             wsManager.messages.collect { message ->
@@ -47,6 +59,21 @@ class GameRepository(private val wsManager: WebSocketManager) {
                     }
                     is RoomUpdated -> {
                         _currentRoom.value = message.room
+                        if (message.room.state == com.guesswhosesong.shared.models.RoomState.SUBMISSION) {
+                            resetRoundState()
+                            _mySubmittedSongs.value = emptyList()
+                            _pendingSongs.value = emptyList()
+                        }
+                    }
+                    is RoundPreviewStarted -> {
+                        _currentRoundPreview.value = message
+                        _currentRoundRevealed.value = null
+                    }
+                    is VotingStarted -> {
+                        _currentVotingStarted.value = message
+                    }
+                    is RoundRevealed -> {
+                        _currentRoundRevealed.value = message
                     }
                     is GameResults -> {
                         _latestGameResults.value = message
@@ -54,10 +81,26 @@ class GameRepository(private val wsManager: WebSocketManager) {
                     is RoomEnded -> {
                         _currentRoom.value = null
                         _pendingSongs.value = emptyList()
+                        _mySubmittedSongs.value = emptyList()
+                        resetRoundState()
                     }
                     else -> {}
                 }
             }
+        }
+    }
+
+    private fun resetRoundState() {
+        _currentRoundPreview.value = null
+        _currentVotingStarted.value = null
+        _currentRoundRevealed.value = null
+    }
+
+    fun isMySong(title: String, artist: String): Boolean {
+        if (title.isBlank()) return false
+        return _mySubmittedSongs.value.any {
+            it.title.trim().equals(title.trim(), ignoreCase = true) &&
+            (artist.isBlank() || it.artist.isBlank() || it.artist.trim().equals(artist.trim(), ignoreCase = true))
         }
     }
 
@@ -70,13 +113,19 @@ class GameRepository(private val wsManager: WebSocketManager) {
         _currentRoom.value = null
         _latestGameResults.value = null
         _pendingSongs.value = emptyList()
+        _mySubmittedSongs.value = emptyList()
+        resetRoundState()
     }
 
     suspend fun startGame() = wsManager.send(StartGame())
-    suspend fun submitSong(song: SongEntry) = wsManager.send(SubmitSong(song = song))
+    suspend fun submitSong(song: SongEntry) {
+        _mySubmittedSongs.value = listOf(song)
+        wsManager.send(SubmitSong(song = song))
+    }
     suspend fun updatePendingSong(song: SongEntry) = wsManager.send(UpdatePendingSong(song = song))
     suspend fun updatePendingSongs(songs: List<SongEntry>) {
         _pendingSongs.value = songs
+        _mySubmittedSongs.value = songs
         wsManager.send(UpdatePendingSongs(songs = songs))
     }
     suspend fun lockSong() = wsManager.send(LockSong())
@@ -84,7 +133,12 @@ class GameRepository(private val wsManager: WebSocketManager) {
     suspend fun sendChat(text: String) = wsManager.send(SendChat(text = text))
     suspend fun updateSettings(settings: RoomSettings) = wsManager.send(UpdateSettings(settings = settings))
     suspend fun kickPlayer(targetId: String) = wsManager.send(KickPlayer(targetPlayerId = targetId))
-    suspend fun playAgain() = wsManager.send(PlayAgain())
+    suspend fun playAgain() {
+        resetRoundState()
+        _pendingSongs.value = emptyList()
+        _mySubmittedSongs.value = emptyList()
+        wsManager.send(PlayAgain())
+    }
     suspend fun endRoom() = wsManager.send(EndRoom())
     suspend fun connectSpotify(accessToken: String) = wsManager.send(ConnectSpotify(accessToken = accessToken))
 }

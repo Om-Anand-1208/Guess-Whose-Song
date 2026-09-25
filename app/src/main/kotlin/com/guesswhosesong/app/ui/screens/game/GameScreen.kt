@@ -38,6 +38,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
 import com.guesswhosesong.shared.dto.RoundRevealed
 import com.guesswhosesong.shared.models.ChatMessage
+import com.guesswhosesong.shared.models.GameConstants
 import com.guesswhosesong.shared.models.Player
 import com.guesswhosesong.shared.models.RoundPhase
 
@@ -147,6 +148,7 @@ fun GameScreen(
                         votedCount = uiState.votedCount,
                         totalCount = uiState.totalVoters,
                         deadlineMs = uiState.votingDeadlineEpochMs,
+                        isSelfSong = uiState.isSelfSong,
                         onConfirmVote = viewModel::castVote,
                         modifier = Modifier.weight(1f)
                     )
@@ -237,7 +239,7 @@ fun HeroPreviewScreen(
                 shape = RoundedCornerShape(20.dp)
             ) {
                 Text(
-                    text = "ROUND ${roundIndex + 1} OF $totalRounds",
+                    text = "ROUND ${roundIndex + 1} OF ${if (totalRounds > 0) totalRounds else '?'}",
                     style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -263,7 +265,7 @@ fun HeroPreviewScreen(
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
-                        text = if (isPlaying) "PREVIEW" else "PAUSED",
+                        text = if (title.isBlank()) "GET READY" else if (isPlaying) "PREVIEW" else "PAUSED",
                         style = MaterialTheme.typography.labelSmall,
                         fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -330,7 +332,7 @@ fun HeroPreviewScreen(
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
-                text = title.ifBlank { "Unknown Title" },
+                text = if (title.isNotBlank()) title else "Get Ready! 🎵",
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.Center,
@@ -341,7 +343,7 @@ fun HeroPreviewScreen(
             Spacer(Modifier.height(4.dp))
 
             Text(
-                text = artist.ifBlank { "Unknown Artist" },
+                text = if (artist.isNotBlank()) artist else "Round ${roundIndex + 1} starting soon...",
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                 textAlign = TextAlign.Center,
@@ -512,14 +514,14 @@ fun CompactTrackBar(
 
             Column(modifier = Modifier.weight(1f)) {
                 Text(
-                    text = title.ifBlank { "Unknown Title" },
+                    text = title.ifBlank { "Song ${roundIndex + 1}" },
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
                 Text(
-                    text = artist.ifBlank { "Unknown Artist" },
+                    text = artist.ifBlank { "Playing track..." },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
                     maxLines = 1,
@@ -534,7 +536,7 @@ fun CompactTrackBar(
                 shape = RoundedCornerShape(12.dp)
             ) {
                 Text(
-                    text = "Round ${roundIndex + 1}/$totalRounds",
+                    text = "Round ${roundIndex + 1}/${if (totalRounds > 0) totalRounds else '?'}",
                     style = MaterialTheme.typography.labelSmall,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -579,6 +581,7 @@ fun VotingSection(
     votedCount: Int,
     totalCount: Int,
     deadlineMs: Long,
+    isSelfSong: Boolean = false,
     onConfirmVote: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -588,7 +591,10 @@ fun VotingSection(
 
     val hasVoted = votedPlayerId != null
     val targetPlayerId = if (hasVoted) votedPlayerId else selectedCandidateId
-    val targetPlayer = players.find { it.id == targetPlayerId }
+    val targetDisplayName = when (targetPlayerId) {
+        GameConstants.DECOY_ID -> GameConstants.DECOY_NAME
+        else -> players.find { it.id == targetPlayerId }?.displayName
+    }
 
     Column(
         modifier = modifier
@@ -600,6 +606,30 @@ fun VotingSection(
             totalCount = totalCount,
             deadlineMs = deadlineMs
         )
+
+        if (isSelfSong) {
+            Surface(
+                color = MaterialTheme.colorScheme.secondaryContainer,
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 4.dp)
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("🤫", fontSize = 20.sp)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = "This is your song! You earn 1 point if NO ONE guesses it's yours!",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSecondaryContainer
+                    )
+                }
+            }
+        }
 
         Spacer(Modifier.height(8.dp))
 
@@ -637,7 +667,7 @@ fun VotingSection(
                         horizontalArrangement = Arrangement.Center
                     ) {
                         Text(
-                            text = "✓ Vote submitted for ${targetPlayer?.displayName ?: "player"}!",
+                            text = "✓ Vote submitted for ${targetDisplayName ?: "player"}!",
                             style = MaterialTheme.typography.bodyMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onPrimaryContainer
@@ -661,9 +691,9 @@ fun VotingSection(
                         .height(52.dp),
                     shape = RoundedCornerShape(12.dp)
                 ) {
-                    if (targetPlayer != null) {
+                    if (targetDisplayName != null) {
                         Text(
-                            "Vote for ${targetPlayer.displayName} 🗳️",
+                            "Vote for $targetDisplayName 🗳️",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold
                         )
@@ -703,6 +733,13 @@ fun VoteGrid(
                 onClick = { onSelect(player.id) }
             )
         }
+        item {
+            DecoyVoteCard(
+                isSelected = selectedPlayerId == GameConstants.DECOY_ID,
+                enabled = enabled,
+                onClick = { onSelect(GameConstants.DECOY_ID) }
+            )
+        }
     }
 }
 
@@ -714,10 +751,74 @@ fun PlayerVoteCard(
     enabled: Boolean,
     onClick: () -> Unit
 ) {
+    val canClick = enabled && !isSelf
     val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
     val containerColor = when {
         isSelected -> MaterialTheme.colorScheme.primaryContainer
-        !enabled && !isSelected -> MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
+        isSelf -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+        !enabled -> MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
+        else -> MaterialTheme.colorScheme.surface
+    }
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .aspectRatio(1.5f)
+            .border(2.dp, borderColor, RoundedCornerShape(12.dp))
+            .clickable(enabled = canClick, onClick = onClick),
+        colors = CardDefaults.cardColors(containerColor = containerColor)
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(40.dp)
+                    .background(
+                        if (isSelected) MaterialTheme.colorScheme.primary
+                        else if (isSelf) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.15f)
+                        else MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                        CircleShape
+                    ),
+                contentAlignment = Alignment.Center
+            ) {
+                if (isSelected) {
+                    Text("✓", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                } else {
+                    Text(
+                        player.displayName.take(2).uppercase(),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = if (isSelf) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f) else MaterialTheme.colorScheme.onSurface
+                    )
+                }
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = if (isSelf) "${player.displayName}\n(you)" else player.displayName,
+                style = MaterialTheme.typography.bodySmall,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                textAlign = TextAlign.Center,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 4.dp),
+                color = if (isSelf) MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f) else MaterialTheme.colorScheme.onSurface
+            )
+        }
+    }
+}
+
+@Composable
+fun DecoyVoteCard(
+    isSelected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else Color.Transparent
+    val containerColor = when {
+        isSelected -> MaterialTheme.colorScheme.primaryContainer
+        !enabled -> MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
         else -> MaterialTheme.colorScheme.surface
     }
     Card(
@@ -738,7 +839,7 @@ fun PlayerVoteCard(
                     .size(40.dp)
                     .background(
                         if (isSelected) MaterialTheme.colorScheme.primary
-                        else MaterialTheme.colorScheme.primary.copy(alpha = 0.3f),
+                        else MaterialTheme.colorScheme.tertiary.copy(alpha = 0.25f),
                         CircleShape
                     ),
                 contentAlignment = Alignment.Center
@@ -746,12 +847,12 @@ fun PlayerVoteCard(
                 if (isSelected) {
                     Text("✓", color = MaterialTheme.colorScheme.onPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 } else {
-                    Text(player.displayName.take(2).uppercase(), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                    Text("❓", fontSize = 18.sp)
                 }
             }
             Spacer(Modifier.height(6.dp))
             Text(
-                text = player.displayName + if (isSelf) " (you)" else "",
+                text = "Nobody / Decoy",
                 style = MaterialTheme.typography.bodySmall,
                 fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                 textAlign = TextAlign.Center,
@@ -766,6 +867,16 @@ fun PlayerVoteCard(
 @Composable
 fun RevealPanel(revealData: RoundRevealed?, modifier: Modifier = Modifier) {
     if (revealData == null) return
+    val isDecoy = revealData.songEntry.submitterId == GameConstants.DECOY_ID
+    val submitterDelta = if (!isDecoy) {
+        val otherGuessesForSubmitter = revealData.voteResults
+            .filter { it.voterId != revealData.songEntry.submitterId }
+            .count { it.guessedPlayerId == revealData.songEntry.submitterId }
+        if (otherGuessesForSubmitter == 0) {
+            revealData.scoreDeltas.find { it.playerId == revealData.songEntry.submitterId }
+        } else null
+    } else null
+
     LazyColumn(modifier = modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             Text(
@@ -773,13 +884,77 @@ fun RevealPanel(revealData: RoundRevealed?, modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold
             )
-            Spacer(Modifier.height(8.dp))
+        }
+
+        if (isDecoy) {
+            item {
+                Surface(
+                    color = MaterialTheme.colorScheme.tertiaryContainer,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("🤖", fontSize = 24.sp)
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                "Mystery Decoy Track!",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer
+                            )
+                            Text(
+                                "Nobody in the room submitted this song!",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onTertiaryContainer.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
+                }
+            }
+        } else if (submitterDelta != null) {
+            item {
+                Surface(
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("🎭", fontSize = 24.sp)
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                "${revealData.submitterName} stumped everyone!",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                            Text(
+                                "Nobody guessed them — bonus +1 point awarded!",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.8f)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        item {
+            Spacer(Modifier.height(4.dp))
             Text("Who guessed what:", style = MaterialTheme.typography.titleSmall)
         }
+
         items(revealData.voteResults) { result ->
             val icon = if (result.correct) "\u2705" else "\u274C"
             Card(modifier = Modifier.fillMaxWidth()) {
-                Row(modifier = Modifier.padding(12.dp)) {
+                Row(modifier = Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("$icon ", fontSize = 18.sp)
                     Column {
                         Text(result.voterName, fontWeight = FontWeight.Bold)

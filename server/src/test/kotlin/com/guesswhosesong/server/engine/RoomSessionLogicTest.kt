@@ -42,7 +42,8 @@ class RoomSessionLogicTest {
         val players = listOf(player("p1", "Alice"), player("p2", "Bob"))
         val votes = mapOf("p2" to "p2") // self-vote = wrong
         val (_, deltas) = ScoreEngine.computeRoundResults(song, votes, players)
-        assertTrue(deltas.isEmpty())
+        assertNull(deltas.find { it.playerId == "p2" })
+        assertEquals(1, deltas.find { it.playerId == "p1" }?.delta)
     }
 
     @Test
@@ -51,8 +52,8 @@ class RoomSessionLogicTest {
         val players = listOf(player("p1", "Alice"), player("p2", "Bob"))
         val votes = emptyMap<String, String>()
         val (results, deltas) = ScoreEngine.computeRoundResults(song, votes, players)
-        assertTrue(deltas.isEmpty())
         results.forEach { assertFalse(it.correct) }
+        assertEquals(1, deltas.find { it.playerId == "p1" }?.delta)
     }
 
     @Test

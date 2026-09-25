@@ -35,7 +35,9 @@ class ScoreEngineTest {
 
         val bobResult = results.find { it.voterId == "p2" }!!
         assertFalse(bobResult.correct)
-        assertTrue(deltas.isEmpty())
+        assertNull(deltas.find { it.playerId == "p2" })
+        // Alice gets 1 point for stumping the room
+        assertEquals(1, deltas.find { it.playerId == "p1" }?.delta)
     }
 
     @Test
@@ -45,7 +47,55 @@ class ScoreEngineTest {
         val (results, deltas) = ScoreEngine.computeRoundResults(song("p1"), votes, players)
 
         results.forEach { assertFalse(it.correct) }
-        assertTrue(deltas.isEmpty())
+        // Alice gets 1 point for stumping the room
+        assertEquals(1, deltas.find { it.playerId == "p1" }?.delta)
+    }
+
+    @Test
+    fun `submitter receives 0 stump bonus if someone guesses them`() {
+        val players = listOf(player("p1", "Alice"), player("p2", "Bob"), player("p3", "Carol"))
+        val votes = mapOf("p2" to "p1", "p3" to "p2") // Bob guessed Alice, Carol guessed Bob
+        val (results, deltas) = ScoreEngine.computeRoundResults(song("p1"), votes, players)
+
+        // Bob got it right
+        assertTrue(results.find { it.voterId == "p2" }!!.correct)
+        assertEquals(1, deltas.find { it.playerId == "p2" }?.delta)
+
+        // Alice was guessed by Bob, so Alice does not get a stump bonus
+        assertNull(deltas.find { it.playerId == "p1" })
+
+        // Carol got it wrong
+        assertFalse(results.find { it.voterId == "p3" }!!.correct)
+    }
+
+    @Test
+    fun `correctly guessing decoy track awards 1 point`() {
+        val players = listOf(player("p1", "Alice"), player("p2", "Bob"))
+        val votes = mapOf("p1" to ScoreEngine.DECOY_ID, "p2" to "p1")
+        val (results, deltas) = ScoreEngine.computeRoundResults(song(ScoreEngine.DECOY_ID), votes, players)
+
+        // Alice correctly guessed decoy
+        val aliceResult = results.find { it.voterId == "p1" }!!
+        assertTrue(aliceResult.correct)
+        assertEquals(1, deltas.find { it.playerId == "p1" }?.delta)
+
+        // Bob guessed Alice, which is wrong for a decoy track
+        val bobResult = results.find { it.voterId == "p2" }!!
+        assertFalse(bobResult.correct)
+        assertNull(deltas.find { it.playerId == "p2" })
+    }
+
+    @Test
+    fun `submitter voting for themselves earns 0 points`() {
+        val players = listOf(player("p1", "Alice"), player("p2", "Bob"))
+        val votes = mapOf("p1" to "p1", "p2" to "p2") // Alice self-voted, Bob self-voted
+        val (results, deltas) = ScoreEngine.computeRoundResults(song("p1"), votes, players)
+
+        val aliceResult = results.find { it.voterId == "p1" }!!
+        assertFalse(aliceResult.correct) // self-vote is never correct
+
+        // Bob didn't guess Alice, so Alice gets +1 stump bonus
+        assertEquals(1, deltas.find { it.playerId == "p1" }?.delta)
     }
 
     @Test
