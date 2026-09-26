@@ -6,6 +6,8 @@ import com.guesswhosesong.shared.models.SongEntry
 import com.guesswhosesong.shared.models.TrackSearchResult
 
 import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 /**
  * Service that unifies Deezer and iTunes API lookups.
@@ -24,31 +26,34 @@ class MusicService(
             }
         }
     )
+    private val externalRequestLimit = Semaphore(8)
 
     suspend fun search(query: String, limit: Int = 10): List<TrackSearchResult> {
-        val cacheKey = "${query.trim().lowercase()}_$limit"
-        searchCache[cacheKey]?.let { return it }
+        return externalRequestLimit.withPermit {
+            val cacheKey = "${query.trim().lowercase()}_$limit"
+            searchCache[cacheKey]?.let { return@withPermit it }
 
-        val deezerResults = deezerClient.search(query, limit)
-        if (deezerResults.isNotEmpty()) {
-            searchCache[cacheKey] = deezerResults
-            return deezerResults
+            val deezerResults = deezerClient.search(query, limit)
+            if (deezerResults.isNotEmpty()) {
+                searchCache[cacheKey] = deezerResults
+                return@withPermit deezerResults
+            }
+            val itunesResults = itunesClient.search(query, limit)
+            searchCache[cacheKey] = itunesResults
+            itunesResults
         }
-        val itunesResults = itunesClient.search(query, limit)
-        searchCache[cacheKey] = itunesResults
-        return itunesResults
     }
 
-    suspend fun getTopTracks(): List<TrackSearchResult> {
+    suspend fun getTopTracks(): List<TrackSearchResult> = externalRequestLimit.withPermit {
         val hits = itunesClient.search("Pop Hits", 30)
-        return if (hits.isNotEmpty()) hits else itunesClient.search("Top Songs", 30)
+        if (hits.isNotEmpty()) hits else itunesClient.search("Top Songs", 30)
     }
 
     /**
      * Resolve a [SongEntry] that already has title+artist, filling in the previewUrl.
      * Returns null if resolution fails (caller should reject the song).
      */
-    suspend fun resolveEntry(entry: SongEntry): SongEntry? {
+    suspend fun resolveEntry(entry: SongEntry): SongEntry? = externalRequestLimit.withPermit {
         val query = "${entry.title.trim()} ${entry.artist.trim()}".trim()
         
         var bestMatch = findBestMatch(deezerClient.search(query, 10), query)
@@ -57,9 +62,9 @@ class MusicService(
             bestMatch = findBestMatch(itunesClient.search(query, 10), query)
         }
 
-        if (bestMatch == null) return null
+        if (bestMatch == null) return@withPermit null
 
-        return entry.copy(
+        entry.copy(
             songId = bestMatch.id,
             title = bestMatch.title,
             artist = bestMatch.artist,
@@ -106,5 +111,9 @@ class MusicService(
         }
         return dp[a.length][b.length]
     }
-}
 
+    fun close() {
+        deezerClient.close()
+        itunesClient.close()
+    }
+}

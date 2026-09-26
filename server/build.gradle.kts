@@ -49,6 +49,7 @@ dependencies {
 
     // Redis
     implementation(libs.redis.jedis)
+    implementation(libs.firebase.admin)
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.core)

@@ -1,6 +1,7 @@
 package com.guesswhosesong.app.data.repository
 
 import com.guesswhosesong.app.di.NetworkModule
+import com.guesswhosesong.app.data.player.PlayerIdentityManager
 import com.guesswhosesong.shared.dto.GWSJson
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -11,8 +12,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class CreateRoomResponse(
-    val joinCode: String,
-    val playerId: String
+    val joinCode: String
 )
 
 @Serializable
@@ -28,14 +28,16 @@ data class RoomInfoResponse(
  */
 class RoomRepository(
     private val httpClient: HttpClient,
-    private val baseUrl: String
+    private val baseUrl: String,
+    private val identityManager: PlayerIdentityManager
 ) {
 
     /**
      * Creates a new room. Returns the join code.
      */
-    suspend fun createRoom(displayName: String, idToken: String): Result<CreateRoomResponse> {
+    suspend fun createRoom(displayName: String): Result<CreateRoomResponse> {
         return runCatching {
+            val idToken = identityManager.getIdToken()
             httpClient.post("$baseUrl/rooms") {
                 contentType(ContentType.Application.Json)
                 bearerAuth(idToken)
@@ -45,11 +47,13 @@ class RoomRepository(
     }
 
     /**
-     * Fetches basic room info for lobby preview (no auth required).
+     * Fetches basic room info for lobby preview.
      */
     suspend fun getRoomInfo(joinCode: String): Result<RoomInfoResponse> {
         return runCatching {
-            httpClient.get("$baseUrl/rooms/${joinCode.uppercase()}").body<RoomInfoResponse>()
+            httpClient.get("$baseUrl/rooms/${joinCode.uppercase()}") {
+                bearerAuth(identityManager.getIdToken())
+            }.body<RoomInfoResponse>()
         }
     }
 }

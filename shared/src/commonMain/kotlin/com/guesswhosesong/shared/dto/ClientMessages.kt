@@ -11,18 +11,20 @@ import kotlinx.serialization.Serializable
 @Serializable
 sealed class ClientMessage
 
+/** First frame sent after a WebSocket handshake. Authentication is supplied by
+ * the Authorization header; this message only carries the player's display name. */
+@Serializable
+@SerialName("JOIN_ROOM")
+data class JoinRoom(
+    val displayName: String
+) : ClientMessage()
+
 @Serializable
 @SerialName("START_GAME")
 class StartGame : ClientMessage() {
     override fun equals(other: Any?): Boolean = other is StartGame
-    override fun hashCode(): Int = javaClass.hashCode()
+    override fun hashCode(): Int = 1
 }
-
-@Serializable
-@SerialName("SUBMIT_SONG")
-data class SubmitSong(
-    val song: SongEntry
-) : ClientMessage()
 
 /**
  * Sent whenever the user rerolls in Surprise Me mode.
@@ -44,7 +46,7 @@ data class UpdatePendingSongs(
 @SerialName("LOCK_SONG")
 class LockSong : ClientMessage() {
     override fun equals(other: Any?): Boolean = other is LockSong
-    override fun hashCode(): Int = javaClass.hashCode()
+    override fun hashCode(): Int = 1
 }
 
 @Serializable
@@ -75,19 +77,19 @@ data class KickPlayer(
 @SerialName("PLAY_AGAIN")
 class PlayAgain : ClientMessage() {
     override fun equals(other: Any?): Boolean = other is PlayAgain
-    override fun hashCode(): Int = javaClass.hashCode()
+    override fun hashCode(): Int = 1
 }
 
 @Serializable
 @SerialName("END_ROOM")
 class EndRoom : ClientMessage() {
     override fun equals(other: Any?): Boolean = other is EndRoom
-    override fun hashCode(): Int = javaClass.hashCode()
+    override fun hashCode(): Int = 1
 }
 
 @Serializable
-@SerialName("CONNECT_SPOTIFY")
-data class ConnectSpotify(
-    /** The Spotify access token obtained client-side via PKCE OAuth */
-    val accessToken: String
-) : ClientMessage()
+@SerialName("REFRESH_SPOTIFY")
+class RefreshSpotify : ClientMessage() {
+    override fun equals(other: Any?): Boolean = other is RefreshSpotify
+    override fun hashCode(): Int = 1
+}

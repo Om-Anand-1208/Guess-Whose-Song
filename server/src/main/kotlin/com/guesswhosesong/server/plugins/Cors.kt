@@ -6,6 +6,9 @@ import io.ktor.server.plugins.cors.routing.*
 
 fun Application.configureCors() {
     install(CORS) {
+        // The browser API uses Firebase bearer tokens. Keep credentials
+        // explicitly enabled while restricting requests to configured origins.
+        allowCredentials = true
         allowMethod(HttpMethod.Options)
         allowMethod(HttpMethod.Get)
         allowMethod(HttpMethod.Post)
@@ -13,8 +16,17 @@ fun Application.configureCors() {
         allowMethod(HttpMethod.Delete)
         allowHeader(HttpHeaders.Authorization)
         allowHeader(HttpHeaders.ContentType)
-        // Allow any host for now; restrict to your domain in production
-        anyHost()
+        val configuredOrigins = System.getenv("WEB_ORIGINS")
+            .orEmpty()
+            .split(',')
+            .map(String::trim)
+            .filter(String::isNotBlank)
+        configuredOrigins.forEach { origin ->
+            val uri = java.net.URI(origin)
+            allowHost(
+                host = uri.host ?: return@forEach,
+                schemes = listOf(uri.scheme ?: "https")
+            )
+        }
     }
 }
-

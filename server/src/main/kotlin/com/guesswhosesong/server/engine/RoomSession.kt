@@ -3,7 +3,11 @@ package com.guesswhosesong.server.engine
 import com.guesswhosesong.server.music.MusicService
 import com.guesswhosesong.server.redis.ChatRepository
 import com.guesswhosesong.server.redis.RedisClient
+import com.guesswhosesong.server.redis.RateLimiter
 import com.guesswhosesong.server.redis.RoomRepository
+import com.guesswhosesong.server.redis.RoomRuntime
+import com.guesswhosesong.server.redis.RoomRuntimeRepository
+import com.guesswhosesong.server.security.InputValidation
 import com.guesswhosesong.shared.dto.*
 import com.guesswhosesong.shared.models.*
 import io.ktor.websocket.*
@@ -13,6 +17,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.UUID
 
 private const val DISCONNECT_GRACE_MS = 90_000L   // 90 seconds
 private const val REVEAL_HOLD_MS = 5_000L          // 5 seconds hold on reveal screen
@@ -27,23 +33,29 @@ private const val SUBMISSION_TIMEOUT_MS = 120_000L // 2 minutes for submission p
  */
 class RoomSession(
     initialRoom: Room,
-    private val redisClient: RedisClient
+    private val redisClient: RedisClient,
+    private val onEnded: (String) -> Unit = {},
+    private val musicService: MusicService = MusicService()
 ) {
     private val logger = LoggerFactory.getLogger(RoomSession::class.java)
     private val mutex = Mutex()
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private val repository = RoomRepository(redisClient)
+    private val runtimeRepository = RoomRuntimeRepository(redisClient)
     private val chatRepository = ChatRepository(redisClient)
-    private val musicService = MusicService()
+    private val rateLimiter = RateLimiter(redisClient)
+    private val ended = AtomicBoolean(false)
+    private var gameJob: Job? = null
+    private var runtime: RoomRuntime = runtimeRepository.load(initialRoom.joinCode) ?: RoomRuntime()
+    @Volatile
+    private var currentRoundPhase: RoundPhase = runCatching { RoundPhase.valueOf(runtime.phase) }
+        .getOrDefault(RoundPhase.PLAYING_PREVIEW)
+    private var currentVotingDeadline: Long = runtime.deadlineEpochMillis
 
     @Volatile
     var room: Room = initialRoom
         private set
-
-    @Volatile
-    private var currentRoundPhase: RoundPhase = RoundPhase.PLAYING_PREVIEW
-
 
     /** Map of playerId -> WebSocketSession. Multiple tabs not supported (last wins). */
     private val connections = ConcurrentHashMap<String, DefaultWebSocketServerSession>()
@@ -58,7 +70,11 @@ class RoomSession(
         displayName: String,
         socket: DefaultWebSocketServerSession
     ) {
-        connections[playerId] = socket
+        val previousSocket = connections.put(playerId, socket)
+        if (previousSocket != null && previousSocket !== socket) {
+            try { previousSocket.close(CloseReason(CloseReason.Codes.NORMAL, "replaced")) }
+            catch (_: Exception) { }
+        }
 
         // Cancel any pending disconnect grace timer
         disconnectJobs.remove(playerId)?.cancel()
@@ -132,15 +148,25 @@ class RoomSession(
                 }
             }
         }
+        if (room.state == RoomState.RESULTS) {
+            sendToPlayer(
+                playerId,
+                GameResults(
+                    players = room.players.sortedByDescending { it.score }
+                        .map { it.copy(pendingSong = null, pendingSongs = emptyList()) }
+                )
+            )
+        }
 
-        logger.info("[${room.joinCode}] Player connected: $displayName ($playerId)")
+        logger.info("[${room.joinCode}] Player connected")
     }
 
-    suspend fun onPlayerDisconnect(playerId: String) {
-        connections.remove(playerId)
+    suspend fun onPlayerDisconnect(playerId: String, socket: DefaultWebSocketServerSession) {
+        // A stale callback from an old socket must not disconnect a replacement socket.
+        if (!connections.remove(playerId, socket)) return
 
         val player = room.players.find { it.id == playerId } ?: return
-        logger.info("[${room.joinCode}] Player disconnected: ${player.displayName} ($playerId), starting ${DISCONNECT_GRACE_MS}ms grace period")
+        logger.info("[${room.joinCode}] Player disconnected; starting ${DISCONNECT_GRACE_MS}ms grace period")
 
         // Mark as disconnected immediately so the live counter is accurate
         mutex.withLock {
@@ -160,11 +186,14 @@ class RoomSession(
     }
 
     private suspend fun handleGraceExpired(playerId: String) {
+        disconnectJobs.remove(playerId)
         val player = room.players.find { it.id == playerId } ?: return
         if (player.connected) return // reconnected during grace
 
-        logger.info("[${room.joinCode}] Grace expired for ${player.displayName} ($playerId)")
+        logger.info("[${room.joinCode}] Player grace period expired")
 
+        var reassignedHost: Player? = null
+        var shouldEnd = false
         mutex.withLock {
             var updatedPlayers = room.players.filter { it.id != playerId }
 
@@ -174,17 +203,23 @@ class RoomSession(
                 if (nextHost != null) {
                     updatedPlayers = HostReassignment.applyHostChange(updatedPlayers, playerId, nextHost.id)
                     room = room.copy(players = updatedPlayers, hostId = nextHost.id)
-                    broadcastAll(HostChanged(newHostId = nextHost.id, newHostName = nextHost.displayName))
-                    logger.info("[${room.joinCode}] Host reassigned to ${nextHost.displayName}")
+                    reassignedHost = nextHost
+                    logger.info("[${room.joinCode}] Host reassigned")
                 } else {
-                    // No players left
-                    endRoom()
-                    return
+                    room = room.copy(players = emptyList())
+                    shouldEnd = true
                 }
             } else {
                 room = room.copy(players = updatedPlayers)
             }
-            persist()
+            if (!shouldEnd) persist()
+        }
+        if (shouldEnd) {
+            endRoom()
+            return
+        }
+        reassignedHost?.let {
+            broadcastAll(HostChanged(newHostId = it.id, newHostName = it.displayName))
         }
         broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
     }
@@ -209,7 +244,7 @@ class RoomSession(
             is SendChat -> handleSendChat(playerId, player.displayName, message.text)
             is PlayAgain -> handlePlayAgain(playerId)
             is EndRoom -> handleEndRoom(playerId)
-            is ConnectSpotify -> handleConnectSpotify(playerId)
+            is RefreshSpotify -> handleRefreshSpotify(playerId)
             else -> logger.warn("[${room.joinCode}] Unhandled message type: ${message::class.simpleName}")
         }
     }
@@ -217,28 +252,38 @@ class RoomSession(
     // ─── Host-only actions ────────────────────────────────────────────────────
 
     private suspend fun handleStartGame(playerId: String) {
-        val player = room.players.find { it.id == playerId } ?: return
-        if (!player.isHost) {
-            sendToPlayer(playerId, ErrorMessage(code = "NOT_HOST", message = "Only the host can start the game"))
-            return
+        var error: ErrorMessage? = null
+        mutex.withLock {
+            val player = room.players.find { it.id == playerId }
+            when {
+                player == null -> error = ErrorMessage("UNKNOWN_PLAYER", "Player not found in room")
+                !player.isHost -> error = ErrorMessage("NOT_HOST", "Only the host can start the game")
+                room.state != RoomState.LOBBY -> error = ErrorMessage("WRONG_STATE", "Game is not in lobby")
+                room.players.count { it.connected } < MIN_PLAYERS_TO_START -> {
+                    error = ErrorMessage("NOT_ENOUGH_PLAYERS", "Need at least $MIN_PLAYERS_TO_START players to start")
+                }
+                gameJob?.isActive == true -> Unit
+                else -> {
+                    room = room.copy(state = RoomState.SUBMISSION)
+                    persist()
+                    gameJob = scope.launch { runSubmissionPhase() }
+                }
+            }
         }
-        if (room.state != RoomState.LOBBY) {
-            sendToPlayer(playerId, ErrorMessage(code = "WRONG_STATE", message = "Game is not in lobby"))
-            return
-        }
-        val connectedCount = room.players.count { it.connected }
-        if (connectedCount < MIN_PLAYERS_TO_START) {
-            sendToPlayer(playerId, ErrorMessage(code = "NOT_ENOUGH_PLAYERS",
-                message = "Need at least $MIN_PLAYERS_TO_START players to start"))
-            return
-        }
-
-        scope.launch { runSubmissionPhase() }
+        error?.let { sendToPlayer(playerId, it) }
     }
 
     private suspend fun handleUpdateSettings(playerId: String, settings: RoomSettings) {
         val player = room.players.find { it.id == playerId } ?: return
         if (!player.isHost) return
+        if (room.state != RoomState.LOBBY) {
+            sendToPlayer(playerId, ErrorMessage("WRONG_STATE", "Settings can only change in the lobby"))
+            return
+        }
+        if (!InputValidation.settings(settings)) {
+            sendToPlayer(playerId, ErrorMessage("INVALID_SETTINGS", "Invalid player limit or voting timer"))
+            return
+        }
 
         mutex.withLock {
             room = room.copy(settings = settings)
@@ -255,6 +300,7 @@ class RoomSession(
         sendToPlayer(targetId, Kicked())
         connections[targetId]?.close(CloseReason(CloseReason.Codes.NORMAL, "kicked"))
         connections.remove(targetId)
+        disconnectJobs.remove(targetId)?.cancel()
 
         mutex.withLock {
             room = room.copy(players = room.players.filter { it.id != targetId })
@@ -267,6 +313,22 @@ class RoomSession(
 
     private suspend fun handleUpdatePendingSong(playerId: String, song: SongEntry) {
         if (room.state != RoomState.SUBMISSION) return
+        val player = room.players.find { it.id == playerId } ?: return
+        if (player.songLocked) {
+            sendToPlayer(playerId, ErrorMessage("SONG_LOCKED", "Song is already locked"))
+            return
+        }
+        if (!InputValidation.song(song)) {
+            sendToPlayer(playerId, ErrorMessage("INVALID_SONG", "Invalid song payload"))
+            return
+        }
+        if (player.pendingSongs.any {
+                it.songId == song.songId ||
+                    (it.title.equals(song.title, ignoreCase = true) && it.artist.equals(song.artist, ignoreCase = true))
+            }) {
+            sendToPlayer(playerId, ErrorMessage("DUPLICATE_SONG", "Song was already submitted"))
+            return
+        }
         val entry = song.copy(submitterId = playerId)
         val maxSongs = room.settings.roundLengthPreset.songsPerPlayer
 
@@ -293,8 +355,23 @@ class RoomSession(
 
     private suspend fun handleUpdatePendingSongs(playerId: String, songs: List<SongEntry>) {
         if (room.state != RoomState.SUBMISSION) return
+        val player = room.players.find { it.id == playerId } ?: return
+        if (player.songLocked) {
+            sendToPlayer(playerId, ErrorMessage("SONG_LOCKED", "Song is already locked"))
+            return
+        }
         val maxSongs = room.settings.roundLengthPreset.songsPerPlayer
-        val limited = songs.take(maxSongs).map { it.copy(submitterId = playerId) }
+        val unique = songs.filter { InputValidation.song(it) }
+            .distinctBy { "${it.songId.trim().lowercase()}|${it.title.trim().lowercase()}|${it.artist.trim().lowercase()}" }
+        val duplicateIds = songs.size != songs.distinctBy { it.songId.trim().lowercase() }.size
+        val duplicateNames = songs.size != songs.distinctBy {
+            "${it.title.trim().lowercase()}|${it.artist.trim().lowercase()}"
+        }.size
+        if (unique.isEmpty() || unique.size != songs.size || unique.size > maxSongs || duplicateIds || duplicateNames) {
+            sendToPlayer(playerId, ErrorMessage("INVALID_SONGS", "Submission must contain unique valid songs"))
+            return
+        }
+        val limited = unique.take(maxSongs).map { it.copy(submitterId = playerId) }
 
         mutex.withLock {
             room = room.copy(players = room.players.map { p ->
@@ -313,6 +390,10 @@ class RoomSession(
         if (room.state != RoomState.SUBMISSION) return
         val player = room.players.find { it.id == playerId } ?: return
         if (player.songLocked) return
+        if (player.pendingSongs.isEmpty() && player.pendingSong == null) {
+            sendToPlayer(playerId, ErrorMessage("EMPTY_SUBMISSION", "Submit at least one song before locking"))
+            return
+        }
 
         mutex.withLock {
             room = room.copy(players = room.players.map { p ->
@@ -335,20 +416,38 @@ class RoomSession(
     /** Accumulates votes for the current round */
     private val currentVotes = ConcurrentHashMap<String, String>() // voterId -> guessedPlayerId
     private var allVotedSignal = CompletableDeferred<Unit>()
-    private var currentVotingDeadline: Long = 0L
+
+    /** Rehydrates only the server-side state machine; public room data remains sanitized. */
+    fun resumeAfterRestart() {
+        if (room.state == RoomState.SUBMISSION) {
+            gameJob = scope.launch { runSubmissionPhase() }
+        } else if (room.state == RoomState.PLAYING && room.songPool.isNotEmpty()) {
+            val startIndex = if (runtime.roundResolved) runtime.roundIndex + 1 else runtime.roundIndex
+            gameJob = scope.launch {
+                if (startIndex > room.songPool.lastIndex) showResults()
+                else runPlayingPhase(startIndex)
+            }
+        }
+    }
 
     private suspend fun handleCastVote(voterId: String, guessedPlayerId: String) {
         if (room.state != RoomState.PLAYING) {
-            logger.warn("[${room.joinCode}] Vote rejected from $voterId: room not in PLAYING state (${room.state})")
+            logger.warn("[${room.joinCode}] Vote rejected: room not in PLAYING state (${room.state})")
             return
         }
         val currentRound = getCurrentRound() ?: return
         if (currentRound.phase != RoundPhase.VOTING) {
-            logger.warn("[${room.joinCode}] Vote rejected from $voterId: not in VOTING phase (current: ${currentRound.phase})")
+            logger.warn("[${room.joinCode}] Vote rejected: not in VOTING phase (current: ${currentRound.phase})")
             return
         }
         if (currentVotes.containsKey(voterId)) {
-            logger.warn("[${room.joinCode}] Duplicate vote ignored from $voterId")
+            logger.warn("[${room.joinCode}] Duplicate vote ignored")
+            return
+        }
+        val validTarget = guessedPlayerId == ScoreEngine.DECOY_ID ||
+            room.players.any { it.id == guessedPlayerId }
+        if (!validTarget || guessedPlayerId.length > 128) {
+            sendToPlayer(voterId, ErrorMessage("INVALID_VOTE", "Unknown vote target"))
             return
         }
 
@@ -356,7 +455,7 @@ class RoomSession(
         val votedCount = currentVotes.size
         val totalCount = room.players.count { it.connected }
 
-        logger.info("[${room.joinCode}] Vote cast by $voterId for $guessedPlayerId ($votedCount/$totalCount)")
+        logger.info("[${room.joinCode}] Vote cast ($votedCount/$totalCount)")
         broadcastAll(VoteCountUpdated(votedCount = votedCount, totalCount = totalCount))
 
         if (votedCount >= totalCount) {
@@ -367,7 +466,11 @@ class RoomSession(
     // ─── Chat ─────────────────────────────────────────────────────────────────
 
     private suspend fun handleSendChat(senderId: String, senderName: String, text: String) {
-        if (text.isBlank() || text.length > 300) return
+        if (!rateLimiter.allow("chat", senderId, 5, 10)) {
+            sendToPlayer(senderId, ErrorMessage("RATE_LIMITED", "Chat rate limit exceeded"))
+            return
+        }
+        if (text.isBlank() || text.length > 300 || text.any { it.isISOControl() && it != '\n' && it != '\t' }) return
         val rawMsg = ChatMessage(
             senderId = senderId,
             senderName = senderName,
@@ -398,7 +501,9 @@ class RoomSession(
         }
         currentRoundPhase = RoundPhase.PLAYING_PREVIEW
         broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
-        scope.launch { runSubmissionPhase() }
+        mutex.withLock {
+            if (gameJob?.isActive != true) gameJob = scope.launch { runSubmissionPhase() }
+        }
     }
 
     private suspend fun handleEndRoom(playerId: String) {
@@ -407,13 +512,15 @@ class RoomSession(
         endRoom()
     }
 
-    private suspend fun handleConnectSpotify(playerId: String) {
+    private suspend fun handleRefreshSpotify(playerId: String) {
         // The actual token exchange happens server-side via SpotifyRoutes.
         // This message just flags the player as Spotify-connected.
         mutex.withLock {
+            val connected = redisClient.get("spotify_token:$playerId") != null
             room = room.copy(players = room.players.map { p ->
-                if (p.id == playerId) p.copy(spotifyConnected = true) else p
+                if (p.id == playerId) p.copy(spotifyConnected = connected) else p
             })
+            persist()
         }
         broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
     }
@@ -426,6 +533,7 @@ class RoomSession(
         submissionCompleteSignal = CompletableDeferred()
         val songsPerPlayer = room.settings.roundLengthPreset.songsPerPlayer
         val deadlineMs = System.currentTimeMillis() + SUBMISSION_TIMEOUT_MS
+        persistRuntime(RoomRuntime("SUBMISSION", 0, deadlineMs, UUID.randomUUID().toString()))
 
         mutex.withLock {
             room = room.copy(state = RoomState.SUBMISSION)
@@ -446,6 +554,7 @@ class RoomSession(
                 if (!p.songLocked && hasSongs) p.copy(songLocked = true)
                 else p
             })
+            persist()
         }
 
         // Resolve Deezer preview URLs for all locked songs
@@ -462,7 +571,7 @@ class RoomSession(
                 if (resolved != null) {
                     resolvedEntries.add(resolved.copy(submitterId = player.id))
                 } else {
-                    logger.warn("[${room.joinCode}] No Deezer match for: ${pending.title} - ${pending.artist}")
+                    logger.warn("[${room.joinCode}] A submitted song could not be resolved")
                     // Song is dropped from the pool (player chose an unresolvable song)
                 }
             }
@@ -498,7 +607,7 @@ class RoomSession(
                 }
             }
         } catch (e: Exception) {
-            logger.warn("[${room.joinCode}] Could not inject decoy tracks: ${e.message}")
+            logger.warn("[${room.joinCode}] Could not inject decoy tracks")
         }
 
         val shuffled = resolvedEntries.shuffled()
@@ -510,6 +619,7 @@ class RoomSession(
             )
             persist()
         }
+        persistRuntime(RoomRuntime("PLAYING_PREVIEW", 0, 0L, runtime.runId))
         broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
 
         // Allow clients time to receive RoomUpdated and navigate from submission to game screen
@@ -518,8 +628,8 @@ class RoomSession(
         runPlayingPhase()
     }
 
-    private suspend fun runPlayingPhase() {
-        for (index in room.songPool.indices) {
+    private suspend fun runPlayingPhase(startIndex: Int = 0) {
+        for (index in startIndex until room.songPool.size) {
             mutex.withLock {
                 room = room.copy(currentRoundIndex = index)
             }
@@ -534,6 +644,13 @@ class RoomSession(
 
         // ── Phase 1: PLAYING_PREVIEW ──────────────────────────────────────────
         currentRoundPhase = RoundPhase.PLAYING_PREVIEW
+        persistRuntime(runtime.copy(
+            phase = RoundPhase.PLAYING_PREVIEW.name,
+            roundIndex = index,
+            deadlineEpochMillis = System.currentTimeMillis() + 31_000L,
+            votes = emptyMap(),
+            roundResolved = false
+        ))
         broadcastAll(
             RoundPreviewStarted(
                 roundIndex = index,
@@ -555,6 +672,13 @@ class RoomSession(
 
         val votingDeadline = System.currentTimeMillis() + room.settings.votingTimerSeconds * 1000L
         currentVotingDeadline = votingDeadline
+        persistRuntime(runtime.copy(
+            phase = RoundPhase.VOTING.name,
+            roundIndex = index,
+            deadlineEpochMillis = votingDeadline,
+            votes = emptyMap(),
+            roundResolved = false
+        ))
         val players = room.players.map { it.copy(pendingSong = null, pendingSongs = emptyList()) } // anonymized
 
         broadcastAll(
@@ -577,6 +701,13 @@ class RoomSession(
 
         // ── Phase 3: REVEALING ────────────────────────────────────────────────
         currentRoundPhase = RoundPhase.REVEALING
+        persistRuntime(runtime.copy(
+            phase = RoundPhase.REVEALING.name,
+            roundIndex = index,
+            deadlineEpochMillis = 0L,
+            votes = finalVotes,
+            roundResolved = false
+        ))
         val (voteResults, scoreDeltas) = ScoreEngine.computeRoundResults(song, finalVotes, room.players)
 
         mutex.withLock {
@@ -585,6 +716,8 @@ class RoomSession(
             )
             persist()
         }
+        // Mark the round resolved only after the score write. Recovery skips only this exact round.
+        persistRuntime(runtime.copy(roundResolved = true))
 
         val submitterName = if (song.submitterId == ScoreEngine.DECOY_ID) {
             ScoreEngine.DECOY_NAME
@@ -611,24 +744,32 @@ class RoomSession(
             room = room.copy(state = RoomState.RESULTS)
             persist()
         }
+        persistRuntime(runtime.copy(phase = "RESULTS", deadlineEpochMillis = 0L))
         val sortedPlayers = room.players.sortedByDescending { it.score }
+            .map { it.copy(pendingSong = null, pendingSongs = emptyList()) }
         broadcastAll(GameResults(players = sortedPlayers))
     }
 
     private suspend fun endRoom() {
+        if (!ended.compareAndSet(false, true)) return
         mutex.withLock {
             room = room.copy(state = RoomState.ENDED)
         }
         broadcastAll(RoomEnded())
         // Close all connections
-        connections.values.forEach { socket ->
+        val sockets = connections.values.toList()
+        connections.clear()
+        sockets.forEach { socket ->
             try { socket.close(CloseReason(CloseReason.Codes.NORMAL, "room ended")) }
             catch (e: Exception) { /* ignore */ }
         }
-        connections.clear()
         // Delete from Redis immediately
         repository.delete(room.joinCode)
+        runtimeRepository.delete(room.joinCode)
         chatRepository.delete(room.joinCode)
+        disconnectJobs.values.forEach { it.cancel() }
+        disconnectJobs.clear()
+        onEnded(room.joinCode)
         scope.cancel()
         logger.info("[${room.joinCode}] Room ended and cleaned up.")
     }
@@ -646,7 +787,7 @@ class RoomSession(
      */
     private fun sanitizedRoom(playerId: String): Room {
         return room.copy(
-            songPool = room.songPool.map { it.copy(submitterId = "") },
+            songPool = emptyList(),
             players = room.players.map { it.copy(pendingSong = null, pendingSongs = emptyList()) }
         )
     }
@@ -657,13 +798,18 @@ class RoomSession(
      */
     private fun sanitizedRoomForBroadcast(): Room {
         return room.copy(
-            songPool = room.songPool.map { it.copy(submitterId = "") },
+            songPool = emptyList(),
             players = room.players.map { it.copy(pendingSong = null, pendingSongs = emptyList()) }
         )
     }
 
     private fun persist() {
         repository.save(room)
+    }
+
+    private fun persistRuntime(value: RoomRuntime) {
+        runtime = value
+        runtimeRepository.save(room.joinCode, value)
     }
 
     suspend fun broadcastAll(message: ServerMessage) {
@@ -682,8 +828,7 @@ class RoomSession(
         try {
             connections[playerId]?.send(io.ktor.websocket.Frame.Text(json))
         } catch (e: Exception) {
-            logger.warn("[${room.joinCode}] Failed to send to $playerId: ${e.message}")
+            logger.warn("[${room.joinCode}] Failed to send message")
         }
     }
 }
-

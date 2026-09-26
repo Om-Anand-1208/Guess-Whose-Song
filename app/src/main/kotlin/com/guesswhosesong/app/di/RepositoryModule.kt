@@ -3,6 +3,7 @@ package com.guesswhosesong.app.di
 import com.guesswhosesong.app.data.network.WebSocketManager
 import com.guesswhosesong.app.data.repository.GameRepository
 import com.guesswhosesong.app.data.repository.RoomRepository
+import com.guesswhosesong.app.data.player.PlayerIdentityManager
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -16,8 +17,8 @@ object RepositoryModule {
 
     @Provides
     @Singleton
-    fun provideRoomRepository(httpClient: HttpClient): RoomRepository =
-        RoomRepository(httpClient, NetworkModule.BASE_URL)
+    fun provideRoomRepository(httpClient: HttpClient, identityManager: PlayerIdentityManager): RoomRepository =
+        RoomRepository(httpClient, NetworkModule.BASE_URL, identityManager)
 
     @Provides
     @Singleton

@@ -19,7 +19,6 @@ import com.guesswhosesong.shared.models.RoomSettings
 @Composable
 fun LobbyScreen(
     joinCode: String,
-    selfPlayerId: String,
     displayName: String,
     viewModel: LobbyViewModel = hiltViewModel(),
     onNavigateToSubmission: () -> Unit,
@@ -43,7 +42,7 @@ fun LobbyScreen(
     }
 
     val room = uiState.room
-    val selfId = uiState.selfPlayerId.ifBlank { selfPlayerId }
+    val selfId = uiState.selfPlayerId
     val isHost = room?.players?.find { it.id == selfId }?.isHost ?: false
 
     Scaffold(

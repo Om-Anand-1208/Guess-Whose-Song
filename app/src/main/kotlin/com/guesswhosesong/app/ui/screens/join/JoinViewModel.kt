@@ -1,8 +1,11 @@
 package com.guesswhosesong.app.ui.screens.join
 
+import android.app.Activity
+import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.guesswhosesong.app.data.player.PlayerIdentityManager
+import com.guesswhosesong.app.data.player.AccountLinkResult
 import com.guesswhosesong.app.data.repository.RoomRepository
 import com.guesswhosesong.app.data.spotify.SpotifyAuthManager
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -15,11 +18,12 @@ data class JoinUiState(
     val joinCode: String = "",
     val isLoading: Boolean = false,
     val error: String? = null,
-    val isSpotifyConnected: Boolean = false
+    val isSpotifyConnected: Boolean = false,
+    val isAccountLinked: Boolean = false
 )
 
 sealed class JoinEvent {
-    data class NavigateToLobby(val joinCode: String, val playerId: String, val displayName: String) : JoinEvent()
+    data class NavigateToLobby(val joinCode: String, val displayName: String) : JoinEvent()
 }
 
 @HiltViewModel
@@ -44,8 +48,7 @@ class JoinViewModel @Inject constructor(
     }
 
     fun connectSpotify() {
-        val playerId = playerIdentityManager.getPlayerId()
-        spotifyAuthManager.launchOAuth(playerId)
+        spotifyAuthManager.launchOAuth()
     }
 
     fun disconnectSpotify() {
@@ -69,12 +72,10 @@ class JoinViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
-                val playerId = playerIdentityManager.getPlayerId()
-                val token = playerIdentityManager.getToken()
-                val result = roomRepository.createRoom(name, token)
+                val result = roomRepository.createRoom(name)
                 result.fold(
                     onSuccess = { response ->
-                        _events.emit(JoinEvent.NavigateToLobby(response.joinCode, playerId, name))
+                        _events.emit(JoinEvent.NavigateToLobby(response.joinCode, name))
                     },
                     onFailure = { e ->
                         _uiState.update { it.copy(error = "Failed to create room: ${e.message}") }
@@ -102,12 +103,33 @@ class JoinViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
-                val playerId = playerIdentityManager.getPlayerId()
-                _events.emit(JoinEvent.NavigateToLobby(code, playerId, name))
+                _events.emit(JoinEvent.NavigateToLobby(code, name))
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "Error: ${e.message}") }
             } finally {
                 _uiState.update { it.copy(isLoading = false) }
+            }
+        }
+    }
+
+    fun googleSignInIntent(activity: Activity) = playerIdentityManager.googleSignInIntent(activity)
+
+    fun linkGoogle(data: Intent) {
+        viewModelScope.launch {
+            when (val result = playerIdentityManager.linkGoogle(data)) {
+                AccountLinkResult.Linked -> _uiState.update { it.copy(isAccountLinked = true, error = "Google account linked for recovery") }
+                AccountLinkResult.SignedIn -> _uiState.update { it.copy(isAccountLinked = true, error = "Google account signed in") }
+                AccountLinkResult.Collision -> _uiState.update { it.copy(error = "That Google account is already linked to another player") }
+                is AccountLinkResult.Failed -> _uiState.update { it.copy(error = result.message) }
+            }
+        }
+    }
+
+    fun recoverWithGoogle(data: Intent) {
+        viewModelScope.launch {
+            when (val result = playerIdentityManager.signInWithGoogle(data)) {
+                AccountLinkResult.SignedIn -> _uiState.update { it.copy(isAccountLinked = true, error = "Recovered linked Google identity") }
+                else -> _uiState.update { it.copy(error = (result as? AccountLinkResult.Failed)?.message ?: "Google sign-in failed") }
             }
         }
     }

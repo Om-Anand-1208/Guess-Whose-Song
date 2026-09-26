@@ -1,5 +1,7 @@
 package com.guesswhosesong.app.ui.screens.join
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -13,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -24,19 +27,31 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 @Composable
 fun JoinScreen(
     viewModel: JoinViewModel = hiltViewModel(),
-    onNavigateToLobby: (joinCode: String, playerId: String, displayName: String) -> Unit
+    onNavigateToLobby: (joinCode: String, displayName: String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val keyboard = LocalSoftwareKeyboardController.current
+    val context = LocalContext.current
     val scrollState = rememberScrollState()
+    val googleLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        result.data?.let(viewModel::linkGoogle)
+    }
+    val recoveryLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        result.data?.let(viewModel::recoverWithGoogle)
+    }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
                 is JoinEvent.NavigateToLobby ->
-                    onNavigateToLobby(event.joinCode, event.playerId, event.displayName)
+                    onNavigateToLobby(event.joinCode, event.displayName)
             }
         }
+
     }
 
     Column(
@@ -137,6 +152,29 @@ fun JoinScreen(
                 }
             }
         }
+
+        OutlinedButton(
+            onClick = {
+                val activity = context as? android.app.Activity
+                if (activity != null) googleLauncher.launch(viewModel.googleSignInIntent(activity))
+            },
+            modifier = Modifier.fillMaxWidth().height(44.dp)
+        ) {
+            Text(if (uiState.isAccountLinked) "✓ Google account linked" else "Link Google for recovery")
+        }
+        TextButton(onClick = {
+            val activity = context as? android.app.Activity
+            if (activity != null) recoveryLauncher.launch(viewModel.googleSignInIntent(activity))
+        }) {
+            Text("Already linked? Sign in with Google")
+        }
+        Text(
+            "Guests can play instantly. Linking preserves this player and enables recovery after reinstall.",
+            style = MaterialTheme.typography.bodySmall,
+            textAlign = TextAlign.Center,
+            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
+            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
+        )
 
         OutlinedTextField(
             value = uiState.displayName,

@@ -9,13 +9,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.lifecycleScope
-import com.guesswhosesong.app.data.repository.GameRepository
 import com.guesswhosesong.app.data.spotify.SpotifyAuthManager
 import com.guesswhosesong.app.ui.GWSNavHost
 import com.guesswhosesong.app.ui.theme.GuessWhoseSongTheme
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -23,9 +20,6 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var spotifyAuthManager: SpotifyAuthManager
-
-    @Inject
-    lateinit var gameRepository: GameRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -53,11 +47,6 @@ class MainActivity : ComponentActivity() {
         if (uri.scheme == "guesswhosesong" && uri.host == "spotify-callback") {
             val success = uri.getQueryParameter("success") == "true"
             spotifyAuthManager.onCallbackReceived(success)
-            if (success) {
-                lifecycleScope.launch {
-                    gameRepository.connectSpotify("")
-                }
-            }
         }
     }
 }

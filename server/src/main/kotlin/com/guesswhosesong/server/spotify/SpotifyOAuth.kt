@@ -38,7 +38,11 @@ class SpotifyOAuth(
 
     val isConfigured get() = clientId.isNotBlank() && clientSecret.isNotBlank()
 
-    fun buildAuthUrl(state: String): String {
+    fun buildAuthUrl(
+        state: String,
+        codeChallenge: String,
+        callbackUri: String = redirectUri
+    ): String {
         val scopes = listOf(
             "user-top-read",
             "user-read-recently-played",
@@ -48,11 +52,17 @@ class SpotifyOAuth(
             "response_type=code" +
             "&client_id=$clientId" +
             "&scope=${Uri.encode(scopes)}" +
-            "&redirect_uri=${Uri.encode(redirectUri)}" +
-            "&state=$state"
+            "&redirect_uri=${Uri.encode(callbackUri)}" +
+            "&state=${Uri.encode(state)}" +
+            "&code_challenge_method=S256" +
+            "&code_challenge=${Uri.encode(codeChallenge)}"
     }
 
-    suspend fun exchangeCode(code: String): SpotifyTokenResponse {
+    suspend fun exchangeCode(
+        code: String,
+        codeVerifier: String,
+        callbackUri: String = redirectUri
+    ): SpotifyTokenResponse {
         val credentials = Base64.getEncoder()
             .encodeToString("$clientId:$clientSecret".toByteArray())
         return httpClient.post("https://accounts.spotify.com/api/token") {
@@ -60,7 +70,8 @@ class SpotifyOAuth(
             setBody(FormDataContent(Parameters.build {
                 append("grant_type", "authorization_code")
                 append("code", code)
-                append("redirect_uri", redirectUri)
+                append("redirect_uri", callbackUri)
+                append("code_verifier", codeVerifier)
             }))
         }.body()
     }

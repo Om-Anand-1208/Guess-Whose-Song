@@ -3,7 +3,6 @@ package com.guesswhosesong.app.ui.screens.lobby
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.guesswhosesong.app.data.network.WebSocketManager
-import com.guesswhosesong.app.data.player.PlayerIdentityManager
 import com.guesswhosesong.app.data.repository.GameRepository
 import com.guesswhosesong.app.data.spotify.SpotifyAuthManager
 import com.guesswhosesong.shared.dto.*
@@ -30,7 +29,6 @@ sealed class LobbyEvent {
 @HiltViewModel
 class LobbyViewModel @Inject constructor(
     private val gameRepository: GameRepository,
-    private val playerIdentityManager: PlayerIdentityManager,
     private val spotifyAuthManager: SpotifyAuthManager
 ) : ViewModel() {
 
@@ -43,10 +41,7 @@ class LobbyViewModel @Inject constructor(
     fun connect(joinCode: String, displayName: String) {
         viewModelScope.launch {
             try {
-                val playerId = playerIdentityManager.getPlayerId()
-                val token = playerIdentityManager.getToken()
-                _uiState.update { it.copy(selfPlayerId = playerId) }
-                gameRepository.connect(joinCode, token, displayName)
+                gameRepository.connect(joinCode, displayName)
                 observeMessages()
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "Connection failed: ${e.message}") }
@@ -107,17 +102,14 @@ class LobbyViewModel @Inject constructor(
             spotifyAuthManager.isConnected.collect { connected ->
                 if (connected) {
                     _uiState.update { it.copy(isSpotifyConnected = true) }
-                    gameRepository.connectSpotify("")
+                    gameRepository.refreshSpotify()
                 }
             }
         }
     }
 
     fun connectSpotify() {
-        val playerId = _uiState.value.selfPlayerId
-        if (playerId.isNotBlank()) {
-            spotifyAuthManager.launchOAuth(playerId)
-        }
+        spotifyAuthManager.launchOAuth()
     }
 
     fun startGame() {

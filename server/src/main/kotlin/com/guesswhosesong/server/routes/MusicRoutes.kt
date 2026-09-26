@@ -1,12 +1,15 @@
 package com.guesswhosesong.server.routes
 
+import com.guesswhosesong.server.auth.FirebaseTokenVerifier
+import com.guesswhosesong.server.auth.requireUser
 import com.guesswhosesong.server.music.MusicService
+import com.guesswhosesong.server.redis.RateLimiter
+import com.guesswhosesong.server.redis.RedisClient
+import com.guesswhosesong.server.security.InputValidation
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-
-private val musicService = MusicService()
 
 /**
  * Proxy route for unified music search (Deezer with iTunes fallback).
@@ -15,11 +18,21 @@ private val musicService = MusicService()
  * GET /music/search?q=<query>&limit=<n>
  * GET /music/top
  */
-fun Route.musicRoutes() {
+fun Route.musicRoutes(
+    tokenVerifier: FirebaseTokenVerifier,
+    redisClient: RedisClient,
+    musicService: MusicService
+) {
+    val rateLimiter = RateLimiter(redisClient)
     route("/music") {
         get("/search") {
+            val user = call.requireUserOrNull(tokenVerifier)
+                ?: return@get call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "AUTH_REQUIRED"))
+            if (!rateLimiter.allow("music:search", user.uid, 30, 60)) {
+                return@get call.respond(HttpStatusCode.TooManyRequests, mapOf("error" to "RATE_LIMITED"))
+            }
             val query = call.request.queryParameters["q"]?.trim()
-            if (query.isNullOrBlank()) {
+            if (query == null || !InputValidation.searchTerm(query)) {
                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Missing query parameter 'q'"))
                 return@get
             }
@@ -29,8 +42,21 @@ fun Route.musicRoutes() {
         }
 
         get("/top") {
+            val user = call.requireUserOrNull(tokenVerifier)
+                ?: return@get call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "AUTH_REQUIRED"))
+            if (!rateLimiter.allow("music:top", user.uid, 30, 60)) {
+                return@get call.respond(HttpStatusCode.TooManyRequests, mapOf("error" to "RATE_LIMITED"))
+            }
             val results = musicService.getTopTracks()
             call.respond(mapOf("tracks" to results))
         }
     }
+}
+
+private fun io.ktor.server.application.ApplicationCall.requireUserOrNull(
+    verifier: FirebaseTokenVerifier
+) = try {
+    requireUser(verifier)
+} catch (_: Exception) {
+    null
 }

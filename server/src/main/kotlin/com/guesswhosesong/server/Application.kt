@@ -1,8 +1,10 @@
 package com.guesswhosesong.server
 
+import com.guesswhosesong.server.auth.FirebaseTokenVerifier
 import com.guesswhosesong.server.engine.RoomManager
 import com.guesswhosesong.server.plugins.*
 import com.guesswhosesong.server.redis.RedisClient
+import com.guesswhosesong.server.routes.closeSpotifyResources
 import io.ktor.server.application.*
 import io.ktor.server.engine.*
 import io.ktor.server.netty.*
@@ -17,6 +19,7 @@ fun Application.module() {
     // Initialize singletons
     val redisClient = RedisClient.fromEnv()
     val roomManager = RoomManager(redisClient)
+    val tokenVerifier = FirebaseTokenVerifier.fromEnvironment()
 
     // Install Ktor plugins
     configureSerialization()
@@ -26,5 +29,11 @@ fun Application.module() {
     configureCallLogging()
 
     // Mount routes
-    configureRouting(roomManager, redisClient)
+    configureRouting(roomManager, redisClient, tokenVerifier)
+
+    environment.monitor.subscribe(ApplicationStopping) {
+        roomManager.musicService.close()
+        closeSpotifyResources()
+        redisClient.close()
+    }
 }

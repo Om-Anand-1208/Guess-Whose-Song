@@ -65,7 +65,7 @@ class ItunesClient {
                     )
                 }
         } catch (e: Exception) {
-            logger.error("iTunes search failed for query '$query': ${e.message}", e)
+            logger.error("iTunes search failed: ${e.message?.take(120)}")
             emptyList()
         }
     }

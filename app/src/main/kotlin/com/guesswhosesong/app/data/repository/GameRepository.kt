@@ -104,8 +104,8 @@ class GameRepository(private val wsManager: WebSocketManager) {
         }
     }
 
-    fun connect(joinCode: String, token: String, displayName: String) {
-        wsManager.connect(joinCode, token, displayName)
+    fun connect(joinCode: String, displayName: String) {
+        wsManager.connect(joinCode, displayName)
     }
 
     fun disconnect() {
@@ -120,7 +120,7 @@ class GameRepository(private val wsManager: WebSocketManager) {
     suspend fun startGame() = wsManager.send(StartGame())
     suspend fun submitSong(song: SongEntry) {
         _mySubmittedSongs.value = listOf(song)
-        wsManager.send(SubmitSong(song = song))
+        wsManager.send(UpdatePendingSong(song = song))
     }
     suspend fun updatePendingSong(song: SongEntry) = wsManager.send(UpdatePendingSong(song = song))
     suspend fun updatePendingSongs(songs: List<SongEntry>) {
@@ -140,5 +140,5 @@ class GameRepository(private val wsManager: WebSocketManager) {
         wsManager.send(PlayAgain())
     }
     suspend fun endRoom() = wsManager.send(EndRoom())
-    suspend fun connectSpotify(accessToken: String) = wsManager.send(ConnectSpotify(accessToken = accessToken))
+    suspend fun refreshSpotify() = wsManager.send(RefreshSpotify())
 }

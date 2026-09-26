@@ -139,7 +139,7 @@ class SubmissionViewModel @Inject constructor(
             spotifyAuthManager.isConnected.collect { connected ->
                 if (connected) {
                     _uiState.update { it.copy(spotifyConnected = true) }
-                    gameRepository.connectSpotify("")
+                    gameRepository.refreshSpotify()
                     loadSpotifySuggestions()
                 }
             }
@@ -165,7 +165,9 @@ class SubmissionViewModel @Inject constructor(
     fun loadPopularSuggestions() {
         viewModelScope.launch {
             try {
-                val response = httpClient.get("$baseUrl/music/top")
+                val response = httpClient.get("$baseUrl/music/top") {
+                    bearerAuth(playerIdentityManager.getIdToken())
+                }
                 if (response.status == HttpStatusCode.OK) {
                     val result = response.body<Map<String, List<TrackSearchResult>>>()
                     val tracks = result["tracks"] ?: emptyList()
@@ -178,18 +180,14 @@ class SubmissionViewModel @Inject constructor(
     }
 
     fun connectSpotify() {
-        val playerId = _uiState.value.selfPlayerId
-        if (playerId.isNotBlank()) {
-            spotifyAuthManager.launchOAuth(playerId)
-        }
+        spotifyAuthManager.launchOAuth()
     }
 
     fun loadSpotifySuggestions() {
         viewModelScope.launch {
             try {
-                val token = playerIdentityManager.getToken()
                 val response = httpClient.get("$baseUrl/spotify/top") {
-                    header("Authorization", "Bearer $token")
+                    bearerAuth(playerIdentityManager.getIdToken())
                 }
                 if (response.status == HttpStatusCode.OK) {
                     val result = response.body<Map<String, List<SpotifySuggestion>>>()
@@ -220,6 +218,7 @@ class SubmissionViewModel @Inject constructor(
         try {
             val response = httpClient.get("$baseUrl/music/search") {
                 parameter("q", query)
+                bearerAuth(playerIdentityManager.getIdToken())
             }
             if (response.status == HttpStatusCode.OK) {
                 val result = response.body<Map<String, List<TrackSearchResult>>>()

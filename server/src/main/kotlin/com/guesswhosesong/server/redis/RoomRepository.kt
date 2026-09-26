@@ -14,7 +14,8 @@ class RoomRepository(private val redis: RedisClient) {
 
     companion object {
         private const val ROOM_TTL_SECONDS = 4L * 60L * 60L // 4 hours
-        fun roomKey(joinCode: String) = "room:$joinCode"
+        // v2 is an intentional hard-cutover namespace; old self-asserted rooms cannot re-enter.
+        fun roomKey(joinCode: String) = "gws:v2:room:$joinCode"
     }
 
     fun save(room: Room) {
@@ -42,4 +43,3 @@ class RoomRepository(private val redis: RedisClient) {
         redis.expire(roomKey(joinCode), ROOM_TTL_SECONDS)
     }
 }
-

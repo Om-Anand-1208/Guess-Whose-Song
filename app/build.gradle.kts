@@ -6,6 +6,12 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+// The Firebase Android config is deployment/project-specific and intentionally ignored.
+// Apply the plugin when a local/CI secret-provided config is present.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
+
 android {
     namespace = "com.guesswhosesong.app"
     compileSdk = 37
@@ -59,6 +65,10 @@ android {
 dependencies {
     implementation(project(":shared"))
 
+    implementation(platform(libs.firebase.bom))
+    implementation(libs.firebase.auth.ktx)
+    implementation(libs.play.services.auth)
+
     // Compose BOM
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
@@ -102,4 +112,5 @@ dependencies {
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.kotlinx.coroutines.play.services)
 }

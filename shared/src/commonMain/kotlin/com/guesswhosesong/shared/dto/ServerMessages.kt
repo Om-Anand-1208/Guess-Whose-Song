@@ -33,7 +33,7 @@ data class RoomUpdated(
 @SerialName("KICKED")
 class Kicked : ServerMessage() {
     override fun equals(other: Any?): Boolean = other is Kicked
-    override fun hashCode(): Int = javaClass.hashCode()
+    override fun hashCode(): Int = 1
 }
 
 /** Notifies clients that a new host has been assigned */
@@ -116,7 +116,7 @@ data class GameResults(
 @SerialName("ROOM_ENDED")
 class RoomEnded : ServerMessage() {
     override fun equals(other: Any?): Boolean = other is RoomEnded
-    override fun hashCode(): Int = javaClass.hashCode()
+    override fun hashCode(): Int = 1
 }
 
 // ─── Chat ────────────────────────────────────────────────────────────────────
@@ -142,5 +142,5 @@ data class ErrorMessage(
 @SerialName("PONG")
 class Pong : ServerMessage() {
     override fun equals(other: Any?): Boolean = other is Pong
-    override fun hashCode(): Int = javaClass.hashCode()
+    override fun hashCode(): Int = 1
 }

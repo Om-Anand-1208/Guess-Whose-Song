@@ -74,7 +74,7 @@ class DeezerClient {
                     )
                 }
         } catch (e: Exception) {
-            logger.error("Deezer search failed for query '$query': ${e.message}", e)
+            logger.error("Deezer search failed: ${e.message?.take(120)}")
             emptyList()
         }
     }

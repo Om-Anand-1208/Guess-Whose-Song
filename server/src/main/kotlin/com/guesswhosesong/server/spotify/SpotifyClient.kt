@@ -6,12 +6,15 @@ import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.plugins.contentnegotiation.*
+import io.ktor.client.plugins.ClientRequestException
 import io.ktor.client.request.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 
 private val spotifyJson = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -71,40 +74,52 @@ private fun SpotifyTrackItem.toSuggestion(category: SpotifyCategory) = SpotifySu
  */
 class SpotifyClient {
 
+    class UnauthorizedException : Exception("Spotify authorization expired")
+
     private val httpClient = HttpClient(CIO) {
         install(ContentNegotiation) { json(spotifyJson) }
     }
+    private val externalRequestLimit = Semaphore(4)
 
-    suspend fun getTopTracks(accessToken: String, limit: Int = 50): List<SpotifySuggestion> {
-        return try {
+    suspend fun getTopTracks(accessToken: String, limit: Int = 50): List<SpotifySuggestion> = externalRequestLimit.withPermit {
+        try {
             val response: SpotifyTopTracksResponse = httpClient.get("https://api.spotify.com/v1/me/top/tracks") {
                 bearerAuth(accessToken)
                 parameter("limit", limit)
                 parameter("time_range", "medium_term")
             }.body()
             response.items.map { it.toSuggestion(SpotifyCategory.TOP_TRACKS) }
-        } catch (e: Exception) { emptyList() }
+        } catch (e: ClientRequestException) {
+            if (e.response.status == HttpStatusCode.Unauthorized) throw UnauthorizedException()
+            emptyList()
+        } catch (_: Exception) { emptyList() }
     }
 
-    suspend fun getRecentlyPlayed(accessToken: String, limit: Int = 50): List<SpotifySuggestion> {
-        return try {
+    suspend fun getRecentlyPlayed(accessToken: String, limit: Int = 50): List<SpotifySuggestion> = externalRequestLimit.withPermit {
+        try {
             val response: SpotifyRecentResponse = httpClient.get("https://api.spotify.com/v1/me/player/recently-played") {
                 bearerAuth(accessToken)
                 parameter("limit", limit)
             }.body()
             response.items.map { it.track.toSuggestion(SpotifyCategory.RECENTLY_PLAYED) }
-        } catch (e: Exception) { emptyList() }
+        } catch (e: ClientRequestException) {
+            if (e.response.status == HttpStatusCode.Unauthorized) throw UnauthorizedException()
+            emptyList()
+        } catch (_: Exception) { emptyList() }
     }
 
-    suspend fun getPlaylistTracks(accessToken: String, playlistId: String): List<SpotifySuggestion> {
-        return try {
+    suspend fun getPlaylistTracks(accessToken: String, playlistId: String): List<SpotifySuggestion> = externalRequestLimit.withPermit {
+        try {
             val response: SpotifyPlaylistTracksResponse =
                 httpClient.get("https://api.spotify.com/v1/playlists/$playlistId/tracks") {
                     bearerAuth(accessToken)
                     parameter("limit", 50)
                 }.body()
             response.items.mapNotNull { it.track?.toSuggestion(SpotifyCategory.PLAYLIST) }
-        } catch (e: Exception) { emptyList() }
+        } catch (e: ClientRequestException) {
+            if (e.response.status == HttpStatusCode.Unauthorized) throw UnauthorizedException()
+            emptyList()
+        } catch (_: Exception) { emptyList() }
     }
 
     fun close() = httpClient.close()

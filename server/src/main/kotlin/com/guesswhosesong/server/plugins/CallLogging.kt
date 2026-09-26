@@ -9,6 +9,6 @@ fun Application.configureCallLogging() {
     install(CallLogging) {
         level = Level.INFO
         filter { call -> call.request.path().startsWith("/") }
+        format { call -> "${call.request.httpMethod.value} ${call.request.path()}" }
     }
 }
-

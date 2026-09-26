@@ -4,22 +4,29 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free
+    numInstances: 1 # Room ownership is intentionally single-instance until Pub/Sub is added.
     healthCheckPath: /health
     envVars:
       - key: PORT
         value: 8080
+      - key: FIREBASE_PROJECT_ID
+        value: guess-whose-song
       - key: REDIS_URL
         fromService:
           type: redis
           name: guess-whose-song-redis
           property: connectionString
-      - key: FIREBASE_SERVICE_ACCOUNT_PATH
-        sync: false  # Set manually in Render dashboard
+      - key: FIREBASE_SERVICE_ACCOUNT_JSON
+        sync: false  # Set as a deployment secret; never bake it into the image.
       - key: SPOTIFY_CLIENT_ID
         sync: false
       - key: SPOTIFY_CLIENT_SECRET
         sync: false
       - key: SPOTIFY_REDIRECT_URI
+        sync: false
+      - key: SPOTIFY_WEB_REDIRECT_URI
+        sync: false
+      - key: WEB_ORIGINS
         sync: false
 
   - type: redis
@@ -27,4 +34,3 @@ services:
     plan: free
     ipAllowList: []  # Internal connections only
     maxmemoryPolicy: allkeys-lru
-

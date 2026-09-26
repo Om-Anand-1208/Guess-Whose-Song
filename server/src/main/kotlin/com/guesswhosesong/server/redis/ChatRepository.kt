@@ -16,7 +16,7 @@ class ChatRepository(private val redis: RedisClient) {
     companion object {
         private const val MAX_MESSAGES = 200L // keep last 200 in memory for reconnect catch-up
         private const val CHAT_TTL_SECONDS = 4L * 60L * 60L // matches room TTL
-        fun chatKey(joinCode: String) = "chat:$joinCode"
+        fun chatKey(joinCode: String) = "gws:v2:chat:$joinCode"
     }
 
     /**
@@ -50,4 +50,3 @@ class ChatRepository(private val redis: RedisClient) {
         redis.del(chatKey(joinCode))
     }
 }
-

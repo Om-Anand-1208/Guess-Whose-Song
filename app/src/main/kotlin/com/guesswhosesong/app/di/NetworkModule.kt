@@ -1,6 +1,7 @@
 package com.guesswhosesong.app.di
 
 import com.guesswhosesong.app.data.network.WebSocketManager
+import com.guesswhosesong.app.data.player.PlayerIdentityManager
 import com.guesswhosesong.shared.dto.GWSJson
 import dagger.Module
 import dagger.Provides
@@ -33,7 +34,7 @@ object NetworkModule {
                 json(GWSJson)
             }
             install(Logging) {
-                level = LogLevel.INFO
+                level = if (com.guesswhosesong.app.BuildConfig.DEBUG) LogLevel.INFO else LogLevel.NONE
             }
             install(WebSockets)
         }
@@ -41,7 +42,7 @@ object NetworkModule {
 
     @Provides
     @Singleton
-    fun provideWebSocketManager(httpClient: HttpClient): WebSocketManager {
-        return WebSocketManager(httpClient, WS_BASE_URL)
+    fun provideWebSocketManager(httpClient: HttpClient, identityManager: PlayerIdentityManager): WebSocketManager {
+        return WebSocketManager(httpClient, WS_BASE_URL, identityManager)
     }
 }

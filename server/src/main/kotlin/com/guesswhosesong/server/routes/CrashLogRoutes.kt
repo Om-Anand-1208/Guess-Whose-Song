@@ -1,5 +1,9 @@
 package com.guesswhosesong.server.routes
 
+import com.guesswhosesong.server.auth.FirebaseTokenVerifier
+import com.guesswhosesong.server.auth.requireUser
+import com.guesswhosesong.server.redis.RateLimiter
+import com.guesswhosesong.server.redis.RedisClient
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
@@ -10,7 +14,6 @@ import org.slf4j.LoggerFactory
 
 @Serializable
 data class ClientCrashLogRequest(
-    val playerId: String? = null,
     val device: String? = null,
     val appVersion: String? = null,
     val exceptionClass: String,
@@ -18,22 +21,42 @@ data class ClientCrashLogRequest(
     val stackTrace: String
 )
 
-fun Route.crashLogRoutes() {
+fun Route.crashLogRoutes(tokenVerifier: FirebaseTokenVerifier, redisClient: RedisClient) {
     val logger = LoggerFactory.getLogger("ClientCrashReport")
+    val rateLimiter = RateLimiter(redisClient)
 
     route("/api/logs") {
         post("/crash") {
             try {
+                if ((call.request.contentLength() ?: 0L) > 32_768L) {
+                    call.respond(HttpStatusCode.PayloadTooLarge, mapOf("error" to "Crash report too large"))
+                    return@post
+                }
+                val user = call.requireUser(tokenVerifier)
+                if (!rateLimiter.allow("crash", user.uid, 5, 3600)) {
+                    call.respond(HttpStatusCode.TooManyRequests, mapOf("error" to "RATE_LIMITED"))
+                    return@post
+                }
                 val report = call.receive<ClientCrashLogRequest>()
+                if (report.exceptionClass.length !in 1..200 ||
+                    report.stackTrace.length !in 1..20_000 ||
+                    report.message.orEmpty().length > 2_000 ||
+                    report.device.orEmpty().length > 200 ||
+                    report.appVersion.orEmpty().length > 100 ||
+                    report.listFieldsContainControlCharacters()
+                ) {
+                    call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid crash report"))
+                    return@post
+                }
                 logger.error(
                     buildString {
                         appendLine("\n=================== CLIENT CRASH REPORT ===================")
-                        appendLine("Player ID : ${report.playerId ?: "unknown"}")
-                        appendLine("Device    : ${report.device ?: "unknown"}")
-                        appendLine("App Ver   : ${report.appVersion ?: "unknown"}")
-                        appendLine("Exception : ${report.exceptionClass}: ${report.message ?: ""}")
+                        appendLine("Player ID : [redacted]")
+                        appendLine("Device    : ${logSafe(report.device ?: "unknown")}")
+                        appendLine("App Ver   : ${logSafe(report.appVersion ?: "unknown")}")
+                        appendLine("Exception : ${logSafe(report.exceptionClass)}: ${logSafe(report.message ?: "")}")
                         appendLine("--- Stack Trace ---")
-                        appendLine(report.stackTrace)
+                        appendLine(logSafe(report.stackTrace))
                         append("===========================================================")
                     }
                 )
@@ -44,3 +67,14 @@ fun Route.crashLogRoutes() {
         }
     }
 }
+
+private fun ClientCrashLogRequest.listFieldsContainControlCharacters(): Boolean =
+    sequenceOf(device, appVersion, message, exceptionClass, stackTrace)
+        .filterNotNull()
+        .any { value -> value.any { it.isISOControl() && it != '\n' && it != '\r' && it != '\t' } }
+
+private fun logSafe(value: String): String = value
+    .replace("\\", "\\\\")
+    .replace("\r", "\\r")
+    .replace("\n", "\\n")
+    .replace("\t", "\\t")

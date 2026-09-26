@@ -2,6 +2,7 @@
 .gradle/
 build/
 **/build/
+kotlin-js-store/
 *.class
 
 # IDE
@@ -12,6 +13,9 @@ build/
 # Android
 /app/google-services.json
 local.properties
+web/firebase-config.local.js
+web/src/wasmJsMain/resources/firebase-config.local.js
+.firebaserc
 
 # Server secrets
 service-account.json
@@ -21,6 +25,7 @@ service-account.json
 # Logs
 *.log
 firebase-adminsdk.json
+.firebase/
 
 # VSCode
 .vscode/

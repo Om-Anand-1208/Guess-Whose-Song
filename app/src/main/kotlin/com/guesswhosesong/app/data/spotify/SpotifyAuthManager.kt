@@ -3,59 +3,84 @@ package com.guesswhosesong.app.data.spotify
 import android.content.Context
 import android.content.Intent
 import androidx.browser.customtabs.CustomTabsIntent
+import androidx.core.net.toUri
+import com.guesswhosesong.app.data.player.PlayerIdentityManager
 import com.guesswhosesong.app.di.NetworkModule
 import dagger.hilt.android.qualifiers.ApplicationContext
+import io.ktor.client.HttpClient
+import io.ktor.client.call.body
+import io.ktor.client.request.bearerAuth
+import io.ktor.client.request.get
+import io.ktor.client.request.delete
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.serialization.Serializable
 import javax.inject.Inject
 import javax.inject.Singleton
-import androidx.core.net.toUri
-import androidx.core.content.edit
 
-/**
- * Manages the optional Spotify OAuth flow.
- * Opens a Chrome Custom Tab for the Spotify authorization page hosted on our server.
- * The server handles the code exchange; on success, the Android app receives a deep link:
- * guesswhosesong://spotify-callback?success=true
- */
+@Serializable
+private data class SpotifyAuthUrlResponse(val authorizationUrl: String)
+
+@Serializable
+private data class SpotifyStatusResponse(val connected: Boolean)
+
 @Singleton
 class SpotifyAuthManager @Inject constructor(
-    @ApplicationContext private val context: Context
+    @ApplicationContext private val context: Context,
+    private val httpClient: HttpClient,
+    private val identityManager: PlayerIdentityManager
 ) {
-    private val prefs = context.getSharedPreferences("gws_spotify", Context.MODE_PRIVATE)
-
-    private val _isConnected = MutableStateFlow(prefs.getBoolean("is_connected", false))
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val _isConnected = MutableStateFlow(false)
     val isConnected: StateFlow<Boolean> = _isConnected.asStateFlow()
 
-    /**
-     * Opens Spotify OAuth in a Chrome Custom Tab (or browser fallback).
-     * Pass the playerId as the state param so the server can link the token to the player.
-     */
-    fun launchOAuth(playerId: String) {
-        val authUrl = "${NetworkModule.BASE_URL}/spotify/auth?state=$playerId"
-        try {
-            val customTabsIntent = CustomTabsIntent.Builder().build()
-            customTabsIntent.intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            customTabsIntent.launchUrl(context, authUrl.toUri())
-        } catch (_: Exception) {
-            val fallbackIntent = Intent(Intent.ACTION_VIEW, authUrl.toUri()).apply {
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+    init { refreshStatus() }
+
+    fun launchOAuth() {
+        scope.launch {
+            runCatching {
+                val token = identityManager.getIdToken()
+                val response = httpClient.get("${NetworkModule.BASE_URL}/spotify/auth-url") {
+                    bearerAuth(token)
+                }.body<SpotifyAuthUrlResponse>()
+                val uri = response.authorizationUrl.toUri()
+                try {
+                    CustomTabsIntent.Builder().build().launchUrl(context, uri)
+                } catch (_: Exception) {
+                    context.startActivity(Intent(Intent.ACTION_VIEW, uri).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                }
             }
-            context.startActivity(fallbackIntent)
         }
     }
 
-    /**
-     * Called when the deep-link callback arrives (from MainActivity or a NavController handler).
-     */
-    fun onCallbackReceived(success: Boolean) {
-        prefs.edit { putBoolean("is_connected", success) }
-        _isConnected.value = success
+    /** The callback only wakes a status refresh; its success query is not trusted. */
+    fun onCallbackReceived(@Suppress("UNUSED_PARAMETER") success: Boolean) {
+        refreshStatus()
+    }
+
+    fun refreshStatus() {
+        scope.launch {
+            _isConnected.value = runCatching {
+                httpClient.get("${NetworkModule.BASE_URL}/spotify/status") {
+                    bearerAuth(identityManager.getIdToken())
+                }.body<SpotifyStatusResponse>().connected
+            }.getOrDefault(false)
+        }
     }
 
     fun disconnect() {
-        prefs.edit { putBoolean("is_connected", false) }
-        _isConnected.value = false
+        scope.launch {
+            runCatching {
+                httpClient.delete("${NetworkModule.BASE_URL}/spotify/connection") {
+                    bearerAuth(identityManager.getIdToken())
+                }
+            }
+            _isConnected.value = false
+        }
     }
 }

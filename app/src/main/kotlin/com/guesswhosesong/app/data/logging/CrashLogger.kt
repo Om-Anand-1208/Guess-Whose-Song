@@ -2,7 +2,8 @@ package com.guesswhosesong.app.data.logging
 
 import android.content.Context
 import android.os.Build
-import com.guesswhosesong.app.data.player.PlayerIdentityManager
+import com.google.android.gms.tasks.Tasks
+import com.google.firebase.auth.FirebaseAuth
 import com.guesswhosesong.app.di.NetworkModule
 import org.json.JSONObject
 import java.io.OutputStreamWriter
@@ -10,16 +11,17 @@ import java.io.PrintWriter
 import java.io.StringWriter
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.TimeUnit
 import kotlin.concurrent.thread
 
 object CrashLogger {
 
-    fun install(context: Context, playerIdentityManager: PlayerIdentityManager) {
+    fun install(context: Context) {
         val originalHandler = Thread.getDefaultUncaughtExceptionHandler()
 
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             try {
-                sendCrashReport(context, playerIdentityManager, thread, throwable)
+                sendCrashReport(context, thread, throwable)
             } catch (_: Throwable) {
                 // Ignore reporting failure to ensure default handler proceeds
             } finally {
@@ -30,7 +32,6 @@ object CrashLogger {
 
     private fun sendCrashReport(
         context: Context,
-        playerIdentityManager: PlayerIdentityManager,
         thread: Thread,
         throwable: Throwable
     ) {
@@ -38,7 +39,11 @@ object CrashLogger {
         throwable.printStackTrace(PrintWriter(sw))
         val stackTrace = sw.toString()
 
-        val playerId = try { playerIdentityManager.getPlayerId() } catch (_: Exception) { "unknown" }
+        val idToken = try {
+            FirebaseAuth.getInstance().currentUser?.let {
+                Tasks.await(it.getIdToken(false), 2, TimeUnit.SECONDS).token
+            }
+        } catch (_: Exception) { null }
         val device = "${Build.MANUFACTURER} ${Build.MODEL} (Android ${Build.VERSION.RELEASE}, SDK ${Build.VERSION.SDK_INT})"
         val appVersion = try {
             val pInfo = context.packageManager.getPackageInfo(context.packageName, 0)
@@ -46,7 +51,6 @@ object CrashLogger {
         } catch (_: Exception) { "unknown" }
 
         val json = JSONObject().apply {
-            put("playerId", playerId)
             put("device", device)
             put("appVersion", appVersion)
             put("exceptionClass", throwable::class.java.name)
@@ -63,6 +67,9 @@ object CrashLogger {
                 conn.readTimeout = 3000
                 conn.doOutput = true
                 conn.setRequestProperty("Content-Type", "application/json")
+                if (!idToken.isNullOrBlank()) {
+                    conn.setRequestProperty("Authorization", "Bearer $idToken")
+                }
                 conn.outputStream.use { os ->
                     OutputStreamWriter(os, "UTF-8").use { osw ->
                         osw.write(json)

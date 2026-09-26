@@ -1,5 +1,6 @@
 package com.guesswhosesong.server.plugins
 
+import com.guesswhosesong.server.auth.FirebaseTokenVerifier
 import com.guesswhosesong.server.engine.RoomManager
 import com.guesswhosesong.server.redis.RedisClient
 import com.guesswhosesong.server.routes.*
@@ -8,7 +9,11 @@ import io.ktor.server.application.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 
-fun Application.configureRouting(roomManager: RoomManager, redisClient: RedisClient) {
+fun Application.configureRouting(
+    roomManager: RoomManager,
+    redisClient: RedisClient,
+    tokenVerifier: FirebaseTokenVerifier
+) {
     routing {
         // Health check
         get("/health") {
@@ -16,15 +21,15 @@ fun Application.configureRouting(roomManager: RoomManager, redisClient: RedisCli
         }
 
         // Room REST + WebSocket
-        roomRoutes(roomManager)
+        roomRoutes(roomManager, redisClient, tokenVerifier)
 
         // Music proxy (Deezer + iTunes fallback)
-        musicRoutes()
+        musicRoutes(tokenVerifier, redisClient, roomManager.musicService)
 
         // Spotify OAuth + data routes (optional — gracefully unavailable if not configured)
-        spotifyRoutes(redisClient)
+        spotifyRoutes(redisClient, tokenVerifier, roomManager.musicService)
 
         // Client crash logging
-        crashLogRoutes()
+        crashLogRoutes(tokenVerifier, redisClient)
     }
 }
