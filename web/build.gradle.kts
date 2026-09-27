@@ -7,6 +7,12 @@ plugins {
     alias(libs.plugins.compose.multiplatform)
 }
 
+compose.resources {
+    generateResClass = always
+    publicResClass = true
+    packageOfResClass = "com.guesswhosesong.web.generated.resources"
+}
+
 kotlin {
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
@@ -23,6 +29,7 @@ kotlin {
                 implementation(compose.material3)
                 implementation(compose.ui)
                 implementation(compose.uiUtil)
+                implementation(compose.components.resources)
                 implementation(libs.kotlinx.coroutines.core)
             }
         }

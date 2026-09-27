@@ -1,8 +1,15 @@
 package com.guesswhosesong.app.ui.screens.lobby
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.widget.Toast
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,8 +22,10 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -24,29 +33,33 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.guesswhosesong.app.ui.components.AvatarBadge
+import com.guesswhosesong.app.ui.components.AvatarOptions
+import com.guesswhosesong.app.ui.components.EmptyAvatarBadge
+import com.guesswhosesong.app.ui.components.GuessWhoseSongWordmark
 import com.guesswhosesong.app.ui.theme.GwsPalette
 import com.guesswhosesong.shared.models.Player
 import com.guesswhosesong.shared.models.RoomSettings
@@ -62,6 +75,7 @@ fun LobbyScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
+    val context = LocalContext.current
 
     LaunchedEffect(joinCode) {
         viewModel.connect(joinCode, displayName, avatarId)
@@ -78,100 +92,128 @@ fun LobbyScreen(
     }
 
     val room = uiState.room
+    val players = room?.players.orEmpty()
     val selfId = uiState.selfPlayerId
-    val self = room?.players?.find { it.id == selfId }
+    val self = players.find { it.id == selfId }
     val isHost = self?.isHost == true
+    val playerLimit = room?.settings?.playerLimit ?: 10
+    val connectedCount = players.count { it.connected }
+    val remainingSlots = (playerLimit - players.size).coerceAtLeast(0)
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
+            .background(GwsPalette.Paper)
             .statusBarsPadding()
             .navigationBarsPadding()
-            .padding(horizontal = 18.dp, vertical = 12.dp)
+            .padding(horizontal = 20.dp, vertical = 10.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("THE HANGOUT", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp, color = MaterialTheme.colorScheme.primary)
-                Text("Room ${room?.joinCode ?: joinCode}", style = MaterialTheme.typography.headlineSmall)
-            }
-            Surface(
-                color = GwsPalette.Butter,
-                shape = RoundedCornerShape(50)
-            ) {
+                GuessWhoseSongWordmark()
                 Text(
-                    "${room?.players?.size ?: 0}/${room?.settings?.playerLimit ?: 10} players",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)
+                    "THE HANGOUT",
+                    color = GwsPalette.Ink,
+                    fontSize = 25.sp,
+                    lineHeight = 29.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = (-0.6).sp
                 )
             }
+            ConnectionPill(connected = uiState.isConnected)
             if (isHost) {
                 IconButton(onClick = { showSettings = true }) {
-                    Icon(Icons.Default.Settings, contentDescription = "Game settings")
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "Game settings",
+                        tint = GwsPalette.Ink
+                    )
                 }
             }
         }
 
         Spacer(Modifier.height(12.dp))
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = GwsPalette.Lavender.copy(alpha = 0.42f),
-            shape = RoundedCornerShape(22.dp)
-        ) {
-            Row(
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                AvatarBadge(self?.avatarId ?: avatarId, size = 54.dp)
-                Spacer(Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("You’re in!", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.ExtraBold)
-                    Text(
-                        "${self?.displayName ?: displayName} · choose your song when the host starts",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                Text("♫", fontSize = 28.sp, color = MaterialTheme.colorScheme.primary)
+        val roomCode = room?.joinCode ?: joinCode
+        RoomCodeCard(
+            code = roomCode,
+            connectedCount = connectedCount,
+            playerLimit = playerLimit,
+            onCopyCode = {
+                val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                clipboard.setPrimaryClip(ClipData.newPlainText("Room code", roomCode.uppercase()))
+                Toast.makeText(context, "Room code copied", Toast.LENGTH_SHORT).show()
             }
-        }
+        )
 
-        if (!uiState.isConnected) {
-            LinearProgressIndicator(
-                modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
-                color = MaterialTheme.colorScheme.primary
-            )
-        }
         uiState.error?.let { error ->
-            Text(error, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 8.dp))
+            Surface(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                color = Color(0xFFFFE2DF),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text(
+                    error,
+                    color = Color(0xFF9D2922),
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp)
+                )
+            }
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 8.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Players", style = MaterialTheme.typography.titleLarge)
-            Spacer(Modifier.width(8.dp))
-            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(50)) {
-                Text("make some noise", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Players", color = GwsPalette.Ink, style = MaterialTheme.typography.titleLarge)
+                Text(
+                    "$connectedCount of $playerLimit ready",
+                    color = GwsPalette.Ink.copy(alpha = 0.62f),
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
+            CapacityPill(occupied = players.size, capacity = playerLimit)
         }
 
+        CapacityBar(occupied = players.size, capacity = playerLimit)
+        Spacer(Modifier.height(9.dp))
+
         LazyColumn(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+            contentPadding = PaddingValues(bottom = 8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            items(room?.players ?: emptyList(), key = { it.id }) { player ->
+            if (players.isEmpty()) {
+                item {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        color = Color.White.copy(alpha = 0.72f),
+                        shape = RoundedCornerShape(18.dp),
+                        border = BorderStroke(1.dp, GwsPalette.Ink.copy(alpha = 0.08f))
+                    ) {
+                        Text(
+                            if (uiState.isConnected) "You’re in. Waiting for friends to join." else "Connecting to your room…",
+                            modifier = Modifier.padding(16.dp),
+                            color = GwsPalette.Ink.copy(alpha = 0.68f),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+            items(players, key = { it.id }) { player ->
                 PlayerListItem(
                     player = player,
                     isSelf = player.id == selfId,
-                    isHost = isHost,
                     onKick = if (isHost && player.id != selfId) ({ viewModel.kickPlayer(player.id) }) else null
                 )
+            }
+            if (remainingSlots > 0) {
+                item {
+                    OpenSeatsCard(openSeats = remainingSlots)
+                }
             }
         }
 
@@ -179,25 +221,64 @@ fun LobbyScreen(
             connected = uiState.isSpotifyConnected,
             onConnect = viewModel::connectSpotify
         )
-        Spacer(Modifier.height(8.dp))
+        Spacer(Modifier.height(9.dp))
 
-        if (isHost) {
-            Button(
-                onClick = viewModel::startGame,
-                enabled = (room.players.count { it.connected }) >= 2,
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                modifier = Modifier.fillMaxWidth().height(56.dp)
-            ) {
-                Text("Start the mystery  →", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+        when {
+            room == null -> {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = GwsPalette.Lavender.copy(alpha = 0.32f),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Text(
+                        if (uiState.isConnected) "Loading room…" else "Joining room…",
+                        modifier = Modifier.padding(15.dp),
+                        textAlign = TextAlign.Center,
+                        color = GwsPalette.Ink,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
-        } else {
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.65f),
-                shape = RoundedCornerShape(16.dp)
-            ) {
-                Text("Waiting for ${room?.players?.firstOrNull { it.isHost }?.displayName ?: "the host"} to start…", modifier = Modifier.padding(16.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            isHost -> {
+                Button(
+                    onClick = viewModel::startGame,
+                    enabled = connectedCount >= 2,
+                    shape = RoundedCornerShape(17.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = GwsPalette.Tangerine,
+                        contentColor = GwsPalette.Ink,
+                        disabledContainerColor = GwsPalette.Tangerine.copy(alpha = 0.5f),
+                        disabledContentColor = GwsPalette.Ink.copy(alpha = 0.65f)
+                    ),
+                    modifier = Modifier.fillMaxWidth().height(56.dp)
+                ) {
+                    Text("Start the mystery", fontWeight = FontWeight.Black, fontSize = 16.sp)
+                }
+            }
+            else -> {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = GwsPalette.Lavender.copy(alpha = 0.34f),
+                    shape = RoundedCornerShape(16.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 11.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            "You’re all set",
+                            color = GwsPalette.Ink,
+                            fontWeight = FontWeight.ExtraBold
+                        )
+                        Text(
+                            "Waiting for ${players.firstOrNull { it.isHost }?.displayName ?: "the host"} to start",
+                            color = GwsPalette.Ink.copy(alpha = 0.66f),
+                            style = MaterialTheme.typography.bodySmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
             }
         }
     }
@@ -215,25 +296,218 @@ fun LobbyScreen(
 }
 
 @Composable
-private fun SpotifyLobbyCard(connected: Boolean, onConnect: () -> Unit) {
+private fun ConnectionPill(connected: Boolean) {
+    val dotColor = if (connected) Color(0xFF54A956) else GwsPalette.Tangerine
+    Surface(
+        color = if (connected) GwsPalette.Lime.copy(alpha = 0.38f) else GwsPalette.Butter.copy(alpha = 0.65f),
+        shape = CircleShape
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(Modifier.size(7.dp).clip(CircleShape).background(dotColor))
+            Spacer(Modifier.width(6.dp))
+            Text(
+                if (connected) "LIVE" else "JOINING",
+                color = GwsPalette.Ink,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Black,
+                letterSpacing = 0.6.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun RoomCodeCard(
+    code: String,
+    connectedCount: Int,
+    playerLimit: Int,
+    onCopyCode: () -> Unit
+) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = if (connected) Color(0xFF1DB954).copy(alpha = 0.13f) else MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(16.dp),
-        border = androidx.compose.foundation.BorderStroke(
+        color = GwsPalette.Lavender.copy(alpha = 0.34f),
+        shape = RoundedCornerShape(21.dp),
+        border = BorderStroke(1.dp, GwsPalette.LavenderDeep.copy(alpha = 0.14f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    "ROOM CODE",
+                    color = GwsPalette.Ink.copy(alpha = 0.62f),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 1.2.sp
+                )
+                Text(
+                    code.uppercase(),
+                    color = GwsPalette.Ink,
+                    fontSize = 28.sp,
+                    lineHeight = 32.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 2.2.sp
+                )
+                Text(
+                    "Share this code with friends",
+                    color = GwsPalette.Ink.copy(alpha = 0.66f),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+            Surface(color = Color.White.copy(alpha = 0.72f), shape = RoundedCornerShape(13.dp)) {
+                IconButton(onClick = onCopyCode, modifier = Modifier.size(42.dp)) {
+                    Icon(
+                        imageVector = Icons.Default.ContentCopy,
+                        contentDescription = "Copy room code",
+                        tint = GwsPalette.Ink
+                    )
+                }
+            }
+            Spacer(Modifier.width(7.dp))
+            Surface(color = Color.White.copy(alpha = 0.72f), shape = RoundedCornerShape(14.dp)) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        "$connectedCount/$playerLimit",
+                        color = GwsPalette.Ink,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Black
+                    )
+                    Text(
+                        "PLAYERS",
+                        color = GwsPalette.Ink.copy(alpha = 0.58f),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.6.sp
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CapacityPill(occupied: Int, capacity: Int) {
+    Surface(color = GwsPalette.Butter.copy(alpha = 0.74f), shape = CircleShape) {
+        Text(
+            if (occupied >= capacity) "ROOM FULL" else "${(capacity - occupied).coerceAtLeast(0)} SPOTS LEFT",
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            color = GwsPalette.Ink,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.Black,
+            letterSpacing = 0.3.sp
+        )
+    }
+}
+
+@Composable
+private fun CapacityBar(occupied: Int, capacity: Int) {
+    val fraction = if (capacity <= 0) 0f else (occupied.toFloat() / capacity).coerceIn(0f, 1f)
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(6.dp)
+            .clip(CircleShape)
+            .background(GwsPalette.Lavender.copy(alpha = 0.28f))
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth(fraction)
+                .height(6.dp)
+                .clip(CircleShape)
+                .background(GwsPalette.LavenderDeep)
+        )
+    }
+}
+
+@Composable
+private fun OpenSeatsCard(openSeats: Int) {
+    val swatches = AvatarOptions.take(4)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color.White.copy(alpha = 0.54f),
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, GwsPalette.Ink.copy(alpha = 0.12f))
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 13.dp, vertical = 10.dp)) {
+            Text(
+                "Room for ${openSeats.coerceAtMost(4)} more",
+                color = GwsPalette.Ink.copy(alpha = 0.72f),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Bold
+            )
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(9.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                swatches.forEach { option ->
+                    EmptyAvatarBadge(option.id, size = 38.dp)
+                }
+                Text(
+                    "Invite a friend to fill a spot",
+                    modifier = Modifier.weight(1f),
+                    color = GwsPalette.Ink.copy(alpha = 0.56f),
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 2
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun SpotifyLobbyCard(connected: Boolean, onConnect: () -> Unit) {
+    val spotifyGreen = Color(0xFF188849)
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = if (connected) GwsPalette.Lime.copy(alpha = 0.3f) else Color.White.copy(alpha = 0.78f),
+        shape = RoundedCornerShape(17.dp),
+        border = BorderStroke(
             1.dp,
-            if (connected) Color(0xFF1DB954) else MaterialTheme.colorScheme.outlineVariant
+            if (connected) spotifyGreen.copy(alpha = 0.55f) else GwsPalette.Ink.copy(alpha = 0.12f)
         )
     ) {
-        Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-            Text("♫", fontSize = 22.sp, color = Color(0xFF159447))
+        Row(
+            modifier = Modifier.padding(horizontal = 13.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(color = spotifyGreen.copy(alpha = 0.12f), shape = CircleShape) {
+                Text(
+                    "SPOTIFY",
+                    modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+                    color = spotifyGreen,
+                    fontSize = 9.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 0.3.sp
+                )
+            }
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(if (connected) "Spotify connected" else "Connect Spotify", fontWeight = FontWeight.Bold, color = if (connected) Color(0xFF159447) else MaterialTheme.colorScheme.onSurface)
-                Text(if (connected) "Top tracks ready" else "Optional · make song picks faster", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(
+                    if (connected) "Spotify connected" else "Connect Spotify",
+                    color = GwsPalette.Ink,
+                    style = MaterialTheme.typography.labelLarge
+                )
+                Text(
+                    if (connected) "Your song picks are ready" else "Optional · get song suggestions",
+                    color = GwsPalette.Ink.copy(alpha = 0.62f),
+                    style = MaterialTheme.typography.bodySmall
+                )
             }
-            if (!connected) TextButton(onClick = onConnect) { Text("Connect") }
-            else Text("Ready", color = Color(0xFF159447), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+            if (!connected) {
+                TextButton(onClick = onConnect) {
+                    Text("Connect", color = GwsPalette.LavenderDeep, fontWeight = FontWeight.ExtraBold)
+                }
+            } else {
+                Text("READY", color = spotifyGreen, fontSize = 10.sp, fontWeight = FontWeight.Black)
+            }
         }
     }
 }
@@ -242,31 +516,52 @@ private fun SpotifyLobbyCard(connected: Boolean, onConnect: () -> Unit) {
 fun PlayerListItem(
     player: Player,
     isSelf: Boolean,
-    isHost: Boolean,
     onKick: (() -> Unit)? = null
 ) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = if (isSelf) MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.55f) else MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(18.dp),
-        tonalElevation = if (isSelf) 2.dp else 0.dp
+        color = if (isSelf) GwsPalette.Lavender.copy(alpha = 0.34f) else Color.White.copy(alpha = 0.86f),
+        shape = RoundedCornerShape(17.dp),
+        border = BorderStroke(
+            if (isSelf) 1.5.dp else 1.dp,
+            if (isSelf) GwsPalette.LavenderDeep.copy(alpha = 0.56f) else GwsPalette.Ink.copy(alpha = 0.08f)
+        )
     ) {
-        Row(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            AvatarBadge(player.avatarId, size = 48.dp)
+        Row(
+            modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            EmptyAvatarBadge(player.avatarId, size = 43.dp, selected = isSelf)
             Spacer(Modifier.width(11.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(player.displayName, fontWeight = if (isSelf) FontWeight.ExtraBold else FontWeight.Bold)
-                    if (isSelf) Text("  you", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                    if (player.isHost) Text("  ✦ host", style = MaterialTheme.typography.labelSmall, color = GwsPalette.Tangerine, fontWeight = FontWeight.Bold)
+                    Text(
+                        player.displayName,
+                        color = GwsPalette.Ink,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    if (isSelf) {
+                        Spacer(Modifier.width(6.dp))
+                        Text("YOU", color = GwsPalette.LavenderDeep, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                    }
+                    if (player.isHost) {
+                        Spacer(Modifier.width(6.dp))
+                        Text("HOST", color = Color(0xFFB46A0B), fontSize = 9.sp, fontWeight = FontWeight.Black)
+                    }
                 }
                 Text(
-                    if (player.connected) "in the room" else "reconnecting…",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (player.connected) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
+                    if (player.connected) "In the room" else "Reconnecting…",
+                    color = if (player.connected) GwsPalette.Ink.copy(alpha = 0.58f) else Color(0xFF9D2922),
+                    style = MaterialTheme.typography.bodySmall
                 )
             }
-            if (onKick != null) TextButton(onClick = onKick) { Text("Kick", color = MaterialTheme.colorScheme.error) }
+            if (onKick != null) {
+                TextButton(onClick = onKick, contentPadding = PaddingValues(horizontal = 9.dp, vertical = 6.dp)) {
+                    Text("Kick", color = Color(0xFF9D2922), fontWeight = FontWeight.Bold)
+                }
+            }
         }
     }
 }
@@ -280,12 +575,17 @@ private fun HostSettingsSheet(
 ) {
     var settings by remember { mutableStateOf(currentSettings) }
 
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(modifier = Modifier.padding(horizontal = 18.dp, vertical = 8.dp)) {
-            Text("Tune the room", style = MaterialTheme.typography.headlineSmall)
-            Text("Make the round feel like your group.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp, bottom = 16.dp))
+    ModalBottomSheet(onDismissRequest = onDismiss, containerColor = GwsPalette.Paper) {
+        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
+            Text("Tune the room", style = MaterialTheme.typography.headlineSmall, color = GwsPalette.Ink)
+            Text(
+                "Make the round feel like your group.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = GwsPalette.Ink.copy(alpha = 0.66f),
+                modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
+            )
 
-            Text("Round length", style = MaterialTheme.typography.labelLarge)
+            Text("Round length", style = MaterialTheme.typography.labelLarge, color = GwsPalette.Ink)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                 com.guesswhosesong.shared.models.RoundLengthPreset.entries.forEach { preset ->
                     FilterChip(
@@ -297,7 +597,7 @@ private fun HostSettingsSheet(
             }
 
             Spacer(Modifier.height(16.dp))
-            Text("Voting time", style = MaterialTheme.typography.labelLarge)
+            Text("Voting time", style = MaterialTheme.typography.labelLarge, color = GwsPalette.Ink)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
                 listOf(10, 15, 20, 30).forEach { secs ->
                     FilterChip(
@@ -309,11 +609,23 @@ private fun HostSettingsSheet(
             }
 
             Spacer(Modifier.height(16.dp))
-            Text("Player limit: ${settings.playerLimit}", style = MaterialTheme.typography.labelLarge)
-            Slider(value = settings.playerLimit.toFloat(), onValueChange = { settings = settings.copy(playerLimit = it.toInt()) }, valueRange = 2f..20f, steps = 17)
+            Text("Player limit: ${settings.playerLimit}", style = MaterialTheme.typography.labelLarge, color = GwsPalette.Ink)
+            Slider(
+                value = settings.playerLimit.toFloat(),
+                onValueChange = { settings = settings.copy(playerLimit = it.toInt()) },
+                valueRange = 2f..20f,
+                steps = 17
+            )
 
             Spacer(Modifier.height(16.dp))
-            Button(onClick = { onSettingsUpdated(settings) }, modifier = Modifier.fillMaxWidth().height(52.dp), shape = RoundedCornerShape(16.dp)) { Text("Save settings") }
+            Button(
+                onClick = { onSettingsUpdated(settings) },
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = GwsPalette.Tangerine, contentColor = GwsPalette.Ink)
+            ) {
+                Text("Save settings", fontWeight = FontWeight.Black)
+            }
             Spacer(Modifier.navigationBarsPadding().height(16.dp))
         }
     }

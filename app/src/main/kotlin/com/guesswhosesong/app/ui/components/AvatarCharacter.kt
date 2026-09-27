@@ -3,17 +3,18 @@ package com.guesswhosesong.app.ui.components
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -30,6 +31,9 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -95,64 +99,40 @@ fun AvatarPicker(
     onSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val selected = avatarOption(selectedId)
     Column(modifier = modifier.fillMaxWidth()) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column {
-                Text("Pick your character", style = MaterialTheme.typography.titleMedium)
-                Text(
-                    "This is how friends will spot you",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-            Surface(
-                color = selected.color.copy(alpha = 0.24f),
-                shape = RoundedCornerShape(50)
+        Text("Choose your color", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+        Text(
+            "Tap a circle to pick your player color",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 2.dp)
+        )
+        Spacer(Modifier.height(10.dp))
+        AvatarOptions.chunked(4).forEachIndexed { rowIndex, rowOptions ->
+            if (rowIndex > 0) Spacer(Modifier.height(10.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    selected.name,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                )
-            }
-        }
-        Spacer(Modifier.size(10.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            AvatarOptions.forEach { option ->
-                val isSelected = option.id == selected.id
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(18.dp))
-                        .clickable { onSelected(option.id) }
-                        .background(
-                            if (isSelected) option.color.copy(alpha = 0.25f)
-                            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.44f)
-                        )
-                        .border(
-                            width = if (isSelected) 2.dp else 1.dp,
-                            color = if (isSelected) option.accent else MaterialTheme.colorScheme.outlineVariant,
-                            shape = RoundedCornerShape(18.dp)
-                        )
-                        .padding(horizontal = 8.dp, vertical = 8.dp)
-                ) {
-                    AvatarCharacter(option.id, modifier = Modifier.size(62.dp))
-                    Text(
-                        option.name,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                        modifier = Modifier.padding(top = 3.dp)
+                rowOptions.forEach { option ->
+                    val isSelected = option.id == AvatarCatalog.normalize(selectedId)
+                    Box(
+                        modifier = Modifier
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(option.color, CircleShape)
+                            .border(
+                                width = if (isSelected) 3.dp else 1.dp,
+                                color = if (isSelected) option.accent else Color.White.copy(alpha = 0.9f),
+                                shape = CircleShape
+                            )
+                            .selectable(
+                                selected = isSelected,
+                                role = Role.RadioButton,
+                                onClick = { onSelected(option.id) }
+                            )
+                            .semantics { contentDescription = "${option.name} player color" }
                     )
                 }
             }

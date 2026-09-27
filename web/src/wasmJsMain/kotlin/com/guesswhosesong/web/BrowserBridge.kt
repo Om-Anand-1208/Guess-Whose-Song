@@ -46,6 +46,14 @@ internal fun stopPreview() {
     js("{ if (window.__gwsAudio) { window.__gwsAudio.pause(); window.__gwsAudio.currentTime = 0; } }")
 }
 
+internal fun previewPlaybackPositionSeconds(): Double = js(
+    "window.__gwsAudio ? (Number(window.__gwsAudio.currentTime) || 0) : 0"
+)
+
+internal fun previewPlaybackDurationSeconds(): Double = js(
+    "window.__gwsAudio && Number.isFinite(window.__gwsAudio.duration) ? window.__gwsAudio.duration : 0"
+)
+
 private fun fetchText(
     url: String,
     token: String,

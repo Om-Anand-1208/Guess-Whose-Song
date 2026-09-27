@@ -26,10 +26,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImage
-import com.guesswhosesong.app.ui.components.AvatarBadge
+import com.guesswhosesong.app.ui.components.GuessWhoseSongWordmark
 import com.guesswhosesong.app.ui.theme.GwsPalette
-import com.guesswhosesong.shared.models.TrackSearchResult
 import com.guesswhosesong.shared.models.SongEntry
+import com.guesswhosesong.shared.models.TrackSearchResult
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,7 +39,7 @@ fun SubmissionScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val songs = if (uiState.pendingSongs.isNotEmpty()) uiState.pendingSongs
-                else listOfNotNull(uiState.pendingSong)
+    else listOfNotNull(uiState.pendingSong)
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -50,591 +50,448 @@ fun SubmissionScreen(
     }
 
     Scaffold(
+        modifier = Modifier.imePadding(),
+        containerColor = GwsPalette.Paper,
         topBar = {
-            Surface(color = MaterialTheme.colorScheme.background) {
-                Row(
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .statusBarsPadding()
+                    .padding(start = 22.dp, end = 22.dp, top = 14.dp, bottom = 10.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    GuessWhoseSongWordmark()
+                    Spacer(Modifier.weight(1f))
+                    Surface(
+                        color = GwsPalette.Lavender.copy(alpha = 0.42f),
+                        shape = RoundedCornerShape(50)
+                    ) {
+                        Text(
+                            "${songs.size}/${uiState.maxSongs}",
+                            fontWeight = FontWeight.Bold,
+                            color = GwsPalette.Ink,
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
+                        )
+                    }
+                }
+                Spacer(Modifier.height(4.dp))
+                Text("Choose your songs", style = MaterialTheme.typography.headlineSmall)
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    "${uiState.lockedCount}/${uiState.totalCount} players ready",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GwsPalette.Ink.copy(alpha = 0.66f)
+                )
+                LinearProgressIndicator(
+                    progress = {
+                        if (uiState.totalCount > 0) uiState.lockedCount.toFloat() / uiState.totalCount else 0f
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .statusBarsPadding()
-                        .padding(horizontal = 18.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        .padding(top = 8.dp)
+                        .height(5.dp)
+                        .clip(RoundedCornerShape(50)),
+                    color = GwsPalette.LavenderDeep,
+                    trackColor = GwsPalette.Lavender.copy(alpha = 0.25f)
+                )
+            }
+        },
+        bottomBar = {
+            if (!uiState.songLocked) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = GwsPalette.Paper,
+                    shadowElevation = 8.dp
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("MAKE YOUR PICK", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black, letterSpacing = 1.1.sp, color = MaterialTheme.colorScheme.primary)
-                        Text("Choose your songs", style = MaterialTheme.typography.headlineSmall)
-                    }
-                    AvatarBadge(uiState.room?.players?.find { it.id == uiState.selfPlayerId }?.avatarId ?: "sunny", size = 48.dp)
-                    Spacer(Modifier.width(8.dp))
-                    Surface(color = GwsPalette.Butter, shape = RoundedCornerShape(50)) {
-                        Text("${songs.size}/${uiState.maxSongs}", fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp))
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 18.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(9.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = viewModel::surpriseMe,
+                            modifier = Modifier.weight(1f).height(52.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            border = BorderStroke(1.dp, GwsPalette.LavenderDeep.copy(alpha = 0.55f)),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = GwsPalette.LavenderDeep)
+                        ) {
+                            Text("Surprise me", fontWeight = FontWeight.Bold)
+                        }
+                        Button(
+                            onClick = viewModel::lockSong,
+                            enabled = songs.isNotEmpty(),
+                            modifier = Modifier.weight(1.25f).height(52.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = GwsPalette.Tangerine, contentColor = GwsPalette.Ink)
+                        ) {
+                            Text("Lock in (${songs.size}/${uiState.maxSongs})", fontWeight = FontWeight.Black)
+                        }
                     }
                 }
             }
         }
     ) { padding ->
-        Column(
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .imePadding()
-                .padding(16.dp)
+                .padding(padding),
+            contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
-            Text(
-                "${uiState.lockedCount}/${uiState.totalCount} players ready",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-            )
-            LinearProgressIndicator(
-                progress = { if (uiState.totalCount > 0) uiState.lockedCount.toFloat() / uiState.totalCount else 0f },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 12.dp)
-            )
-
-            // Spotify Banner
-            if (!uiState.spotifyConnected) {
-                OutlinedCard(
-                    onClick = viewModel::connectSpotify,
-                    colors = CardDefaults.outlinedCardColors(
-                        containerColor = Color(0xFF1DB954).copy(alpha = 0.08f)
-                    ),
-                    border = CardDefaults.outlinedCardBorder().copy(
-                        brush = SolidColor(Color(0xFF1DB954))
-                    ),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(bottom = 12.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(12.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text("🎧", style = MaterialTheme.typography.titleMedium)
-                        Spacer(Modifier.width(10.dp))
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                "Connect Spotify",
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF1DB954)
-                            )
-                            Text(
-                                "Auto-import your top songs for this round",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+            if (songs.isNotEmpty()) {
+                item(key = "selected-songs") {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        songs.forEachIndexed { index, song ->
+                            SelectedSongCard(
+                                index = index + 1,
+                                song = song,
+                                locked = uiState.songLocked,
+                                onRemove = { viewModel.removeSong(song.songId) }
                             )
                         }
-                        Text("→", color = Color(0xFF1DB954), fontWeight = FontWeight.Bold)
                     }
                 }
-            } else {
-                if (uiState.spotifySuggestions.isNotEmpty()) {
-                    Text(
-                        "Your Spotify Top Songs:",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color(0xFF1DB954),
-                        modifier = Modifier.padding(bottom = 4.dp)
-                    )
-                    LazyRow(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.padding(bottom = 12.dp)
-                    ) {
-                        items(uiState.spotifySuggestions.take(15)) { suggestion ->
-                            val slotIndex = songs.indexOfFirst {
-                                it.title.equals(suggestion.title, ignoreCase = true) &&
-                                it.artist.equals(suggestion.artist, ignoreCase = true)
-                            }
-                            val isAdded = slotIndex != -1
-                            val isFull = songs.size >= uiState.maxSongs && !isAdded
-                            SuggestionChip(
-                                onClick = { if (!isAdded && !isFull) viewModel.selectSpotifyTrack(suggestion) },
-                                enabled = !isFull || isAdded,
-                                label = {
-                                    Text(
-                                        when {
-                                            isAdded -> "✓ #${slotIndex + 1}: ${suggestion.title}"
-                                            isFull -> suggestion.title
-                                            else -> "+ #${songs.size + 1}: ${suggestion.title}"
-                                        },
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
+            }
+
+            if (!uiState.songLocked && songs.size < uiState.maxSongs) {
+                item(key = "add-song") { AddSongCard(slotNumber = songs.size + 1) }
+            }
+
+            if (!uiState.songLocked && !uiState.spotifyConnected) {
+                item(key = "spotify-connect") { SpotifyConnectCard(onClick = viewModel::connectSpotify) }
+            } else if (!uiState.songLocked && uiState.spotifyConnected && uiState.spotifySuggestions.isNotEmpty()) {
+                item(key = "spotify-suggestions") {
+                    Column {
+                        Text(
+                            "FROM YOUR SPOTIFY",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 0.8.sp,
+                            color = Color(0xFF32805A),
+                            modifier = Modifier.padding(top = 9.dp, bottom = 2.dp)
+                        )
+                        LazyRow(
+                            horizontalArrangement = Arrangement.spacedBy(7.dp),
+                            contentPadding = PaddingValues(bottom = 2.dp)
+                        ) {
+                            items(uiState.spotifySuggestions.take(12)) { suggestion ->
+                                val isAdded = songs.any {
+                                    it.title.equals(suggestion.title, ignoreCase = true) &&
+                                        it.artist.equals(suggestion.artist, ignoreCase = true)
+                                }
+                                SuggestionChip(
+                                    onClick = {
+                                        if (!isAdded && songs.size < uiState.maxSongs) {
+                                            viewModel.selectSpotifyTrack(suggestion)
+                                        }
+                                    },
+                                    enabled = isAdded || songs.size < uiState.maxSongs,
+                                    label = {
+                                        Text(
+                                            if (isAdded) "Added · ${suggestion.title}" else suggestion.title,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                    },
+                                    colors = SuggestionChipDefaults.suggestionChipColors(
+                                        containerColor = if (isAdded) GwsPalette.Lime.copy(alpha = 0.45f) else GwsPalette.Paper,
+                                        labelColor = GwsPalette.Ink
                                     )
-                                },
-                                colors = if (isAdded) SuggestionChipDefaults.suggestionChipColors(
-                                    containerColor = Color(0xFF1DB954).copy(alpha = 0.2f),
-                                    labelColor = Color(0xFF1DB954)
-                                ) else SuggestionChipDefaults.suggestionChipColors()
-                            )
+                                )
+                            }
                         }
                     }
-                } else {
+                }
+            } else if (!uiState.songLocked && uiState.spotifyConnected) {
+                item(key = "spotify-refresh") {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(bottom = 8.dp),
+                            .padding(top = 6.dp, bottom = 2.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text(
-                            "✓ Spotify Connected",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color(0xFF1DB954)
-                        )
+                        Text("Spotify connected", color = Color(0xFF32805A), style = MaterialTheme.typography.labelMedium)
                         Spacer(Modifier.weight(1f))
                         TextButton(onClick = viewModel::loadSpotifySuggestions) {
-                            Text(
-                                "Refresh top songs",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = Color(0xFF1DB954)
-                            )
+                            Text("Refresh picks", color = GwsPalette.LavenderDeep)
                         }
                     }
                 }
             }
 
-            // Song Slots Section (Always visible so users see all required slots)
-            SongSlotsSection(
-                songs = songs,
-                maxSongs = uiState.maxSongs,
-                locked = uiState.songLocked,
-                onRemoveSong = viewModel::removeSong
-            )
-
-            if (!uiState.songLocked) {
-                OutlinedTextField(
-                    value = uiState.searchQuery,
-                    onValueChange = viewModel::onSearchQueryChanged,
-                    label = {
-                        Text(
-                            if (songs.size < uiState.maxSongs)
-                                "Search song for Slot #${songs.size + 1}"
-                            else
-                                "Search songs (all slots full)"
-                        )
-                    },
-                    placeholder = { Text("e.g. Blinding Lights, Attention...") },
-                    singleLine = true,
-                    trailingIcon = {
-                        if (uiState.searchQuery.isNotEmpty()) {
-                            IconButton(onClick = { viewModel.onSearchQueryChanged("") }) {
-                                Icon(Icons.Default.Close, "Clear search")
-                            }
-                        } else {
-                            IconButton(onClick = viewModel::searchSong) {
-                                Icon(Icons.Default.Search, "Search")
-                            }
-                        }
-                    },
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                    keyboardActions = KeyboardActions(onSearch = { viewModel.searchSong() }),
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(Modifier.height(8.dp))
-
-                if (uiState.isSearching) {
-                    LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                    Spacer(Modifier.height(4.dp))
-                }
-
-                if (uiState.searchQuery.isBlank()) {
-                    if (uiState.popularSuggestions.isNotEmpty()) {
-                        Text(
-                            "Popular Suggestions:",
-                            style = MaterialTheme.typography.labelMedium,
-                            fontWeight = FontWeight.SemiBold,
-                            color = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.padding(vertical = 4.dp)
-                        )
-                        LazyColumn(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            items(uiState.popularSuggestions) { track ->
-                                val slotIndex = songs.indexOfFirst {
-                                    it.songId == track.id || (it.title.equals(track.title, ignoreCase = true) && it.artist.equals(track.artist, ignoreCase = true))
-                                }
-                                val isAdded = slotIndex != -1
-                                val isFull = songs.size >= uiState.maxSongs && !isAdded
-                                TrackListItem(
-                                    track = track,
-                                    isAdded = isAdded,
-                                    slotNumber = if (isAdded) slotIndex + 1 else if (!isFull) songs.size + 1 else null,
-                                    isFull = isFull,
-                                    onClick = { viewModel.selectSong(track) }
-                                )
-                            }
-                        }
-                    } else {
-                        Spacer(Modifier.weight(1f))
-                    }
-                } else {
-                    if (!uiState.isSearching && uiState.searchResults.isEmpty()) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .fillMaxWidth(),
-                            contentAlignment = Alignment.Center
-                        ) {
+            if (uiState.songLocked) {
+                item(key = "locked-status") {
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 20.dp),
+                        color = GwsPalette.Lime.copy(alpha = 0.38f),
+                        shape = RoundedCornerShape(22.dp),
+                        border = BorderStroke(1.dp, GwsPalette.Ink.copy(alpha = 0.12f))
+                    ) {
+                        Column(Modifier.padding(18.dp)) {
+                            Text("PICKS LOCKED", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black, letterSpacing = 1.sp)
+                            Spacer(Modifier.height(5.dp))
+                            Text("You’re all set", style = MaterialTheme.typography.titleLarge)
                             Text(
-                                "No songs found for \"${uiState.searchQuery}\"",
+                                "Waiting for everyone else to finish choosing.",
                                 style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+                                color = GwsPalette.Ink.copy(alpha = 0.68f)
                             )
                         }
-                    } else {
-                        LazyColumn(
-                            modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(4.dp)
-                        ) {
-                            items(uiState.searchResults) { track ->
-                                val slotIndex = songs.indexOfFirst {
-                                    it.songId == track.id || (it.title.equals(track.title, ignoreCase = true) && it.artist.equals(track.artist, ignoreCase = true))
-                                }
-                                val isAdded = slotIndex != -1
-                                val isFull = songs.size >= uiState.maxSongs && !isAdded
-                                TrackListItem(
-                                    track = track,
-                                    isAdded = isAdded,
-                                    slotNumber = if (isAdded) slotIndex + 1 else if (!isFull) songs.size + 1 else null,
-                                    isFull = isFull,
-                                    onClick = { viewModel.selectSong(track) }
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Spacer(Modifier.height(12.dp))
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedButton(
-                        onClick = { viewModel.surpriseMe() },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("🎲 Surprise me")
-                    }
-
-                    Button(
-                        onClick = viewModel::lockSong,
-                        enabled = songs.isNotEmpty(),
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("✓ Lock in (${songs.size}/${uiState.maxSongs})")
                     }
                 }
             } else {
-                Spacer(Modifier.weight(1f))
-                Text(
-                    "All ${songs.size} song(s) locked! Waiting for others...",
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.align(Alignment.CenterHorizontally)
-                )
-                Spacer(Modifier.weight(1f))
+                item(key = "song-search") {
+                    SearchSongsField(
+                        query = uiState.searchQuery,
+                        songCount = songs.size,
+                        onQueryChange = viewModel::onSearchQueryChanged,
+                        onSearch = viewModel::searchSong
+                    )
+                }
+
+                if (uiState.isSearching) {
+                    item(key = "search-loading") {
+                        LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(top = 7.dp)
+                                .height(3.dp),
+                            color = GwsPalette.Tangerine,
+                            trackColor = GwsPalette.Butter.copy(alpha = 0.4f)
+                        )
+                    }
+                }
+
+                item(key = "suggestion-heading") {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 11.dp, bottom = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            if (uiState.searchQuery.isBlank()) "Suggested for you" else "Search results",
+                            style = MaterialTheme.typography.titleMedium
+                        )
+                        Spacer(Modifier.weight(1f))
+                        Text(
+                            if (songs.size >= uiState.maxSongs) "PICKS FULL" else "ADD A FAVORITE",
+                            style = MaterialTheme.typography.labelSmall,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 0.4.sp,
+                            color = GwsPalette.LavenderDeep
+                        )
+                    }
+                }
+
+                val tracks = if (uiState.searchQuery.isBlank()) uiState.popularSuggestions else uiState.searchResults
+                if (uiState.searchQuery.isNotBlank() && !uiState.isSearching && tracks.isEmpty()) {
+                    item(key = "no-search-results") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 28.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                "No songs found for ‘${uiState.searchQuery}’",
+                                color = GwsPalette.Ink.copy(alpha = 0.62f),
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+                } else {
+                    items(items = tracks, key = { track -> track.id }) { track ->
+                        val isAdded = songs.any {
+                            it.songId == track.id ||
+                                (it.title.equals(track.title, ignoreCase = true) && it.artist.equals(track.artist, ignoreCase = true))
+                        }
+                        TrackListItem(
+                            track = track,
+                            isAdded = isAdded,
+                            isFull = songs.size >= uiState.maxSongs && !isAdded,
+                            onClick = { viewModel.selectSong(track) }
+                        )
+                    }
+                }
+
             }
 
             uiState.error?.let { error ->
-                Text(
-                    error,
-                    color = MaterialTheme.colorScheme.error,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.padding(top = 4.dp)
-                )
+                item(key = "submission-error") {
+                    Text(
+                        error,
+                        color = MaterialTheme.colorScheme.error,
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-fun SongSlotsSection(
-    songs: List<SongEntry>,
-    maxSongs: Int,
-    locked: Boolean,
-    onRemoveSong: (String) -> Unit
-) {
-    Column(
+private fun AddSongCard(slotNumber: Int) {
+    Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 12.dp)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 8.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    "Your Song Picks",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
-                Spacer(Modifier.width(8.dp))
-                Surface(
-                    color = if (songs.size >= maxSongs) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.primaryContainer,
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text(
-                        text = "${songs.size} / $maxSongs",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = if (songs.size >= maxSongs) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onPrimaryContainer,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
-                    )
-                }
-            }
-            if (!locked) {
-                if (songs.size < maxSongs) {
-                    Text(
-                        "Pick ${maxSongs - songs.size} more",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.tertiary
-                    )
-                } else {
-                    Text(
-                        "All slots filled!",
-                        style = MaterialTheme.typography.bodySmall,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.primary
-                    )
-                }
-            }
-        }
-
-        Column(
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            for (i in 0 until maxSongs) {
-                if (i < songs.size) {
-                    val song = songs[i]
-                    SelectedSongCard(
-                        index = i + 1,
-                        song = song,
-                        locked = locked,
-                        onRemove = { onRemoveSong(song.songId) }
-                    )
-                } else if (!locked) {
-                    val isNext = i == songs.size
-                    EmptySongSlotCard(
-                        slotNumber = i + 1,
-                        isNextSlot = isNext
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun EmptySongSlotCard(
-    slotNumber: Int,
-    isNextSlot: Boolean
-) {
-    OutlinedCard(
-        border = BorderStroke(
-            width = if (isNextSlot) 1.5.dp else 1.dp,
-            color = if (isNextSlot) MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)
-                    else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-        ),
-        colors = CardDefaults.outlinedCardColors(
-            containerColor = if (isNextSlot) MaterialTheme.colorScheme.primary.copy(alpha = 0.04f)
-                             else MaterialTheme.colorScheme.surface
-        ),
-        modifier = Modifier.fillMaxWidth()
+            .padding(top = 8.dp, bottom = 5.dp),
+        color = GwsPalette.Lavender.copy(alpha = 0.13f),
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, GwsPalette.LavenderDeep.copy(alpha = 0.45f))
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Surface(
-                color = if (isNextSlot) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant,
-                shape = MaterialTheme.shapes.small,
-                modifier = Modifier.size(28.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "#$slotNumber",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = if (isNextSlot) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = if (isNextSlot) "👉 Tap a song below for slot #$slotNumber" else "Slot #$slotNumber (Empty)",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = if (isNextSlot) FontWeight.Medium else FontWeight.Normal,
-                    color = if (isNextSlot) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                )
-                Text(
-                    text = if (isNextSlot) "Search or pick from suggestions" else "Waiting for previous slot",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
-                )
+                modifier = Modifier.size(42.dp),
+                color = GwsPalette.Lavender.copy(alpha = 0.34f),
+                shape = RoundedCornerShape(13.dp)
+            ) { }
+            Spacer(Modifier.width(11.dp))
+            Column {
+                Text("Add a song · slot $slotNumber", fontWeight = FontWeight.Bold)
+                Text("Search for a song or pick a suggestion", style = MaterialTheme.typography.bodySmall, color = GwsPalette.Ink.copy(alpha = 0.62f))
             }
         }
     }
 }
 
 @Composable
-fun SelectedSongCard(
-    index: Int,
-    song: SongEntry,
-    locked: Boolean,
-    onRemove: () -> Unit
-) {
-    Card(
-        colors = CardDefaults.cardColors(
-            containerColor = if (locked) MaterialTheme.colorScheme.primaryContainer
-            else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-        ),
-        modifier = Modifier.fillMaxWidth()
+private fun SpotifyConnectCard(onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp, bottom = 5.dp)
+            .clickable(onClick = onClick),
+        color = GwsPalette.Lime.copy(alpha = 0.19f),
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, Color(0xFF32805A).copy(alpha = 0.35f))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(
-                color = if (locked) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondaryContainer,
-                shape = MaterialTheme.shapes.small,
-                modifier = Modifier.size(28.dp)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    Text(
-                        text = "#$index",
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        color = if (locked) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSecondaryContainer
-                    )
+            Surface(modifier = Modifier.size(9.dp), color = Color(0xFF31A66A), shape = RoundedCornerShape(50)) { }
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text("Spotify connected?", fontWeight = FontWeight.Bold)
+                Text("Optional · use your top songs", style = MaterialTheme.typography.bodySmall, color = GwsPalette.Ink.copy(alpha = 0.65f))
+            }
+            Text("Connect", style = MaterialTheme.typography.labelLarge, color = Color(0xFF28784E))
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SearchSongsField(
+    query: String,
+    songCount: Int,
+    onQueryChange: (String) -> Unit,
+    onSearch: () -> Unit
+) {
+    OutlinedTextField(
+        value = query,
+        onValueChange = onQueryChange,
+        placeholder = { Text("Search for a song…") },
+        singleLine = true,
+        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = GwsPalette.LavenderDeep) },
+        trailingIcon = {
+            if (query.isNotEmpty()) {
+                IconButton(onClick = { onQueryChange("") }) {
+                    Icon(Icons.Default.Close, contentDescription = "Clear search")
                 }
             }
-            Spacer(Modifier.width(10.dp))
+        },
+        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+        keyboardActions = KeyboardActions(onSearch = { onSearch() }),
+        shape = RoundedCornerShape(16.dp),
+        colors = OutlinedTextFieldDefaults.colors(
+            focusedBorderColor = GwsPalette.LavenderDeep,
+            unfocusedBorderColor = GwsPalette.Ink.copy(alpha = 0.17f),
+            focusedContainerColor = Color.White,
+            unfocusedContainerColor = Color.White
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 5.dp)
+    )
+}
+
+@Composable
+fun SelectedSongCard(index: Int, song: SongEntry, locked: Boolean, onRemove: () -> Unit) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color.White,
+        shape = RoundedCornerShape(17.dp),
+        border = BorderStroke(1.dp, GwsPalette.Ink.copy(alpha = 0.08f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             AsyncImage(
                 model = song.albumArtUrl,
                 contentDescription = null,
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(6.dp))
+                modifier = Modifier.size(48.dp).clip(RoundedCornerShape(11.dp))
             )
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    song.title,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    song.artist,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                Text(song.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(song.artist, style = MaterialTheme.typography.bodySmall, color = GwsPalette.Ink.copy(alpha = 0.63f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (!locked) {
-                IconButton(
-                    onClick = onRemove,
-                    modifier = Modifier.size(32.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Close,
-                        contentDescription = "Remove song",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
+                IconButton(onClick = onRemove, modifier = Modifier.size(38.dp)) {
+                    Icon(Icons.Default.Close, contentDescription = "Remove song", tint = GwsPalette.Ink.copy(alpha = 0.65f))
                 }
             } else {
-                Text(
-                    "✓ Ready",
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.primary
-                )
+                Text("READY", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = GwsPalette.LavenderDeep)
             }
         }
     }
 }
 
 @Composable
-fun TrackListItem(
-    track: TrackSearchResult,
-    isAdded: Boolean,
-    slotNumber: Int?,
-    isFull: Boolean,
-    onClick: () -> Unit
-) {
-    ListItem(
-        headlineContent = {
-            Text(
-                track.title,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        },
-        supportingContent = {
-            Text(
-                track.artist,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        },
-        leadingContent = {
+fun TrackListItem(track: TrackSearchResult, isAdded: Boolean, isFull: Boolean, onClick: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(enabled = !isFull && !isAdded, onClick = onClick),
+        color = Color.White,
+        shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, GwsPalette.Ink.copy(alpha = 0.07f))
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 9.dp, vertical = 7.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             AsyncImage(
                 model = track.albumArtUrl,
                 contentDescription = null,
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(RoundedCornerShape(6.dp))
+                modifier = Modifier.size(43.dp).clip(RoundedCornerShape(10.dp))
             )
-        },
-        trailingContent = {
-            if (isAdded) {
-                Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = MaterialTheme.shapes.small
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(track.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(track.artist, style = MaterialTheme.typography.bodySmall, color = GwsPalette.Ink.copy(alpha = 0.62f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            when {
+                isAdded -> Text("ADDED", style = MaterialTheme.typography.labelSmall, color = GwsPalette.LavenderDeep, fontWeight = FontWeight.Black)
+                isFull -> Text("FULL", style = MaterialTheme.typography.labelSmall, color = GwsPalette.Ink.copy(alpha = 0.38f), fontWeight = FontWeight.Bold)
+                else -> Surface(
+                    color = GwsPalette.Lavender.copy(alpha = 0.24f),
+                    shape = RoundedCornerShape(50)
                 ) {
-                    Text(
-                        if (slotNumber != null) "✓ Slot #$slotNumber" else "✓ Picked",
-                        color = MaterialTheme.colorScheme.onPrimaryContainer,
-                        style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
-            } else if (isFull) {
-                Surface(
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    shape = MaterialTheme.shapes.small
-                ) {
-                    Text(
-                        "Full",
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                        style = MaterialTheme.typography.labelSmall,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                    )
-                }
-            } else {
-                FilledTonalButton(
-                    onClick = onClick,
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
-                    modifier = Modifier.height(32.dp)
-                ) {
-                    Text(
-                        if (slotNumber != null) "+ Pick #$slotNumber" else "+ Pick",
-                        style = MaterialTheme.typography.labelSmall
-                    )
+                    Text("+", color = GwsPalette.LavenderDeep, fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp))
                 }
             }
-        },
-        modifier = Modifier.clickable(enabled = !isAdded && !isFull, onClick = onClick)
-    )
+        }
+    }
 }

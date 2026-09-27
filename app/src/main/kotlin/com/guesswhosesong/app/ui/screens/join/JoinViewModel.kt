@@ -20,6 +20,8 @@ data class JoinUiState(
     val joinCode: String = "",
     val isLoading: Boolean = false,
     val error: String? = null,
+    val accountStatus: String? = null,
+    val accountStatusIsError: Boolean = false,
     val isSpotifyConnected: Boolean = false,
     val isAccountLinked: Boolean = false
 )
@@ -124,20 +126,35 @@ class JoinViewModel @Inject constructor(
 
     fun linkGoogle(data: Intent) {
         viewModelScope.launch {
+            _uiState.update { it.copy(accountStatus = null, accountStatusIsError = false) }
             when (val result = playerIdentityManager.linkGoogle(data)) {
-                AccountLinkResult.Linked -> _uiState.update { it.copy(isAccountLinked = true, error = "Google account linked for recovery") }
-                AccountLinkResult.SignedIn -> _uiState.update { it.copy(isAccountLinked = true, error = "Google account signed in") }
-                AccountLinkResult.Collision -> _uiState.update { it.copy(error = "That Google account is already linked to another player") }
-                is AccountLinkResult.Failed -> _uiState.update { it.copy(error = result.message) }
+                AccountLinkResult.Linked -> _uiState.update {
+                    it.copy(isAccountLinked = true, accountStatus = "Google account linked for recovery", accountStatusIsError = false)
+                }
+                AccountLinkResult.SignedIn -> _uiState.update {
+                    it.copy(isAccountLinked = true, accountStatus = "Google account signed in", accountStatusIsError = false)
+                }
+                AccountLinkResult.Collision -> _uiState.update {
+                    it.copy(accountStatus = "That Google account is already linked to another player", accountStatusIsError = true)
+                }
+                is AccountLinkResult.Failed -> _uiState.update {
+                    it.copy(accountStatus = result.message, accountStatusIsError = true)
+                }
             }
         }
     }
 
     fun recoverWithGoogle(data: Intent) {
         viewModelScope.launch {
+            _uiState.update { it.copy(accountStatus = null, accountStatusIsError = false) }
             when (val result = playerIdentityManager.signInWithGoogle(data)) {
-                AccountLinkResult.SignedIn -> _uiState.update { it.copy(isAccountLinked = true, error = "Recovered linked Google identity") }
-                else -> _uiState.update { it.copy(error = (result as? AccountLinkResult.Failed)?.message ?: "Google sign-in failed") }
+                AccountLinkResult.SignedIn -> _uiState.update {
+                    it.copy(isAccountLinked = true, accountStatus = "Recovered linked Google identity", accountStatusIsError = false)
+                }
+                else -> {
+                    val message = (result as? AccountLinkResult.Failed)?.message ?: "Google sign-in failed"
+                    _uiState.update { it.copy(accountStatus = message, accountStatusIsError = true) }
+                }
             }
         }
     }

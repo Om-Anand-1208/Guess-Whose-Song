@@ -21,6 +21,7 @@ import com.guesswhosesong.shared.dto.SubmissionStarted
 import com.guesswhosesong.shared.dto.UpdatePendingSongs
 import com.guesswhosesong.shared.dto.UpdateSettings
 import com.guesswhosesong.shared.dto.VotingStarted
+import com.guesswhosesong.shared.dto.VoteCountUpdated
 import com.guesswhosesong.shared.dto.RoomEnded
 import com.guesswhosesong.shared.models.ChatMessage
 import com.guesswhosesong.shared.models.Player
@@ -58,7 +59,13 @@ data class WebUiState(
     val deadlineEpochMillis: Long = 0L,
     val preview: RoundPreviewStarted? = null,
     val voting: VotingStarted? = null,
+    val votesCast: Int = 0,
+    val totalVotes: Int = 0,
+    val voteErrorSequence: Int = 0,
+    val voteErrorRoundIndex: Int? = null,
+    val pendingVoteRoundIndex: Int? = null,
     val reveal: RoundRevealed? = null,
+    val revealStartedAtEpochMillis: Long = 0L,
     val results: GameResults? = null,
     val chat: List<ChatMessage> = emptyList(),
     val chatDraft: String = "",
@@ -151,7 +158,7 @@ class WebGameStore {
     fun kick(playerId: String) = send(com.guesswhosesong.shared.dto.KickPlayer(playerId))
 
     fun playAgain() {
-        _state.update { it.copy(pendingSongs = emptyList(), reveal = null, results = null) }
+        _state.update { it.copy(pendingSongs = emptyList(), voting = null, votesCast = 0, totalVotes = 0, pendingVoteRoundIndex = null, reveal = null, revealStartedAtEpochMillis = 0L, results = null) }
         send(PlayAgain())
     }
 
@@ -213,7 +220,18 @@ class WebGameStore {
 
     fun lockSongs() = send(LockSong())
 
-    fun castVote(playerId: String) = send(CastVote(playerId))
+    fun castVote(playerId: String) {
+        _state.update { current ->
+            val roundIndex = current.voting?.roundIndex
+            val retryingFailedVote = current.voteErrorRoundIndex != null && current.voteErrorRoundIndex == roundIndex
+            current.copy(
+                pendingVoteRoundIndex = roundIndex,
+                error = if (retryingFailedVote) null else current.error,
+                voteErrorRoundIndex = if (retryingFailedVote) null else current.voteErrorRoundIndex
+            )
+        }
+        send(CastVote(playerId))
+    }
 
     fun sendChat() {
         val text = state.value.chatDraft.trim()
@@ -276,12 +294,6 @@ class WebGameStore {
         }
     }
 
-    fun playCurrentPreview() {
-        state.value.preview?.previewUrl?.takeIf { it.isNotBlank() }?.let(::playPreview)
-    }
-
-    fun stopCurrentPreview() = stopPreview()
-
     fun leaveRoom() {
         socket.disconnect()
         _state.value = WebUiState()
@@ -296,7 +308,8 @@ class WebGameStore {
             try {
                 socket.send(message)
             } catch (error: Throwable) {
-                fail(error.message ?: "Connection unavailable")
+                val description = error.message ?: "Connection unavailable"
+                if (message is CastVote) failVote(description) else fail(description)
             }
         }
     }
@@ -322,6 +335,17 @@ class WebGameStore {
 
     private fun fail(message: String) = _state.update { it.copy(error = message, notice = null, isBusy = false) }
 
+    private fun failVote(message: String) = _state.update {
+        it.copy(
+            error = message,
+            notice = null,
+            isBusy = false,
+            voteErrorSequence = it.voteErrorSequence + 1,
+            voteErrorRoundIndex = it.pendingVoteRoundIndex ?: it.voting?.roundIndex,
+            pendingVoteRoundIndex = null
+        )
+    }
+
     private fun connectionError(message: String): String = when {
         message == "AUTH_REQUIRED" -> "Could not authenticate this room connection. Refresh and try again."
         message == "JOIN_REQUIRED" -> "The room connection did not complete. Please try again."
@@ -341,17 +365,31 @@ class WebGameStore {
                 )
             }
             is RoomUpdated -> _state.update { current -> current.copy(room = message.room, page = pageFor(message.room.state)) }
-            is SubmissionStarted -> _state.update { it.copy(page = WebPage.SUBMISSION, deadlineEpochMillis = message.deadlineEpochMillis, reveal = null) }
+            is SubmissionStarted -> _state.update { it.copy(page = WebPage.SUBMISSION, deadlineEpochMillis = message.deadlineEpochMillis, reveal = null, revealStartedAtEpochMillis = 0L) }
             is RoundPreviewStarted -> {
-                _state.update { it.copy(page = WebPage.GAME, preview = message, voting = null, reveal = null) }
+                _state.update { it.copy(page = WebPage.GAME, preview = message, voting = null, votesCast = 0, totalVotes = 0, reveal = null, revealStartedAtEpochMillis = 0L) }
                 message.previewUrl.takeIf { it.isNotBlank() }?.let(::playPreview)
             }
-            is VotingStarted -> _state.update { it.copy(page = WebPage.GAME, voting = message, preview = null, reveal = null) }
-            is RoundRevealed -> _state.update { it.copy(page = WebPage.GAME, reveal = message) }
-            is GameResults -> _state.update { it.copy(page = WebPage.RESULTS, results = message, reveal = null) }
+            is VotingStarted -> {
+                stopPreview()
+                _state.update {
+                it.copy(
+                    page = WebPage.GAME,
+                    voting = message,
+                    votesCast = 0,
+                    totalVotes = message.players.count { player -> player.connected },
+                    pendingVoteRoundIndex = null,
+                    reveal = null,
+                    revealStartedAtEpochMillis = 0L
+                )
+                }
+            }
+            is VoteCountUpdated -> _state.update { it.copy(votesCast = message.votedCount, totalVotes = message.totalCount) }
+            is RoundRevealed -> _state.update { it.copy(page = WebPage.GAME, reveal = message, revealStartedAtEpochMillis = currentEpochMillis()) }
+            is GameResults -> _state.update { it.copy(page = WebPage.RESULTS, results = message, reveal = null, revealStartedAtEpochMillis = 0L) }
             is ChatReceived -> _state.update { it.copy(chat = (it.chat + message.message).takeLast(100)) }
             is HostChanged -> _state.update { current -> current.copy(notice = "${message.newHostName} is now the host") }
-            is ErrorMessage -> fail(message.message)
+            is ErrorMessage -> if (message.code == "INVALID_VOTE") failVote(message.message) else fail(message.message)
             is Kicked -> {
                 socket.disconnect()
                 _state.update { it.copy(page = WebPage.JOIN, room = null, error = "You were removed from the room") }
