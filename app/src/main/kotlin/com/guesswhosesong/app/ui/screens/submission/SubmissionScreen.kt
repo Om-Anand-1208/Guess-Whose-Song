@@ -23,8 +23,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImage
+import com.guesswhosesong.app.ui.components.AvatarBadge
+import com.guesswhosesong.app.ui.theme.GwsPalette
 import com.guesswhosesong.shared.models.TrackSearchResult
 import com.guesswhosesong.shared.models.SongEntry
 
@@ -48,11 +51,25 @@ fun SubmissionScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
-                    Text("Pick Your Songs (${songs.size}/${uiState.maxSongs})")
+            Surface(color = MaterialTheme.colorScheme.background) {
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .statusBarsPadding()
+                        .padding(horizontal = 18.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("MAKE YOUR PICK", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black, letterSpacing = 1.1.sp, color = MaterialTheme.colorScheme.primary)
+                        Text("Choose your songs", style = MaterialTheme.typography.headlineSmall)
+                    }
+                    AvatarBadge(uiState.room?.players?.find { it.id == uiState.selfPlayerId }?.avatarId ?: "sunny", size = 48.dp)
+                    Spacer(Modifier.width(8.dp))
+                    Surface(color = GwsPalette.Butter, shape = RoundedCornerShape(50)) {
+                        Text("${songs.size}/${uiState.maxSongs}", fontWeight = FontWeight.Bold, modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp))
+                    }
                 }
-            )
+            }
         }
     ) { padding ->
         Column(

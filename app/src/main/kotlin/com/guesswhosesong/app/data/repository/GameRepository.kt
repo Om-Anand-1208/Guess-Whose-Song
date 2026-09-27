@@ -104,8 +104,8 @@ class GameRepository(private val wsManager: WebSocketManager) {
         }
     }
 
-    fun connect(joinCode: String, displayName: String) {
-        wsManager.connect(joinCode, displayName)
+    fun connect(joinCode: String, displayName: String, avatarId: String) {
+        wsManager.connect(joinCode, displayName, avatarId)
     }
 
     fun disconnect() {

@@ -68,6 +68,7 @@ class RoomSession(
     suspend fun onPlayerConnect(
         playerId: String,
         displayName: String,
+        avatarId: String,
         socket: DefaultWebSocketServerSession
     ) {
         val previousSocket = connections.put(playerId, socket)
@@ -86,13 +87,18 @@ class RoomSession(
             room = if (existingPlayer != null) {
                 // Reconnect: mark as connected
                 room.copy(players = room.players.map { p ->
-                    if (p.id == playerId) p.copy(connected = true, spotifyConnected = p.spotifyConnected || hasSpotify) else p
+                    if (p.id == playerId) p.copy(
+                        connected = true,
+                        avatarId = AvatarCatalog.normalize(avatarId),
+                        spotifyConnected = p.spotifyConnected || hasSpotify
+                    ) else p
                 })
             } else {
                 // New player joining
                 val newPlayer = Player(
                     id = playerId,
                     displayName = displayName,
+                    avatarId = AvatarCatalog.normalize(avatarId),
                     isHost = room.players.isEmpty(),
                     spotifyConnected = hasSpotify,
                     joinedAt = System.currentTimeMillis()

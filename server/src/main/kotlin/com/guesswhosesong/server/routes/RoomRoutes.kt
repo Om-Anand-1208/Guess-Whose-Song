@@ -12,6 +12,7 @@ import com.guesswhosesong.server.security.InputValidation
 import com.guesswhosesong.server.security.WebSocketAuthentication
 import com.guesswhosesong.shared.dto.JoinRoom
 import com.guesswhosesong.shared.dto.toClientMessage
+import com.guesswhosesong.shared.models.AvatarCatalog
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
@@ -26,7 +27,8 @@ import java.util.UUID
 
 @Serializable
 private data class CreateRoomRequest(
-    val displayName: String
+    val displayName: String,
+    val avatarId: String = AvatarCatalog.DEFAULT_ID
 )
 
 @Serializable
@@ -54,7 +56,7 @@ fun Route.roomRoutes(
 
         /**
          * POST /rooms
-         * Body: { displayName: String }
+         * Body: { displayName: String, avatarId: String }
          * Header: Authorization: Bearer <Firebase ID token>
          * Creates a new room and returns the join code.
          */
@@ -84,7 +86,11 @@ fun Route.roomRoutes(
                 return@post
             }
 
-            val session = roomManager.createRoom(user.uid, body.displayName.trim())
+            val session = roomManager.createRoom(
+                hostId = user.uid,
+                hostName = body.displayName.trim(),
+                hostAvatarId = AvatarCatalog.normalize(body.avatarId)
+            )
             call.respond(
                 HttpStatusCode.Created,
                 CreateRoomResponse(joinCode = session.room.joinCode)
@@ -237,12 +243,20 @@ private suspend fun DefaultWebSocketServerSession.handleRoomWebSocket(
             close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "JOIN_REQUIRED"))
             return
         }
-        if (joinMessage !is JoinRoom || !InputValidation.displayName(joinMessage.displayName)) {
+        if (joinMessage !is JoinRoom ||
+            !InputValidation.displayName(joinMessage.displayName) ||
+            !AvatarCatalog.isValid(joinMessage.avatarId)
+        ) {
             close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "JOIN_REQUIRED"))
             return
         }
 
-        session.onPlayerConnect(user.uid, joinMessage.displayName.trim(), this)
+        session.onPlayerConnect(
+            playerId = user.uid,
+            displayName = joinMessage.displayName.trim(),
+            avatarId = joinMessage.avatarId,
+            socket = this
+        )
         registered = true
 
         for (frame in incoming) {

@@ -56,6 +56,12 @@ private fun fetchText(
 ) {
     js("""
         const headers = token ? { 'Authorization': 'Bearer ' + token } : {};
+        // ngrok's free tunnel can return its browser-warning HTML page to fetch
+        // requests. This header lets API calls pass through to the local Ktor app.
+        const apiHost = new URL(url).hostname;
+        if (apiHost.endsWith('.ngrok-free.dev') || apiHost.endsWith('.ngrok.io')) {
+            headers['ngrok-skip-browser-warning'] = 'true';
+        }
         if (method !== 'GET' && method !== 'HEAD') headers['Content-Type'] = 'application/json';
         fetch(url, {
             method: method,

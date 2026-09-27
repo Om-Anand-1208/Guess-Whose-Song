@@ -35,13 +35,13 @@ class RoomRepository(
     /**
      * Creates a new room. Returns the join code.
      */
-    suspend fun createRoom(displayName: String): Result<CreateRoomResponse> {
+    suspend fun createRoom(displayName: String, avatarId: String): Result<CreateRoomResponse> {
         return runCatching {
             val idToken = identityManager.getIdToken()
             httpClient.post("$baseUrl/rooms") {
                 contentType(ContentType.Application.Json)
                 bearerAuth(idToken)
-                setBody(mapOf("displayName" to displayName))
+                setBody(mapOf("displayName" to displayName, "avatarId" to avatarId))
             }.body<CreateRoomResponse>()
         }
     }

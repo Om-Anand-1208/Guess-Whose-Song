@@ -83,7 +83,7 @@ CI can inject the complete public `firebase-config.js` contents through the `WEB
 | `SPOTIFY_CLIENT_SECRET` | Spotify app Client Secret |
 | `SPOTIFY_REDIRECT_URI` | Spotify OAuth redirect URI |
 | `SPOTIFY_WEB_REDIRECT_URI` | Fixed web URL returned after Spotify OAuth; never accept arbitrary redirect targets |
-| `WEB_ORIGINS` | Comma-separated allowed browser origins; unset means no browser origins are allowed |
+| `WEB_ORIGINS` | Optional comma-separated additional browser origins; Firebase Hosting and localhost development origins are allowed by default |
 
 ## Architecture
 
@@ -98,8 +98,8 @@ CI can inject the complete public `firebase-config.js` contents through the `WEB
 ## Security and deployment notes
 
 - All room, music, Spotify, crash-log, and WebSocket operations require a Firebase ID token. The server uses the verified Firebase UID; legacy client-generated player IDs are not accepted.
-- WebSockets authenticate with `Authorization: Bearer <Firebase ID token>` and then require a first `JOIN_ROOM` frame containing only the display name.
-- Browser WebSockets use `POST /rooms/{joinCode}/ws-ticket` with a Firebase bearer token, followed by the negotiated `gws-ticket` marker plus the single-use `gws-ticket.<ticket>` subprotocol and the same `JOIN_ROOM(displayName)` first frame. Native clients continue using the Authorization header. Tickets are bound to the verified UID and room code and are atomically consumed in Redis.
+- WebSockets authenticate with `Authorization: Bearer <Firebase ID token>` and then require a first `JOIN_ROOM` frame containing the display name and selected avatar ID.
+- Browser WebSockets use `POST /rooms/{joinCode}/ws-ticket` with a Firebase bearer token, followed by the negotiated `gws-ticket` marker plus the single-use `gws-ticket.<ticket>` subprotocol and the same `JOIN_ROOM(displayName, avatarId)` first frame. Native clients continue using the Authorization header. Tickets are bound to the verified UID and room code and are atomically consumed in Redis.
 - Spotify OAuth state and PKCE verifier are generated and stored server-side in Redis for ten minutes and are single-use. Android refreshes authenticated status after the deep-link callback.
 - Room state uses the `gws:v2` Redis namespace for the Firebase hard cutover. The deployment is intentionally single-instance until distributed room ownership/pub-sub is implemented.
 - See [SECURITY_ROTATION.md](SECURITY_ROTATION.md) for the required credential revocation and Git-history cleanup procedure.

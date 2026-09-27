@@ -12,11 +12,12 @@ import kotlinx.serialization.Serializable
 sealed class ClientMessage
 
 /** First frame sent after a WebSocket handshake. Authentication is supplied by
- * the Authorization header; this message only carries the player's display name. */
+ * the Authorization header; this message carries the player's display name and avatar. */
 @Serializable
 @SerialName("JOIN_ROOM")
 data class JoinRoom(
-    val displayName: String
+    val displayName: String,
+    val avatarId: String = AvatarCatalog.DEFAULT_ID
 ) : ClientMessage()
 
 @Serializable

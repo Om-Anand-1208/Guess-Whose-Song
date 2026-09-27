@@ -14,13 +14,13 @@ import com.guesswhosesong.app.ui.screens.submission.SubmissionScreen
 
 object Routes {
     const val JOIN = "join"
-    const val LOBBY = "lobby/{joinCode}/{displayName}"
+    const val LOBBY = "lobby/{joinCode}/{displayName}/{avatarId}"
     const val SUBMISSION = "submission"
     const val GAME = "game"
     const val RESULTS = "results"
 
-    fun lobby(joinCode: String, displayName: String) =
-        "lobby/$joinCode/${displayName.encodeUrl()}"
+    fun lobby(joinCode: String, displayName: String, avatarId: String) =
+        "lobby/$joinCode/${displayName.encodeUrl()}/$avatarId"
 
     private fun String.encodeUrl() = java.net.URLEncoder.encode(this, "UTF-8")
 }
@@ -32,8 +32,8 @@ fun GWSNavHost() {
     NavHost(navController = navController, startDestination = Routes.JOIN) {
         composable(Routes.JOIN) {
             JoinScreen(
-                onNavigateToLobby = { joinCode, displayName ->
-                    navController.navigate(Routes.lobby(joinCode, displayName)) {
+                onNavigateToLobby = { joinCode, displayName, avatarId ->
+                    navController.navigate(Routes.lobby(joinCode, displayName, avatarId)) {
                         popUpTo(Routes.JOIN) { inclusive = true }
                     }
                 }
@@ -44,16 +44,19 @@ fun GWSNavHost() {
             route = Routes.LOBBY,
             arguments = listOf(
                 navArgument("joinCode") { type = NavType.StringType },
-                navArgument("displayName") { type = NavType.StringType }
+                navArgument("displayName") { type = NavType.StringType },
+                navArgument("avatarId") { type = NavType.StringType }
             )
         ) { backStackEntry ->
             val joinCode = backStackEntry.arguments?.getString("joinCode") ?: ""
             val displayName = java.net.URLDecoder.decode(
                 backStackEntry.arguments?.getString("displayName") ?: "", "UTF-8"
             )
+            val avatarId = backStackEntry.arguments?.getString("avatarId") ?: "sunny"
             LobbyScreen(
                 joinCode = joinCode,
                 displayName = displayName,
+                avatarId = avatarId,
                 onNavigateToSubmission = {
                     navController.navigate(Routes.SUBMISSION) {
                         popUpTo(Routes.LOBBY) { inclusive = true }

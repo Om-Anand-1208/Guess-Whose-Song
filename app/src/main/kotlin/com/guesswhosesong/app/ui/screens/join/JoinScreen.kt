@@ -1,21 +1,48 @@
 package com.guesswhosesong.app.ui.screens.join
 
+import android.app.Activity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -23,11 +50,14 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
+import com.guesswhosesong.app.ui.components.AvatarCharacter
+import com.guesswhosesong.app.ui.components.AvatarPicker
+import com.guesswhosesong.app.ui.theme.GwsPalette
 
 @Composable
 fun JoinScreen(
     viewModel: JoinViewModel = hiltViewModel(),
-    onNavigateToLobby: (joinCode: String, displayName: String) -> Unit
+    onNavigateToLobby: (joinCode: String, displayName: String, avatarId: String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val keyboard = LocalSoftwareKeyboardController.current
@@ -35,221 +65,320 @@ fun JoinScreen(
     val scrollState = rememberScrollState()
     val googleLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        result.data?.let(viewModel::linkGoogle)
-    }
+    ) { result -> result.data?.let(viewModel::linkGoogle) }
     val recoveryLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
-    ) { result ->
-        result.data?.let(viewModel::recoverWithGoogle)
-    }
+    ) { result -> result.data?.let(viewModel::recoverWithGoogle) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
-                is JoinEvent.NavigateToLobby ->
-                    onNavigateToLobby(event.joinCode, event.displayName)
+                is JoinEvent.NavigateToLobby -> onNavigateToLobby(event.joinCode, event.displayName, event.avatarId)
             }
         }
-
     }
 
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .statusBarsPadding()
-            .displayCutoutPadding()
-            .navigationBarsPadding()
-            .imePadding()
-            .verticalScroll(scrollState)
-            .padding(horizontal = 28.dp, vertical = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .background(MaterialTheme.colorScheme.background)
     ) {
-        Text(
-            text = "\uD83C\uDFB5",
-            fontSize = 56.sp,
-            modifier = Modifier.padding(bottom = 6.dp)
-        )
-        Text(
-            text = "Guess Whose Song",
-            style = MaterialTheme.typography.headlineLarge,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.Center
-        )
-        Text(
-            text = "The anonymous music guessing game",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-            modifier = Modifier.padding(bottom = 24.dp)
-        )
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .statusBarsPadding()
+                .navigationBarsPadding()
+                .imePadding()
+                .verticalScroll(scrollState)
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            JoinHero()
+            Spacer(Modifier.height(18.dp))
 
-        // Spotify Connect / Login Button
-        if (!uiState.isSpotifyConnected) {
-            Button(
-                onClick = viewModel::connectSpotify,
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF1DB954)
-                ),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(48.dp)
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(28.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 2.dp
             ) {
-                Text(
-                    "\uD83C\uDFA7 Connect with Spotify",
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 15.sp
-                )
-            }
-            Text(
-                "Link your Spotify to use your top songs in games",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                modifier = Modifier.padding(top = 4.dp, bottom = 20.dp),
-                textAlign = TextAlign.Center
-            )
-        } else {
-            OutlinedCard(
-                colors = CardDefaults.outlinedCardColors(
-                    containerColor = Color(0xFF1DB954).copy(alpha = 0.10f)
-                ),
-                border = CardDefaults.outlinedCardBorder().copy(
-                    brush = SolidColor(Color(0xFF1DB954))
-                ),
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 20.dp)
-            ) {
-                Row(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text("\u2713", color = Color(0xFF1DB954), fontWeight = FontWeight.Bold, fontSize = 18.sp)
-                    Spacer(Modifier.width(8.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            "Spotify Connected",
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFF1DB954),
-                            fontSize = 14.sp
-                        )
-                        Text(
-                            "Your top tracks will appear in rounds",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                        )
+                Column(modifier = Modifier.padding(18.dp)) {
+                    Text("Make your entrance", style = MaterialTheme.typography.titleLarge)
+                    Text(
+                        "Choose a name and a little character. Then start a room or hop into a friend’s.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 4.dp, bottom = 14.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = uiState.displayName,
+                        onValueChange = viewModel::onDisplayNameChanged,
+                        label = { Text("Your name") },
+                        placeholder = { Text("e.g. Maya") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Words,
+                            imeAction = ImeAction.Next
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    Spacer(Modifier.height(16.dp))
+                    AvatarPicker(
+                        selectedId = uiState.avatarId,
+                        onSelected = viewModel::onAvatarSelected
+                    )
+
+                    Spacer(Modifier.height(18.dp))
+                    Button(
+                        onClick = {
+                            keyboard?.hide()
+                            viewModel.createRoom()
+                        },
+                        enabled = !uiState.isLoading,
+                        shape = RoundedCornerShape(16.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = MaterialTheme.colorScheme.primary,
+                            contentColor = MaterialTheme.colorScheme.onPrimary
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(54.dp)
+                    ) {
+                        if (uiState.isLoading) {
+                            CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                        } else {
+                            Text("Create a room  →", fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        }
                     }
-                    TextButton(onClick = viewModel::disconnectSpotify) {
+
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        HorizontalDivider(modifier = Modifier.weight(1f))
+                        Text("  or  ", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.labelSmall)
+                        HorizontalDivider(modifier = Modifier.weight(1f))
+                    }
+
+                    OutlinedTextField(
+                        value = uiState.joinCode,
+                        onValueChange = viewModel::onJoinCodeChanged,
+                        label = { Text("Room code") },
+                        placeholder = { Text("ABCD12") },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(
+                            capitalization = KeyboardCapitalization.Characters,
+                            imeAction = ImeAction.Go
+                        ),
+                        keyboardActions = KeyboardActions(onGo = {
+                            keyboard?.hide()
+                            viewModel.joinRoom()
+                        }),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    OutlinedButton(
+                        onClick = {
+                            keyboard?.hide()
+                            viewModel.joinRoom()
+                        },
+                        enabled = !uiState.isLoading,
+                        shape = RoundedCornerShape(16.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(52.dp)
+                    ) {
+                        Text("Join a room  →", fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                    }
+
+                    uiState.error?.let { error ->
                         Text(
-                            "Disconnect",
+                            text = error,
                             color = MaterialTheme.colorScheme.error,
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 12.dp)
                         )
                     }
                 }
             }
+
+            Spacer(Modifier.height(14.dp))
+            SpotifyConnection(
+                connected = uiState.isSpotifyConnected,
+                onConnect = viewModel::connectSpotify,
+                onDisconnect = viewModel::disconnectSpotify
+            )
+            Spacer(Modifier.height(10.dp))
+            AccountRecovery(
+                linked = uiState.isAccountLinked,
+                onLink = {
+                    val activity = context as? Activity
+                    if (activity != null) googleLauncher.launch(viewModel.googleSignInIntent(activity))
+                },
+                onRecover = {
+                    val activity = context as? Activity
+                    if (activity != null) recoveryLauncher.launch(viewModel.googleSignInIntent(activity))
+                }
+            )
+            Text(
+                "Guests can play instantly. Linking Google just helps you recover your player later.",
+                style = MaterialTheme.typography.bodySmall,
+                textAlign = TextAlign.Center,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp)
+            )
         }
+    }
+}
 
-        OutlinedButton(
-            onClick = {
-                val activity = context as? android.app.Activity
-                if (activity != null) googleLauncher.launch(viewModel.googleSignInIntent(activity))
-            },
-            modifier = Modifier.fillMaxWidth().height(44.dp)
-        ) {
-            Text(if (uiState.isAccountLinked) "✓ Google account linked" else "Link Google for recovery")
-        }
-        TextButton(onClick = {
-            val activity = context as? android.app.Activity
-            if (activity != null) recoveryLauncher.launch(viewModel.googleSignInIntent(activity))
-        }) {
-            Text("Already linked? Sign in with Google")
-        }
-        Text(
-            "Guests can play instantly. Linking preserves this player and enables recovery after reinstall.",
-            style = MaterialTheme.typography.bodySmall,
-            textAlign = TextAlign.Center,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-            modifier = Modifier.padding(top = 4.dp, bottom = 12.dp)
-        )
-
-        OutlinedTextField(
-            value = uiState.displayName,
-            onValueChange = viewModel::onDisplayNameChanged,
-            label = { Text("Your name") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(
-                capitalization = KeyboardCapitalization.Words,
-                imeAction = ImeAction.Next
-            ),
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(20.dp))
-
-        Button(
-            onClick = {
-                keyboard?.hide()
-                viewModel.createRoom()
-            },
-            enabled = !uiState.isLoading,
+@Composable
+private fun JoinHero() {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(30.dp),
+        color = GwsPalette.Lavender,
+        tonalElevation = 0.dp
+    ) {
+        Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(52.dp)
+                .height(220.dp)
+                .clip(RoundedCornerShape(30.dp))
         ) {
-            if (uiState.isLoading) {
-                CircularProgressIndicator(modifier = Modifier.size(24.dp))
-            } else {
-                Text("Create Room", fontSize = 16.sp)
+            Box(
+                modifier = Modifier
+                    .size(148.dp)
+                    .align(Alignment.BottomEnd)
+                    .background(GwsPalette.Paper.copy(alpha = 0.22f), RoundedCornerShape(80.dp))
+            )
+            Box(
+                modifier = Modifier
+                    .size(122.dp)
+                    .align(Alignment.TopEnd)
+                    .padding(18.dp)
+            ) {
+                AvatarCharacter("violet", modifier = Modifier.fillMaxSize())
+            }
+            Box(
+                modifier = Modifier
+                    .size(104.dp)
+                    .align(Alignment.BottomStart)
+                    .padding(14.dp)
+            ) {
+                AvatarCharacter("sunny", modifier = Modifier.fillMaxSize())
+            }
+            Column(
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 20.dp, end = 112.dp)
+            ) {
+                Surface(
+                    color = GwsPalette.Ink,
+                    shape = RoundedCornerShape(50)
+                ) {
+                    Text(
+                        "SOCIAL MUSIC GAME",
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Black,
+                        letterSpacing = 1.2.sp,
+                        modifier = Modifier.padding(horizontal = 11.dp, vertical = 7.dp)
+                    )
+                }
+                Text(
+                    "Guess\nwhose song?",
+                    style = MaterialTheme.typography.displaySmall,
+                    color = GwsPalette.Ink,
+                    modifier = Modifier.padding(top = 12.dp)
+                )
+                Text(
+                    "A little mystery.\nA lot of music.",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = GwsPalette.Ink.copy(alpha = 0.78f),
+                    modifier = Modifier.padding(top = 5.dp)
+                )
             }
         }
+    }
+}
 
-        Spacer(modifier = Modifier.height(16.dp))
-        HorizontalDivider()
-        Spacer(modifier = Modifier.height(16.dp))
-
-        OutlinedTextField(
-            value = uiState.joinCode,
-            onValueChange = viewModel::onJoinCodeChanged,
-            label = { Text("Room code") },
-            placeholder = { Text("ABCD12") },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(
-                capitalization = KeyboardCapitalization.Characters,
-                imeAction = ImeAction.Go
-            ),
-            keyboardActions = KeyboardActions(onGo = {
-                keyboard?.hide()
-                viewModel.joinRoom()
-            }),
-            modifier = Modifier.fillMaxWidth()
+@Composable
+private fun SpotifyConnection(
+    connected: Boolean,
+    onConnect: () -> Unit,
+    onDisconnect: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = if (connected) Color(0xFF1DB954).copy(alpha = 0.14f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            if (connected) Color(0xFF1DB954) else MaterialTheme.colorScheme.outlineVariant
         )
-
-        Spacer(modifier = Modifier.height(12.dp))
-
-        OutlinedButton(
-            onClick = {
-                keyboard?.hide()
-                viewModel.joinRoom()
-            },
-            enabled = !uiState.isLoading,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(52.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Join Room", fontSize = 16.sp)
+            Text("♫", fontSize = 24.sp, color = if (connected) Color(0xFF159447) else MaterialTheme.colorScheme.primary)
+            Spacer(Modifier.width(10.dp))
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    if (connected) "Spotify connected" else "Bring your top songs",
+                    fontWeight = FontWeight.Bold,
+                    color = if (connected) Color(0xFF159447) else MaterialTheme.colorScheme.onSurface
+                )
+                Text(
+                    if (connected) "Your picks are ready for a round" else "Optional · auto-fill your song picks",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            TextButton(onClick = if (connected) onDisconnect else onConnect) {
+                Text(if (connected) "Disconnect" else "Connect")
+            }
         }
+    }
+}
 
-        uiState.error?.let { error ->
-            Spacer(modifier = Modifier.height(12.dp))
+@Composable
+private fun AccountRecovery(
+    linked: Boolean,
+    onLink: () -> Unit,
+    onRecover: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)) {
             Text(
-                text = error,
-                color = MaterialTheme.colorScheme.error,
-                style = MaterialTheme.typography.bodySmall
+                if (linked) "Google account linked ✓" else "Want to keep this character?",
+                fontWeight = FontWeight.Bold
             )
+            Text(
+                if (linked) "You can recover your player after reinstalling."
+                else "Link Google so your player identity can be recovered.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 2.dp)
+            )
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 4.dp),
+                horizontalArrangement = Arrangement.End
+            ) {
+                if (!linked) OutlinedButton(onClick = onLink) { Text("Link Google") }
+                TextButton(onClick = onRecover) { Text("Already linked?") }
+            }
         }
     }
 }

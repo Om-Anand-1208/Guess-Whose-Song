@@ -9,21 +9,27 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Divider
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.darkColorScheme
+import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.Shapes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -31,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -38,26 +45,34 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.ComposeViewport
 import com.guesswhosesong.shared.models.Player
 import com.guesswhosesong.shared.models.RoomSettings
+import com.guesswhosesong.shared.models.AvatarCatalog
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.w3c.dom.HTMLElement
 import kotlinx.browser.document
 
-private val WebColorScheme = darkColorScheme(
-    primary = Color(0xFFB9A1FF),
-    onPrimary = Color(0xFF24113F),
-    secondary = Color(0xFFB8C7FF),
-    onSecondary = Color(0xFF17213D),
-    tertiary = Color(0xFF86EFAC),
-    onTertiary = Color(0xFF063B20),
-    background = Color(0xFF10131A),
-    onBackground = Color(0xFFF4F5F7),
-    surface = Color(0xFF1B202B),
-    onSurface = Color(0xFFF4F5F7),
-    error = Color(0xFFFFB4AB),
-    onError = Color(0xFF690005),
-    outline = Color(0xFF9AA3B2)
+private val WebColorScheme = lightColorScheme(
+    primary = Color(0xFF7668E8),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFFCEC9FF),
+    onPrimaryContainer = Color(0xFF17161A),
+    secondary = Color(0xFFFFAA3D),
+    onSecondary = Color(0xFF17161A),
+    secondaryContainer = Color(0xFFFFE49A),
+    onSecondaryContainer = Color(0xFF17161A),
+    tertiary = Color(0xFFB8F45D),
+    onTertiary = Color(0xFF17161A),
+    background = Color(0xFFFFFBF2),
+    onBackground = Color(0xFF17161A),
+    surface = Color(0xFFFFFDF8),
+    onSurface = Color(0xFF17161A),
+    surfaceVariant = Color(0xFFF1EBDD),
+    onSurfaceVariant = Color(0xFF5D5860),
+    error = Color(0xFFB3261E),
+    onError = Color.White,
+    outline = Color(0xFF2D2930),
+    outlineVariant = Color(0xFFCFC6B9)
 )
 
 @OptIn(ExperimentalComposeUiApi::class)
@@ -74,7 +89,14 @@ private fun WebApp() {
     val user by store.auth.user.collectAsState()
     DisposableEffect(Unit) { onDispose { store.close() } }
 
-    MaterialTheme(colorScheme = WebColorScheme) {
+    MaterialTheme(
+        colorScheme = WebColorScheme,
+        shapes = Shapes(
+            small = RoundedCornerShape(12.dp),
+            medium = RoundedCornerShape(20.dp),
+            large = RoundedCornerShape(28.dp)
+        )
+    ) {
         Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             when (state.page) {
                 WebPage.JOIN -> JoinPage(store, state, authStatus, user)
@@ -125,8 +147,18 @@ private fun AuthActions(store: WebGameStore, status: AuthStatus, user: WebUser?)
 
 @Composable
 private fun JoinPage(store: WebGameStore, state: WebUiState, status: AuthStatus, user: WebUser?) {
-    PageFrame("Guess Whose Song", state) {
-        Text("Join a room with friends. No registration is required.")
+    PageFrame("Guess\nwhose song?", state) {
+        Surface(
+            modifier = Modifier.fillMaxWidth(),
+            color = Color(0xFFB8B0FF),
+            shape = RoundedCornerShape(28.dp)
+        ) {
+            Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("SOCIAL MUSIC GAME", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
+                Text("Choose a character.\nBring your best songs.", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
+                Text("Join a room with friends. No registration is required.", color = Color(0xFF5D5860))
+            }
+        }
         AuthActions(store, status, user)
         OutlinedTextField(
             value = state.displayName,
@@ -136,6 +168,7 @@ private fun JoinPage(store: WebGameStore, state: WebUiState, status: AuthStatus,
             singleLine = true,
             modifier = Modifier.fillMaxWidth()
         )
+        WebAvatarPicker(selectedId = state.avatarId, onSelected = store::setAvatarId)
         OutlinedTextField(
             value = state.joinCode,
             onValueChange = store::setJoinCode,
@@ -149,6 +182,40 @@ private fun JoinPage(store: WebGameStore, state: WebUiState, status: AuthStatus,
             OutlinedButton(onClick = store::createRoom, enabled = status == AuthStatus.READY && !state.isBusy) { Text("Create room") }
         }
         Text("The room code and display name stay out of the URL.", style = MaterialTheme.typography.bodySmall)
+    }
+}
+
+@Composable
+private fun WebAvatarPicker(selectedId: String, onSelected: (String) -> Unit) {
+    val names = mapOf(
+        "sunny" to "☀", "lime" to "▣", "violet" to "△", "tangerine" to "●",
+        "cloud" to "☁", "star" to "★", "berry" to "●", "mint" to "◒"
+    )
+    val colors = mapOf(
+        "sunny" to Color(0xFFFFB43E), "lime" to Color(0xFFB8F45D), "violet" to Color(0xFF8F7CF7),
+        "tangerine" to Color(0xFFFF8B3D), "cloud" to Color(0xFF9CCBFF), "star" to Color(0xFFFFDF72),
+        "berry" to Color(0xFFFF91B3), "mint" to Color(0xFF8CE7C1)
+    )
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Pick your character", fontWeight = FontWeight.Bold)
+        Text("Friends will spot you by this little shape.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            AvatarCatalog.ids.forEach { id ->
+                val selected = id == selectedId
+                Column(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(colors[id]!!.copy(alpha = if (selected) 0.35f else 0.15f))
+                        .border(2.dp, if (selected) colors[id]!! else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp))
+                        .clickable { onSelected(id) }
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(names[id] ?: "●", fontSize = 28.sp, color = Color(0xFF17161A))
+                    Text(id.replaceFirstChar { it.uppercase() }, style = MaterialTheme.typography.labelSmall, fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal)
+                }
+            }
+        }
     }
 }
 
@@ -210,6 +277,14 @@ private fun LobbyPage(store: WebGameStore, state: WebUiState) {
                     enabled = room.players.size >= 2,
                     modifier = Modifier.fillMaxWidth().height(52.dp)
                 ) { Text("Start Game", style = MaterialTheme.typography.titleMedium) }
+                if (room.players.size < 2) {
+                    Text(
+                        "Invite one more player to unlock song selection.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    )
+                }
             } else {
                 Text("Waiting for host to start…", modifier = Modifier.fillMaxWidth())
             }
@@ -256,6 +331,8 @@ private fun PlayerRow(player: Player, isSelf: Boolean, canKick: Boolean, onKick:
             modifier = Modifier.fillMaxWidth().padding(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            WebAvatarGlyph(player.avatarId)
+            Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(label, fontWeight = if (isSelf) FontWeight.Bold else FontWeight.Normal)
                 Text(
@@ -266,6 +343,22 @@ private fun PlayerRow(player: Player, isSelf: Boolean, canKick: Boolean, onKick:
             }
             if (canKick) TextButton(onClick = onKick) { Text("Kick", color = MaterialTheme.colorScheme.error) }
         }
+    }
+}
+
+@Composable
+private fun WebAvatarGlyph(avatarId: String) {
+    val glyphs = mapOf(
+        "sunny" to "☀", "lime" to "▣", "violet" to "△", "tangerine" to "●",
+        "cloud" to "☁", "star" to "★", "berry" to "●", "mint" to "◒"
+    )
+    val colors = mapOf(
+        "sunny" to Color(0xFFFFB43E), "lime" to Color(0xFFB8F45D), "violet" to Color(0xFF8F7CF7),
+        "tangerine" to Color(0xFFFF8B3D), "cloud" to Color(0xFF9CCBFF), "star" to Color(0xFFFFDF72),
+        "berry" to Color(0xFFFF91B3), "mint" to Color(0xFF8CE7C1)
+    )
+    Surface(color = (colors[avatarId] ?: colors.getValue("sunny")).copy(alpha = 0.34f), shape = RoundedCornerShape(16.dp)) {
+        Text(glyphs[avatarId] ?: "☀", fontSize = 24.sp, modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp))
     }
 }
 
@@ -307,7 +400,7 @@ private fun SubmissionPage(store: WebGameStore, state: WebUiState) {
         state.spotifySuggestions.forEach { suggestion ->
             TextButton(onClick = { store.selectSpotifySuggestion(suggestion) }) { Text("Add ${suggestion.title} · ${suggestion.artist}") }
         }
-        Divider()
+        HorizontalDivider()
         Text("Selected songs", fontWeight = FontWeight.Bold)
         if (state.pendingSongs.isEmpty()) Text("No songs selected yet.")
         state.pendingSongs.forEach { song ->
@@ -367,6 +460,8 @@ private fun ResultsPage(store: WebGameStore, state: WebUiState) {
     PageFrame("Results", state) {
         state.results?.players?.forEachIndexed { index, player ->
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                WebAvatarGlyph(player.avatarId)
+                Spacer(Modifier.width(8.dp))
                 Text("${index + 1}. ${player.displayName}", modifier = Modifier.weight(1f))
                 Text("${player.score} points")
             }

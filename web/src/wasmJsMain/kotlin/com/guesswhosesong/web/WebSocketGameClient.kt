@@ -37,15 +37,17 @@ class WebSocketGameClient(private val api: WebApiClient) {
     private var socket: JsAny? = null
     private var roomCode: String? = null
     private var displayName: String? = null
+    private var avatarId: String? = null
     private var reconnectJob: Job? = null
     private var intentionallyDisconnected = true
     private var stopReconnect = false
     private val outgoing = ArrayDeque<String>()
 
-    suspend fun connect(joinCode: String, name: String) {
+    suspend fun connect(joinCode: String, name: String, selectedAvatarId: String) {
         disconnect()
         roomCode = joinCode.uppercase()
         displayName = name
+        avatarId = selectedAvatarId
         intentionallyDisconnected = false
         stopReconnect = false
         _lastError.value = null
@@ -64,6 +66,7 @@ class WebSocketGameClient(private val api: WebApiClient) {
     private suspend fun connectOnce() {
         val code = roomCode ?: return
         val name = displayName ?: return
+        val selectedAvatarId = avatarId ?: return
         val ticket = api.webSocketTicket(code)
         val opened = CompletableDeferred<Unit>()
         val url = "${configuredWsBaseUrl().trimEnd('/')}/rooms/$code/ws"
@@ -73,7 +76,7 @@ class WebSocketGameClient(private val api: WebApiClient) {
             ticketProtocol = "gws-ticket.$ticket",
             onOpen = {
                 _state.value = ConnectionState.CONNECTED
-                sendImmediately(JoinRoom(name))
+                sendImmediately(JoinRoom(name, selectedAvatarId))
                 opened.complete(Unit)
             },
             onMessage = { text ->

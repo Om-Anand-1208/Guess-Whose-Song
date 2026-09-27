@@ -29,6 +29,7 @@ import com.guesswhosesong.shared.models.RoomSettings
 import com.guesswhosesong.shared.models.SongEntry
 import com.guesswhosesong.shared.models.SpotifySuggestion
 import com.guesswhosesong.shared.models.TrackSearchResult
+import com.guesswhosesong.shared.models.AvatarCatalog
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -45,6 +46,7 @@ enum class WebPage { JOIN, LOBBY, SUBMISSION, GAME, RESULTS }
 data class WebUiState(
     val page: WebPage = WebPage.JOIN,
     val displayName: String = sessionGet("gws.displayName").orEmpty(),
+    val avatarId: String = AvatarCatalog.normalize(sessionGet("gws.avatarId").orEmpty()),
     val joinCode: String = sessionGet("gws.joinCode").orEmpty(),
     val room: Room? = null,
     val selfPlayerId: String = "",
@@ -91,6 +93,10 @@ class WebGameStore {
         _state.update { it.copy(displayName = value.take(24), error = null) }
     }
 
+    fun setAvatarId(value: String) {
+        _state.update { it.copy(avatarId = AvatarCatalog.normalize(value), error = null) }
+    }
+
     fun setJoinCode(value: String) {
         _state.update { it.copy(joinCode = value.uppercase().filter { c -> c in "ABCDEFGHJKLMNPQRSTUVWXYZ23456789" }.take(6), error = null) }
     }
@@ -103,8 +109,9 @@ class WebGameStore {
         scope.launch {
             val name = validatedName() ?: return@launch
             busy {
-                val created = api.createRoom(name)
-                connect(created.joinCode, name)
+                val avatarId = state.value.avatarId
+                val created = api.createRoom(name, avatarId)
+                connect(created.joinCode, name, avatarId)
             }
         }
     }
@@ -114,11 +121,11 @@ class WebGameStore {
             val name = validatedName() ?: return@launch
             val code = state.value.joinCode.trim()
             if (code.length != 6) return@launch fail("Enter a valid six-character room code")
-            busy { connect(code, name) }
+            busy { connect(code, name, state.value.avatarId) }
         }
     }
 
-    private suspend fun connect(code: String, name: String) {
+    private suspend fun connect(code: String, name: String, avatarId: String) {
         _state.update {
             it.copy(
                 page = WebPage.LOBBY,
@@ -126,13 +133,15 @@ class WebGameStore {
                 selfPlayerId = "",
                 joinCode = code,
                 displayName = name,
+                avatarId = avatarId,
                 error = null,
                 notice = "Connecting to room…"
             )
         }
         sessionSet("gws.joinCode", code)
         sessionSet("gws.displayName", name)
-        socket.connect(code, name)
+        sessionSet("gws.avatarId", avatarId)
+        socket.connect(code, name, avatarId)
     }
 
     fun startGame() = send(StartGame())

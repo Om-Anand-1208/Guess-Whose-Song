@@ -25,7 +25,7 @@ class RoomManager(
     /**
      * Create a new room. Returns the created [RoomSession].
      */
-    fun createRoom(hostId: String, hostName: String): RoomSession {
+    fun createRoom(hostId: String, hostName: String, hostAvatarId: String = AvatarCatalog.DEFAULT_ID): RoomSession {
         val joinCode = generateJoinCode()
         val room = Room(
             id = joinCode,
@@ -37,6 +37,7 @@ class RoomManager(
                 Player(
                     id = hostId,
                     displayName = hostName,
+                    avatarId = AvatarCatalog.normalize(hostAvatarId),
                     isHost = true,
                     joinedAt = System.currentTimeMillis()
                 )

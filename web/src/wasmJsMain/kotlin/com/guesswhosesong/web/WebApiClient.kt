@@ -3,12 +3,16 @@ package com.guesswhosesong.web
 import com.guesswhosesong.shared.dto.GWSJson
 import com.guesswhosesong.shared.models.SpotifySuggestion
 import com.guesswhosesong.shared.models.TrackSearchResult
+import com.guesswhosesong.shared.models.AvatarCatalog
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 
 @Serializable
-data class CreateRoomRequest(val displayName: String)
+data class CreateRoomRequest(
+    val displayName: String,
+    val avatarId: String = AvatarCatalog.DEFAULT_ID
+)
 
 @Serializable
 data class CreateRoomResponse(val joinCode: String)
@@ -50,8 +54,8 @@ class WebApiClient(private val auth: WebAuthManager) {
         return response.body
     }
 
-    suspend fun createRoom(displayName: String): CreateRoomResponse = GWSJson.decodeFromString(
-        request("/rooms", "POST", GWSJson.encodeToString(CreateRoomRequest(displayName)))
+    suspend fun createRoom(displayName: String, avatarId: String): CreateRoomResponse = GWSJson.decodeFromString(
+        request("/rooms", "POST", GWSJson.encodeToString(CreateRoomRequest(displayName, avatarId)))
     )
 
     suspend fun webSocketTicket(joinCode: String): String =

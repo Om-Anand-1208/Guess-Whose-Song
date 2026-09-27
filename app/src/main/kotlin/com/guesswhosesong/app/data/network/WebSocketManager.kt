@@ -38,6 +38,7 @@ class WebSocketManager(
     private var connectionScope: CoroutineScope? = null
     private var currentJoinCode: String? = null
     private var currentDisplayName: String? = null
+    private var currentAvatarId: String? = null
     @Volatile private var stopReconnect = false
 
     private val _connectionState = MutableStateFlow(ConnectionState.DISCONNECTED)
@@ -52,13 +53,14 @@ class WebSocketManager(
      * Connect to a room WebSocket.
      * Automatically reconnects on drop with exponential backoff.
      */
-    fun connect(joinCode: String, displayName: String) {
+    fun connect(joinCode: String, displayName: String, avatarId: String) {
         stopReconnect = true
         connectionScope?.cancel()
         drainOutgoing()
         stopReconnect = false
         currentJoinCode = joinCode
         currentDisplayName = displayName
+        currentAvatarId = avatarId
 
         connectionScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         connectionScope!!.launch {
@@ -75,7 +77,7 @@ class WebSocketManager(
                         _connectionState.value = ConnectionState.CONNECTED
                         _lastError.value = null
                         delay = RECONNECT_DELAY_MS // reset backoff on success
-                        send(Frame.Text(JoinRoom(displayName).toJson()))
+                        send(Frame.Text(JoinRoom(displayName = displayName, avatarId = avatarId).toJson()))
 
                         // Fan out: send queued outgoing messages
                         val sendJob = launch {
@@ -136,6 +138,7 @@ class WebSocketManager(
         drainOutgoing()
         currentJoinCode = null
         currentDisplayName = null
+        currentAvatarId = null
         _connectionState.value = ConnectionState.DISCONNECTED
         _lastError.value = null
     }

@@ -7,6 +7,15 @@ object GameConstants {
     const val DECOY_NAME = "Nobody / Decoy ❓"
 }
 
+/** Stable IDs for the little illustrated player characters shown across clients. */
+object AvatarCatalog {
+    const val DEFAULT_ID = "sunny"
+    val ids = listOf("sunny", "lime", "violet", "tangerine", "cloud", "star", "berry", "mint")
+
+    fun isValid(id: String): Boolean = id in ids
+    fun normalize(id: String): String = id.takeIf(::isValid) ?: DEFAULT_ID
+}
+
 @Serializable
 data class RoomSettings(
     val roundLengthPreset: RoundLengthPreset = RoundLengthPreset.STANDARD,
@@ -30,6 +39,7 @@ data class SongEntry(
 data class Player(
     val id: String,
     val displayName: String,
+    val avatarId: String = AvatarCatalog.DEFAULT_ID,
     val isHost: Boolean = false,
     val connected: Boolean = true,
     val score: Int = 0,

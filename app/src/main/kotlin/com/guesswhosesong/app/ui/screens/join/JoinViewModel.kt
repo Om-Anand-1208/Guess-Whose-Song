@@ -8,6 +8,7 @@ import com.guesswhosesong.app.data.player.PlayerIdentityManager
 import com.guesswhosesong.app.data.player.AccountLinkResult
 import com.guesswhosesong.app.data.repository.RoomRepository
 import com.guesswhosesong.app.data.spotify.SpotifyAuthManager
+import com.guesswhosesong.shared.models.AvatarCatalog
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -15,6 +16,7 @@ import javax.inject.Inject
 
 data class JoinUiState(
     val displayName: String = "",
+    val avatarId: String = AvatarCatalog.DEFAULT_ID,
     val joinCode: String = "",
     val isLoading: Boolean = false,
     val error: String? = null,
@@ -23,7 +25,7 @@ data class JoinUiState(
 )
 
 sealed class JoinEvent {
-    data class NavigateToLobby(val joinCode: String, val displayName: String) : JoinEvent()
+    data class NavigateToLobby(val joinCode: String, val displayName: String, val avatarId: String) : JoinEvent()
 }
 
 @HiltViewModel
@@ -59,6 +61,10 @@ class JoinViewModel @Inject constructor(
         _uiState.update { it.copy(displayName = name.take(24), error = null) }
     }
 
+    fun onAvatarSelected(avatarId: String) {
+        _uiState.update { it.copy(avatarId = AvatarCatalog.normalize(avatarId), error = null) }
+    }
+
     fun onJoinCodeChanged(code: String) {
         _uiState.update { it.copy(joinCode = code.uppercase().take(6), error = null) }
     }
@@ -72,10 +78,11 @@ class JoinViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
-                val result = roomRepository.createRoom(name)
+                val avatarId = _uiState.value.avatarId
+                val result = roomRepository.createRoom(name, avatarId)
                 result.fold(
                     onSuccess = { response ->
-                        _events.emit(JoinEvent.NavigateToLobby(response.joinCode, name))
+                        _events.emit(JoinEvent.NavigateToLobby(response.joinCode, name, avatarId))
                     },
                     onFailure = { e ->
                         _uiState.update { it.copy(error = "Failed to create room: ${e.message}") }
@@ -92,6 +99,7 @@ class JoinViewModel @Inject constructor(
     fun joinRoom() {
         val name = _uiState.value.displayName.trim()
         val code = _uiState.value.joinCode.trim()
+        val avatarId = _uiState.value.avatarId
         if (name.isBlank()) {
             _uiState.update { it.copy(error = "Enter your name first") }
             return
@@ -103,7 +111,7 @@ class JoinViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
-                _events.emit(JoinEvent.NavigateToLobby(code, name))
+                _events.emit(JoinEvent.NavigateToLobby(code, name, avatarId))
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "Error: ${e.message}") }
             } finally {
