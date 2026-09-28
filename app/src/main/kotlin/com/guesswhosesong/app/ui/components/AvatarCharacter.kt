@@ -55,6 +55,7 @@ import com.guesswhosesong.shared.models.AvatarCustomization
 import com.guesswhosesong.shared.models.AvatarCustomizationCatalog
 import com.guesswhosesong.shared.models.AvatarCatalog
 import kotlin.math.cos
+import kotlin.math.PI
 import kotlin.math.min
 import kotlin.math.sin
 
@@ -63,18 +64,19 @@ data class AvatarOption(
     val id: String,
     val name: String,
     val color: Color,
-    val accent: Color
+    val accent: Color,
+    val colorName: String
 )
 
 val AvatarOptions = listOf(
-    AvatarOption("sunny", "Sunny", Color(0xFFFFB43E), Color(0xFFFFD56D)),
-    AvatarOption("lime", "Lime", Color(0xFFB8F45D), Color(0xFF75C94A)),
-    AvatarOption("violet", "Violet", Color(0xFF8F7CF7), Color(0xFF6553C9)),
-    AvatarOption("tangerine", "Tangy", Color(0xFFFF8B3D), Color(0xFFFFCF5C)),
-    AvatarOption("cloud", "Cloudy", Color(0xFF9CCBFF), Color(0xFF679DEB)),
-    AvatarOption("star", "Stella", Color(0xFFFFDF72), Color(0xFFE6A72E)),
-    AvatarOption("berry", "Berry", Color(0xFFFF91B3), Color(0xFFD95178)),
-    AvatarOption("mint", "Minty", Color(0xFF8CE7C1), Color(0xFF42B88B))
+    AvatarOption("sunny", "Sunny", Color(0xFFFFAE29), Color(0xFFEF8F18), "Orange"),
+    AvatarOption("lime", "Lime", Color(0xFFB6F45B), Color(0xFF77C945), "Lime"),
+    AvatarOption("violet", "Triangle", Color(0xFFA394F1), Color(0xFF7060C8), "Lavender"),
+    AvatarOption("cloud", "Cloud", Color(0xFFAED5F4), Color(0xFF79ACD7), "Sky blue"),
+    AvatarOption("star", "Star", Color(0xFFFFD43B), Color(0xFFD49E22), "Yellow"),
+    AvatarOption("tangerine", "Honey", Color(0xFFEF9387), Color(0xFFCD675D), "Coral"),
+    AvatarOption("berry", "Diamond", Color(0xFFF17FAC), Color(0xFFC94C78), "Pink"),
+    AvatarOption("mint", "Heart", Color(0xFF73D9CA), Color(0xFF39AD9B), "Mint")
 )
 
 fun avatarOption(id: String): AvatarOption =
@@ -182,7 +184,7 @@ fun AvatarPicker(
             Column(modifier = Modifier.weight(1f).padding(start = 10.dp)) {
                 Text("Your avatar", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                 Text(
-                    "${avatarOption(customization.shapeId).name} · ${avatarOption(customization.colorId).name}",
+                    "${avatarOption(customization.shapeId).name} · ${avatarOption(customization.colorId).colorName}",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -330,7 +332,15 @@ private fun AvatarChoiceGroup(
                 FilterChip(
                     selected = option == selected,
                     onClick = { onSelected(option) },
-                    label = { Text(option.replaceFirstChar { it.uppercase() }) }
+                    label = {
+                        Text(
+                            when (title) {
+                                "Shape" -> avatarOption(option).name
+                                "Color" -> avatarOption(option).colorName
+                                else -> option.replaceFirstChar { it.uppercase() }
+                            }
+                        )
+                    }
                 )
             }
         }
@@ -341,268 +351,265 @@ private val GwsAvatarInk = Color(0xFF17161A)
 
 private fun DrawScope.drawAvatar(option: AvatarOption, appearance: AvatarCustomization) {
     val s = min(size.width, size.height)
-    val ink = Color(0xFF17161A)
-    val stroke = (s * 0.045f).coerceAtLeast(1.5f)
-    val center = Offset(size.width / 2f, size.height / 2f)
-    val lineStyle = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    val x = (size.width - s) / 2f
+    val y = (size.height - s) / 2f
+    val ink = GwsAvatarInk
+    val stroke = (s * 0.034f).coerceAtLeast(1.1f)
+    val outline = Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    fun p(nx: Float, ny: Float) = Offset(x + s * nx, y + s * ny)
+    val body = Path()
 
-    var faceX = center.x
-    var faceY = center.y
-    var faceScale = 0.8f
+    fun drawBody(path: Path) {
+        drawPath(path, option.color)
+        drawPath(path, ink, style = outline)
+    }
 
-    fun face(x: Float, y: Float, scale: Float = 1f) {
-        faceX = x
-        faceY = y
-        faceScale = scale
-        val eyeY = y - s * 0.02f * scale
-        val leftEyeX = x - s * 0.12f * scale
-        val rightEyeX = x + s * 0.12f * scale
-        val eyeRadius = stroke * 0.72f * scale
-        when (appearance.eyesId) {
-            "happy" -> listOf(leftEyeX, rightEyeX).forEach { eyeX ->
-                drawArc(
-                    color = ink,
-                    startAngle = 190f,
-                    sweepAngle = 160f,
-                    useCenter = false,
-                    topLeft = Offset(eyeX - s * 0.055f * scale, eyeY - s * 0.035f * scale),
-                    size = androidx.compose.ui.geometry.Size(s * 0.11f * scale, s * 0.08f * scale),
-                    style = Stroke(stroke * 0.9f, cap = StrokeCap.Round)
-                )
-            }
-            "sleepy" -> listOf(leftEyeX, rightEyeX).forEach { eyeX ->
-                drawLine(ink, Offset(eyeX - s * 0.045f * scale, eyeY), Offset(eyeX + s * 0.045f * scale, eyeY), strokeWidth = stroke * 1.1f, cap = StrokeCap.Round)
-            }
-            "wink" -> {
-                drawCircle(ink, eyeRadius, Offset(leftEyeX, eyeY))
-                drawArc(
-                    color = ink,
-                    startAngle = 190f,
-                    sweepAngle = 160f,
-                    useCenter = false,
-                    topLeft = Offset(rightEyeX - s * 0.055f * scale, eyeY - s * 0.035f * scale),
-                    size = androidx.compose.ui.geometry.Size(s * 0.11f * scale, s * 0.08f * scale),
-                    style = Stroke(stroke * 0.9f, cap = StrokeCap.Round)
-                )
-            }
-            "sunglasses" -> {
-                val lensWidth = s * 0.12f * scale
-                val lensHeight = s * 0.075f * scale
-                drawRoundRect(ink, Offset(leftEyeX - lensWidth / 2f, eyeY - lensHeight / 2f), androidx.compose.ui.geometry.Size(lensWidth, lensHeight), androidx.compose.ui.geometry.CornerRadius(stroke))
-                drawRoundRect(ink, Offset(rightEyeX - lensWidth / 2f, eyeY - lensHeight / 2f), androidx.compose.ui.geometry.Size(lensWidth, lensHeight), androidx.compose.ui.geometry.CornerRadius(stroke))
-                drawLine(ink, Offset(leftEyeX + lensWidth / 2f, eyeY), Offset(rightEyeX - lensWidth / 2f, eyeY), strokeWidth = stroke * 0.72f, cap = StrokeCap.Round)
-            }
-            else -> {
-                drawCircle(ink, eyeRadius, Offset(leftEyeX, eyeY))
-                drawCircle(ink, eyeRadius, Offset(rightEyeX, eyeY))
-            }
+    fun drawLegs(leftX: Float, rightX: Float, topY: Float) {
+        val leftLeg = Path().apply {
+            moveTo(p(leftX, topY).x, p(leftX, topY).y)
+            cubicTo(p(leftX - 0.01f, topY + 0.07f).x, p(leftX - 0.01f, topY + 0.07f).y,
+                p(leftX - 0.02f, 0.91f).x, p(leftX - 0.02f, 0.91f).y,
+                p(leftX - 0.02f, 0.93f).x, p(leftX - 0.02f, 0.93f).y)
         }
+        val rightLeg = Path().apply {
+            moveTo(p(rightX, topY).x, p(rightX, topY).y)
+            cubicTo(p(rightX + 0.01f, topY + 0.07f).x, p(rightX + 0.01f, topY + 0.07f).y,
+                p(rightX + 0.02f, 0.91f).x, p(rightX + 0.02f, 0.91f).y,
+                p(rightX + 0.02f, 0.93f).x, p(rightX + 0.02f, 0.93f).y)
+        }
+        drawPath(leftLeg, ink, style = Stroke(stroke * 0.9f, cap = StrokeCap.Round))
+        drawPath(rightLeg, ink, style = Stroke(stroke * 0.9f, cap = StrokeCap.Round))
+        drawOval(ink, topLeft = p(leftX - 0.055f, 0.92f), size = androidx.compose.ui.geometry.Size(s * 0.09f, s * 0.035f))
+        drawOval(ink, topLeft = p(rightX - 0.035f, 0.92f), size = androidx.compose.ui.geometry.Size(s * 0.09f, s * 0.035f))
+    }
 
-        val mouthTop = y + s * 0.12f * scale
-        when (appearance.mouthId) {
-            "open" -> drawOval(
-                ink,
-                topLeft = Offset(x - s * 0.065f * scale, mouthTop - s * 0.005f * scale),
-                size = androidx.compose.ui.geometry.Size(s * 0.13f * scale, s * 0.13f * scale)
-            )
-            "tongue" -> {
-                drawOval(
-                    ink,
-                    topLeft = Offset(x - s * 0.07f * scale, mouthTop - s * 0.01f * scale),
-                    size = androidx.compose.ui.geometry.Size(s * 0.14f * scale, s * 0.13f * scale)
-                )
-                drawOval(
-                    Color(0xFFE85B76),
-                    topLeft = Offset(x - s * 0.035f * scale, mouthTop + s * 0.065f * scale),
-                    size = androidx.compose.ui.geometry.Size(s * 0.07f * scale, s * 0.055f * scale)
-                )
-            }
-            else -> {
-                val mouth = Path().apply {
-                    moveTo(x - s * 0.12f * scale, mouthTop)
-                    cubicTo(
-                        x - s * 0.04f * scale, y + s * (if (appearance.mouthId == "grin") 0.25f else 0.21f) * scale,
-                        x + s * 0.04f * scale, y + s * (if (appearance.mouthId == "grin") 0.25f else 0.21f) * scale,
-                        x + s * 0.12f * scale, mouthTop
-                    )
-                }
-                drawPath(mouth, ink, style = lineStyle)
-                if (appearance.mouthId == "grin") {
-                    drawRoundRect(
-                        Color.White,
-                        topLeft = Offset(x - s * 0.055f * scale, mouthTop + s * 0.014f * scale),
-                        size = androidx.compose.ui.geometry.Size(s * 0.11f * scale, s * 0.038f * scale),
-                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(s * 0.01f * scale)
-                    )
-                }
-            }
+    fun drawArms(leftX: Float, rightX: Float, armY: Float, leftHandY: Float, rightHandY: Float) {
+        val leftHand = p(leftX - 0.12f, leftHandY)
+        val rightHand = p(rightX + 0.12f, rightHandY)
+        val leftArm = Path().apply {
+            moveTo(p(leftX, armY).x, p(leftX, armY).y)
+            cubicTo(p(leftX - 0.06f, armY).x, p(leftX - 0.06f, armY).y,
+                p(leftX - 0.13f, leftHandY + 0.04f).x, p(leftX - 0.13f, leftHandY + 0.04f).y,
+                leftHand.x, leftHand.y)
+        }
+        val rightArm = Path().apply {
+            moveTo(p(rightX, armY).x, p(rightX, armY).y)
+            cubicTo(p(rightX + 0.06f, armY).x, p(rightX + 0.06f, armY).y,
+                p(rightX + 0.13f, rightHandY + 0.04f).x, p(rightX + 0.13f, rightHandY + 0.04f).y,
+                rightHand.x, rightHand.y)
+        }
+        drawPath(leftArm, ink, style = Stroke(stroke * 0.85f, cap = StrokeCap.Round))
+        drawPath(rightArm, ink, style = Stroke(stroke * 0.85f, cap = StrokeCap.Round))
+        listOf(leftHand, rightHand).forEach { hand ->
+            drawCircle(Color(0xFFFFFBF3), s * 0.023f, hand)
+            drawCircle(ink, s * 0.023f, hand, style = Stroke(stroke * 0.55f))
         }
     }
 
-    fun limbs(x: Float, y: Float, bodyWidth: Float, bodyBottom: Float) {
-        drawLine(ink, Offset(x - bodyWidth / 2f, y + s * 0.02f), Offset(x - bodyWidth * 0.8f, y + s * 0.15f), strokeWidth = stroke, cap = StrokeCap.Round)
-        drawLine(ink, Offset(x + bodyWidth / 2f, y + s * 0.02f), Offset(x + bodyWidth * 0.8f, y - s * 0.05f), strokeWidth = stroke, cap = StrokeCap.Round)
-        drawLine(ink, Offset(x - bodyWidth * 0.2f, bodyBottom), Offset(x - bodyWidth * 0.28f, bodyBottom + s * 0.18f), strokeWidth = stroke, cap = StrokeCap.Round)
-        drawLine(ink, Offset(x + bodyWidth * 0.2f, bodyBottom), Offset(x + bodyWidth * 0.35f, bodyBottom + s * 0.17f), strokeWidth = stroke, cap = StrokeCap.Round)
-        drawLine(ink, Offset(x - bodyWidth * 0.42f, bodyBottom + s * 0.18f), Offset(x - bodyWidth * 0.18f, bodyBottom + s * 0.18f), strokeWidth = stroke * 1.4f, cap = StrokeCap.Round)
-        drawLine(ink, Offset(x + bodyWidth * 0.2f, bodyBottom + s * 0.17f), Offset(x + bodyWidth * 0.48f, bodyBottom + s * 0.17f), strokeWidth = stroke * 1.4f, cap = StrokeCap.Round)
+    when (appearance.shapeId) {
+        "lime" -> { drawArms(0.22f, 0.78f, 0.55f, 0.56f, 0.56f); drawLegs(0.42f, 0.58f, 0.73f) }
+        "violet" -> { drawArms(0.25f, 0.75f, 0.58f, 0.65f, 0.36f); drawLegs(0.42f, 0.58f, 0.75f) }
+        "tangerine" -> { drawArms(0.24f, 0.76f, 0.56f, 0.59f, 0.59f); drawLegs(0.42f, 0.58f, 0.75f) }
+        "berry" -> { drawArms(0.29f, 0.71f, 0.53f, 0.61f, 0.40f); drawLegs(0.44f, 0.56f, 0.79f) }
+        "cloud" -> drawLegs(0.42f, 0.58f, 0.70f)
+        "star" -> drawLegs(0.43f, 0.57f, 0.76f)
+        "mint" -> drawLegs(0.43f, 0.57f, 0.77f)
+        else -> drawLegs(0.43f, 0.57f, 0.75f)
     }
 
-    when (option.id) {
-        "sunny", "tangerine" -> {
-            val r = s * if (option.id == "sunny") 0.31f else 0.28f
-            val c = Offset(center.x, center.y - s * 0.02f)
-            if (option.id == "sunny") {
-                repeat(10) { index ->
-                    val angle = (index * 36f - 90f) * (Math.PI / 180f).toFloat()
-                    val inner = Offset(c.x + cos(angle) * r * 1.28f, c.y + sin(angle) * r * 1.28f)
-                    val outer = Offset(c.x + cos(angle) * r * 1.58f, c.y + sin(angle) * r * 1.58f)
-                    drawLine(option.accent, inner, outer, strokeWidth = stroke * 1.25f, cap = StrokeCap.Round)
-                }
-            }
-            drawCircle(option.color, r, c)
-            face(c.x, c.y, scale = 0.85f)
-            limbs(c.x, c.y + r * 0.6f, r * 1.25f, c.y + r)
-            if (option.id == "tangerine") {
-                drawLine(ink, Offset(c.x - r * 0.12f, c.y - r * 1.02f), Offset(c.x + r * 0.12f, c.y - r * 1.28f), strokeWidth = stroke, cap = StrokeCap.Round)
-                drawCircle(option.accent, r * 0.18f, Offset(c.x + r * 0.2f, c.y - r * 1.31f))
-            }
+    when (appearance.shapeId) {
+        "sunny" -> {
+            drawCircle(option.color, s * 0.30f, p(0.5f, 0.48f))
+            drawCircle(ink, s * 0.30f, p(0.5f, 0.48f), style = outline)
         }
-        "lime", "mint" -> {
-            val w = s * 0.50f
-            val h = s * 0.46f
-            val top = center.y - h * 0.46f
-            val left = center.x - w / 2f
-            drawRoundRect(option.color, topLeft = Offset(left, top), size = androidx.compose.ui.geometry.Size(w, h), cornerRadius = androidx.compose.ui.geometry.CornerRadius(s * 0.10f))
-            drawRoundRect(ink, topLeft = Offset(left, top), size = androidx.compose.ui.geometry.Size(w, h), cornerRadius = androidx.compose.ui.geometry.CornerRadius(s * 0.10f), style = lineStyle)
-            drawLine(option.accent, Offset(left + s * 0.05f, top + s * 0.06f), Offset(left + w - s * 0.05f, top + s * 0.06f), strokeWidth = stroke * 1.5f, cap = StrokeCap.Round)
-            face(center.x, top + h * 0.54f, scale = 0.8f)
-            limbs(center.x, top + h * 0.54f, w, top + h)
+        "lime" -> {
+            val rect = androidx.compose.ui.geometry.Size(s * 0.56f, s * 0.52f)
+            drawRoundRect(option.color, p(0.22f, 0.23f), rect, androidx.compose.ui.geometry.CornerRadius(s * 0.055f))
+            drawRoundRect(ink, p(0.22f, 0.23f), rect, androidx.compose.ui.geometry.CornerRadius(s * 0.055f), style = outline)
+            drawLine(option.accent, p(0.28f, 0.29f), p(0.72f, 0.29f), strokeWidth = stroke * 1.35f, cap = StrokeCap.Round)
         }
         "violet" -> {
-            val path = Path().apply {
-                moveTo(center.x, s * 0.16f)
-                lineTo(s * 0.82f, s * 0.77f)
-                lineTo(s * 0.18f, s * 0.77f)
-                close()
-            }
-            drawPath(path, option.color)
-            drawPath(path, ink, style = lineStyle)
-            face(center.x, s * 0.56f, scale = 0.82f)
-            drawLine(ink, Offset(s * 0.4f, s * 0.78f), Offset(s * 0.34f, s * 0.94f), strokeWidth = stroke, cap = StrokeCap.Round)
-            drawLine(ink, Offset(s * 0.6f, s * 0.78f), Offset(s * 0.68f, s * 0.94f), strokeWidth = stroke, cap = StrokeCap.Round)
-            drawLine(ink, Offset(s * 0.24f, s * 0.61f), Offset(s * 0.08f, s * 0.49f), strokeWidth = stroke, cap = StrokeCap.Round)
-            drawLine(ink, Offset(s * 0.76f, s * 0.61f), Offset(s * 0.91f, s * 0.67f), strokeWidth = stroke, cap = StrokeCap.Round)
+            body.reset()
+            body.moveTo(p(0.50f, 0.17f).x, p(0.50f, 0.17f).y)
+            body.lineTo(p(0.83f, 0.77f).x, p(0.83f, 0.77f).y)
+            body.lineTo(p(0.17f, 0.77f).x, p(0.17f, 0.77f).y)
+            body.close()
+            drawBody(body)
         }
         "cloud" -> {
-            val cloud = Path().apply {
-                moveTo(s * 0.18f, s * 0.60f)
-                cubicTo(s * 0.16f, s * 0.43f, s * 0.31f, s * 0.37f, s * 0.41f, s * 0.45f)
-                cubicTo(s * 0.46f, s * 0.23f, s * 0.76f, s * 0.21f, s * 0.79f, s * 0.47f)
-                cubicTo(s * 0.95f, s * 0.47f, s * 0.96f, s * 0.69f, s * 0.79f, s * 0.72f)
-                lineTo(s * 0.28f, s * 0.72f)
-                cubicTo(s * 0.18f, s * 0.71f, s * 0.14f, s * 0.66f, s * 0.18f, s * 0.60f)
-                close()
-            }
-            drawPath(cloud, option.color)
-            drawPath(cloud, ink, style = lineStyle)
-            face(center.x, s * 0.58f, scale = 0.78f)
-            drawLine(ink, Offset(s * 0.36f, s * 0.75f), Offset(s * 0.31f, s * 0.92f), strokeWidth = stroke, cap = StrokeCap.Round)
-            drawLine(ink, Offset(s * 0.64f, s * 0.75f), Offset(s * 0.71f, s * 0.90f), strokeWidth = stroke, cap = StrokeCap.Round)
+            body.reset()
+            body.moveTo(p(0.14f, 0.62f).x, p(0.14f, 0.62f).y)
+            body.cubicTo(p(0.10f, 0.53f).x, p(0.10f, 0.53f).y, p(0.18f, 0.43f).x, p(0.18f, 0.43f).y, p(0.32f, 0.46f).x, p(0.32f, 0.46f).y)
+            body.cubicTo(p(0.34f, 0.29f).x, p(0.34f, 0.29f).y, p(0.51f, 0.25f).x, p(0.51f, 0.25f).y, p(0.59f, 0.41f).x, p(0.59f, 0.41f).y)
+            body.cubicTo(p(0.73f, 0.34f).x, p(0.73f, 0.34f).y, p(0.87f, 0.44f).x, p(0.87f, 0.44f).y, p(0.84f, 0.56f).x, p(0.84f, 0.56f).y)
+            body.cubicTo(p(0.91f, 0.64f).x, p(0.91f, 0.64f).y, p(0.83f, 0.73f).x, p(0.83f, 0.73f).y, p(0.70f, 0.72f).x, p(0.70f, 0.72f).y)
+            body.lineTo(p(0.28f, 0.72f).x, p(0.28f, 0.72f).y)
+            body.cubicTo(p(0.15f, 0.74f).x, p(0.15f, 0.74f).y, p(0.10f, 0.68f).x, p(0.10f, 0.68f).y, p(0.14f, 0.62f).x, p(0.14f, 0.62f).y)
+            body.close()
+            drawBody(body)
         }
         "star" -> {
-            val star = Path()
+            body.reset()
             repeat(10) { index ->
-                val angle = (-90f + index * 36f) * (Math.PI / 180f).toFloat()
-                val radius = if (index % 2 == 0) s * 0.38f else s * 0.17f
-                val point = Offset(center.x + cos(angle) * radius, center.y + sin(angle) * radius)
-                if (index == 0) star.moveTo(point.x, point.y) else star.lineTo(point.x, point.y)
+                val angle = (-PI / 2.0 + index * PI / 5.0).toFloat()
+                val radius = if (index % 2 == 0) 0.39f else 0.18f
+                val point = p(0.5f + cos(angle) * radius, 0.51f + sin(angle) * radius)
+                if (index == 0) body.moveTo(point.x, point.y) else body.lineTo(point.x, point.y)
             }
-            star.close()
-            drawPath(star, option.color)
-            drawPath(star, ink, style = lineStyle)
-            face(center.x, center.y + s * 0.01f, scale = 0.72f)
-            drawLine(ink, Offset(s * 0.28f, s * 0.67f), Offset(s * 0.12f, s * 0.77f), strokeWidth = stroke, cap = StrokeCap.Round)
-            drawLine(ink, Offset(s * 0.72f, s * 0.67f), Offset(s * 0.88f, s * 0.57f), strokeWidth = stroke, cap = StrokeCap.Round)
+            body.close()
+            drawBody(body)
+        }
+        "tangerine" -> {
+            body.reset()
+            listOf(0.35f to 0.29f, 0.65f to 0.29f, 0.78f to 0.42f, 0.78f to 0.61f,
+                0.65f to 0.75f, 0.35f to 0.75f, 0.22f to 0.61f, 0.22f to 0.42f).forEachIndexed { index, point ->
+                val at = p(point.first, point.second)
+                if (index == 0) body.moveTo(at.x, at.y) else body.lineTo(at.x, at.y)
+            }
+            body.close()
+            drawBody(body)
         }
         "berry" -> {
-            drawCircle(option.color, s * 0.30f, Offset(center.x, center.y + s * 0.04f))
-            drawCircle(option.accent, s * 0.30f, Offset(center.x, center.y + s * 0.04f), style = lineStyle)
-            drawCircle(option.accent, s * 0.025f, Offset(center.x - s * 0.12f, center.y - s * 0.05f))
-            drawCircle(option.accent, s * 0.025f, Offset(center.x + s * 0.02f, center.y + s * 0.12f))
-            drawCircle(option.accent, s * 0.025f, Offset(center.x + s * 0.14f, center.y - s * 0.10f))
-            drawLine(ink, Offset(center.x, center.y - s * 0.24f), Offset(center.x + s * 0.05f, center.y - s * 0.38f), strokeWidth = stroke, cap = StrokeCap.Round)
-            drawLine(ink, Offset(center.x + s * 0.05f, center.y - s * 0.36f), Offset(center.x + s * 0.20f, center.y - s * 0.40f), strokeWidth = stroke, cap = StrokeCap.Round)
-            face(center.x, center.y + s * 0.02f, scale = 0.75f)
-            limbs(center.x, center.y + s * 0.31f, s * 0.70f, center.y + s * 0.34f)
+            body.reset()
+            body.moveTo(p(0.50f, 0.16f).x, p(0.50f, 0.16f).y)
+            body.cubicTo(p(0.59f, 0.27f).x, p(0.59f, 0.27f).y, p(0.73f, 0.42f).x, p(0.73f, 0.42f).y, p(0.80f, 0.50f).x, p(0.80f, 0.50f).y)
+            body.cubicTo(p(0.71f, 0.60f).x, p(0.71f, 0.60f).y, p(0.58f, 0.76f).x, p(0.58f, 0.76f).y, p(0.50f, 0.82f).x, p(0.50f, 0.82f).y)
+            body.cubicTo(p(0.42f, 0.76f).x, p(0.42f, 0.76f).y, p(0.29f, 0.60f).x, p(0.29f, 0.60f).y, p(0.20f, 0.50f).x, p(0.20f, 0.50f).y)
+            body.cubicTo(p(0.27f, 0.42f).x, p(0.27f, 0.42f).y, p(0.41f, 0.27f).x, p(0.41f, 0.27f).y, p(0.50f, 0.16f).x, p(0.50f, 0.16f).y)
+            body.close()
+            drawBody(body)
         }
         else -> {
-            drawCircle(option.color, s * 0.31f, center)
-            drawCircle(ink, s * 0.31f, center, style = lineStyle)
-            face(center.x, center.y, scale = 0.8f)
+            body.reset()
+            body.moveTo(p(0.50f, 0.78f).x, p(0.50f, 0.78f).y)
+            body.cubicTo(p(0.43f, 0.72f).x, p(0.43f, 0.72f).y, p(0.19f, 0.54f).x, p(0.19f, 0.54f).y, p(0.19f, 0.40f).x, p(0.19f, 0.40f).y)
+            body.cubicTo(p(0.19f, 0.24f).x, p(0.19f, 0.24f).y, p(0.36f, 0.22f).x, p(0.36f, 0.22f).y, p(0.50f, 0.36f).x, p(0.50f, 0.36f).y)
+            body.cubicTo(p(0.64f, 0.22f).x, p(0.64f, 0.22f).y, p(0.81f, 0.24f).x, p(0.81f, 0.24f).y, p(0.81f, 0.40f).x, p(0.81f, 0.40f).y)
+            body.cubicTo(p(0.81f, 0.54f).x, p(0.81f, 0.54f).y, p(0.57f, 0.72f).x, p(0.57f, 0.72f).y, p(0.50f, 0.78f).x, p(0.50f, 0.78f).y)
+            body.close()
+            drawBody(body)
+        }
+    }
+
+    val faceY = when (appearance.shapeId) {
+        "cloud" -> 0.54f
+        "star" -> 0.51f
+        "tangerine" -> 0.53f
+        "berry" -> 0.49f
+        "mint" -> 0.48f
+        else -> 0.49f
+    }
+    val faceScale = 0.82f
+    val eyeY = faceY - 0.045f * faceScale
+    val leftEyeX = 0.5f - 0.115f * faceScale
+    val rightEyeX = 0.5f + 0.115f * faceScale
+    val eyeRadius = s * 0.021f * faceScale
+
+    if (appearance.accessoryId == "headphones") {
+        val band = Path().apply {
+            moveTo(p(0.23f, 0.46f).x, p(0.23f, 0.46f).y)
+            cubicTo(p(0.20f, 0.11f).x, p(0.20f, 0.11f).y, p(0.80f, 0.11f).x, p(0.80f, 0.11f).y, p(0.77f, 0.46f).x, p(0.77f, 0.46f).y)
+        }
+        drawPath(band, ink, style = Stroke(stroke * 1.7f, cap = StrokeCap.Round))
+        drawRoundRect(ink, p(0.14f, 0.40f), androidx.compose.ui.geometry.Size(s * 0.12f, s * 0.19f), androidx.compose.ui.geometry.CornerRadius(s * 0.045f))
+        drawRoundRect(Color(0xFF466EE6), p(0.17f, 0.43f), androidx.compose.ui.geometry.Size(s * 0.055f, s * 0.12f), androidx.compose.ui.geometry.CornerRadius(s * 0.025f))
+        drawRoundRect(ink, p(0.74f, 0.40f), androidx.compose.ui.geometry.Size(s * 0.12f, s * 0.19f), androidx.compose.ui.geometry.CornerRadius(s * 0.045f))
+        drawRoundRect(Color(0xFF466EE6), p(0.77f, 0.43f), androidx.compose.ui.geometry.Size(s * 0.055f, s * 0.12f), androidx.compose.ui.geometry.CornerRadius(s * 0.025f))
+    }
+
+    if (appearance.accessoryId == "cap") {
+        val cap = Path().apply {
+            moveTo(p(0.29f, 0.33f).x, p(0.29f, 0.33f).y)
+            cubicTo(p(0.30f, 0.16f).x, p(0.30f, 0.16f).y, p(0.67f, 0.15f).x, p(0.67f, 0.15f).y, p(0.72f, 0.31f).x, p(0.72f, 0.31f).y)
+            lineTo(p(0.82f, 0.35f).x, p(0.82f, 0.35f).y)
+            cubicTo(p(0.72f, 0.41f).x, p(0.72f, 0.41f).y, p(0.39f, 0.41f).x, p(0.39f, 0.41f).y, p(0.27f, 0.35f).x, p(0.27f, 0.35f).y)
+            close()
+        }
+        drawPath(cap, Color(0xFF3969E8))
+        drawPath(cap, ink, style = Stroke(stroke * 0.9f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+    }
+
+    when (appearance.eyesId) {
+        "happy" -> listOf(leftEyeX, rightEyeX).forEach { eyeX ->
+            val eye = Path().apply {
+                moveTo(p(eyeX - 0.055f, eyeY).x, p(eyeX - 0.055f, eyeY).y)
+                cubicTo(p(eyeX - 0.025f, eyeY + 0.045f).x, p(eyeX - 0.025f, eyeY + 0.045f).y,
+                    p(eyeX + 0.025f, eyeY + 0.045f).x, p(eyeX + 0.025f, eyeY + 0.045f).y,
+                    p(eyeX + 0.055f, eyeY).x, p(eyeX + 0.055f, eyeY).y)
+            }
+            drawPath(eye, ink, style = Stroke(stroke * 1.2f, cap = StrokeCap.Round))
+        }
+        "sleepy" -> listOf(leftEyeX, rightEyeX).forEach { eyeX ->
+            drawLine(ink, p(eyeX - 0.045f, eyeY), p(eyeX + 0.045f, eyeY + 0.012f), strokeWidth = stroke * 1.15f, cap = StrokeCap.Round)
+        }
+        "wink" -> {
+            drawCircle(ink, eyeRadius, p(leftEyeX, eyeY))
+            val wink = Path().apply {
+                moveTo(p(rightEyeX - 0.055f, eyeY).x, p(rightEyeX - 0.055f, eyeY).y)
+                cubicTo(p(rightEyeX - 0.02f, eyeY + 0.045f).x, p(rightEyeX - 0.02f, eyeY + 0.045f).y,
+                    p(rightEyeX + 0.02f, eyeY + 0.045f).x, p(rightEyeX + 0.02f, eyeY + 0.045f).y,
+                    p(rightEyeX + 0.055f, eyeY).x, p(rightEyeX + 0.055f, eyeY).y)
+            }
+            drawPath(wink, ink, style = Stroke(stroke * 1.2f, cap = StrokeCap.Round))
+        }
+        "sunglasses" -> {
+            listOf(leftEyeX, rightEyeX).forEach { eyeX ->
+                drawRoundRect(ink, p(eyeX - 0.075f, eyeY - 0.045f), androidx.compose.ui.geometry.Size(s * 0.15f, s * 0.09f), androidx.compose.ui.geometry.CornerRadius(s * 0.025f))
+            }
+            drawLine(ink, p(leftEyeX + 0.07f, eyeY), p(rightEyeX - 0.07f, eyeY), strokeWidth = stroke)
+        }
+        else -> {
+            drawCircle(ink, eyeRadius, p(leftEyeX, eyeY))
+            drawCircle(ink, eyeRadius, p(rightEyeX, eyeY))
+        }
+    }
+
+    val mouthY = faceY + 0.075f
+    when (appearance.mouthId) {
+        "smile" -> {
+            val mouth = Path().apply {
+                moveTo(p(0.5f - 0.09f * faceScale, mouthY).x, p(0.5f - 0.09f * faceScale, mouthY).y)
+                cubicTo(p(0.5f - 0.04f * faceScale, mouthY + 0.075f).x, p(0.5f - 0.04f * faceScale, mouthY + 0.075f).y,
+                    p(0.5f + 0.04f * faceScale, mouthY + 0.075f).x, p(0.5f + 0.04f * faceScale, mouthY + 0.075f).y,
+                    p(0.5f + 0.09f * faceScale, mouthY).x, p(0.5f + 0.09f * faceScale, mouthY).y)
+            }
+            drawPath(mouth, ink, style = Stroke(stroke * 1.25f, cap = StrokeCap.Round))
+        }
+        else -> {
+            val mouthWidth = if (appearance.mouthId == "grin") 0.14f else 0.11f
+            val mouthHeight = if (appearance.mouthId == "grin") 0.12f else 0.10f
+            drawOval(ink, topLeft = p(0.5f - mouthWidth / 2f, mouthY - 0.025f), size = androidx.compose.ui.geometry.Size(s * mouthWidth, s * mouthHeight))
+            if (appearance.mouthId == "tongue") {
+                drawOval(Color(0xFFEF7187), topLeft = p(0.5f - 0.035f, mouthY + 0.03f), size = androidx.compose.ui.geometry.Size(s * 0.07f, s * 0.045f))
+            }
         }
     }
 
     when (appearance.accessoryId) {
-        "headphones" -> {
-            val band = Path().apply {
-                moveTo(faceX - s * 0.23f * faceScale, faceY - s * 0.08f * faceScale)
-                cubicTo(
-                    faceX - s * 0.24f * faceScale, faceY - s * 0.35f * faceScale,
-                    faceX + s * 0.24f * faceScale, faceY - s * 0.35f * faceScale,
-                    faceX + s * 0.23f * faceScale, faceY - s * 0.08f * faceScale
-                )
-            }
-            drawPath(band, option.accent, style = Stroke(stroke * 1.6f, cap = StrokeCap.Round))
-            drawRoundRect(option.accent, Offset(faceX - s * 0.27f * faceScale, faceY - s * 0.09f * faceScale), androidx.compose.ui.geometry.Size(s * 0.075f, s * 0.15f), androidx.compose.ui.geometry.CornerRadius(stroke))
-            drawRoundRect(option.accent, Offset(faceX + s * 0.195f * faceScale, faceY - s * 0.09f * faceScale), androidx.compose.ui.geometry.Size(s * 0.075f, s * 0.15f), androidx.compose.ui.geometry.CornerRadius(stroke))
-        }
         "glasses" -> {
-            val eyeY = faceY - s * 0.02f * faceScale
-            val lensWidth = s * 0.13f * faceScale
-            val lensHeight = s * 0.095f * faceScale
-            val lensStyle = Stroke(stroke * 0.85f)
-            drawRoundRect(ink, Offset(faceX - s * 0.12f * faceScale - lensWidth / 2f, eyeY - lensHeight / 2f), androidx.compose.ui.geometry.Size(lensWidth, lensHeight), androidx.compose.ui.geometry.CornerRadius(stroke * 2), style = lensStyle)
-            drawRoundRect(ink, Offset(faceX + s * 0.12f * faceScale - lensWidth / 2f, eyeY - lensHeight / 2f), androidx.compose.ui.geometry.Size(lensWidth, lensHeight), androidx.compose.ui.geometry.CornerRadius(stroke * 2), style = lensStyle)
-            drawLine(ink, Offset(faceX - s * 0.055f * faceScale, eyeY), Offset(faceX + s * 0.055f * faceScale, eyeY), strokeWidth = stroke * 0.75f, cap = StrokeCap.Round)
-        }
-        "cap" -> {
-            val cap = Path().apply {
-                moveTo(center.x - s * 0.25f, s * 0.30f)
-                cubicTo(center.x - s * 0.22f, s * 0.12f, center.x + s * 0.2f, s * 0.12f, center.x + s * 0.25f, s * 0.30f)
-                lineTo(center.x + s * 0.31f, s * 0.34f)
-                cubicTo(center.x + s * 0.20f, s * 0.41f, center.x - s * 0.15f, s * 0.40f, center.x - s * 0.25f, s * 0.30f)
-                close()
+            listOf(leftEyeX, rightEyeX).forEach { eyeX ->
+                drawRoundRect(ink, p(eyeX - 0.075f, eyeY - 0.045f), androidx.compose.ui.geometry.Size(s * 0.15f, s * 0.09f), androidx.compose.ui.geometry.CornerRadius(s * 0.025f), style = Stroke(stroke))
             }
-            drawPath(cap, option.accent)
-            drawPath(cap, ink, style = Stroke(stroke * 0.7f, join = StrokeJoin.Round))
-            drawLine(ink, Offset(center.x - s * 0.22f, s * 0.30f), Offset(center.x + s * 0.22f, s * 0.30f), strokeWidth = stroke * 0.65f, cap = StrokeCap.Round)
+            drawLine(ink, p(leftEyeX + 0.07f, eyeY), p(rightEyeX - 0.07f, eyeY), strokeWidth = stroke)
         }
         "bow" -> {
-            val bowY = center.y - s * 0.27f
-            val leftBow = Path().apply {
-                moveTo(center.x, bowY)
-                lineTo(center.x - s * 0.15f, bowY - s * 0.11f)
-                lineTo(center.x - s * 0.17f, bowY + s * 0.08f)
+            val bow = Path().apply {
+                moveTo(p(0.50f, 0.24f).x, p(0.50f, 0.24f).y)
+                cubicTo(p(0.39f, 0.13f).x, p(0.39f, 0.13f).y, p(0.31f, 0.18f).x, p(0.31f, 0.18f).y, p(0.42f, 0.31f).x, p(0.42f, 0.31f).y)
+                cubicTo(p(0.45f, 0.34f).x, p(0.45f, 0.34f).y, p(0.48f, 0.29f).x, p(0.48f, 0.29f).y, p(0.50f, 0.24f).x, p(0.50f, 0.24f).y)
+                cubicTo(p(0.61f, 0.13f).x, p(0.61f, 0.13f).y, p(0.69f, 0.18f).x, p(0.69f, 0.18f).y, p(0.58f, 0.31f).x, p(0.58f, 0.31f).y)
                 close()
             }
-            val rightBow = Path().apply {
-                moveTo(center.x, bowY)
-                lineTo(center.x + s * 0.15f, bowY - s * 0.11f)
-                lineTo(center.x + s * 0.17f, bowY + s * 0.08f)
-                close()
-            }
-            drawPath(leftBow, option.accent)
-            drawPath(rightBow, option.accent)
-            drawCircle(ink, s * 0.025f, Offset(center.x, bowY))
+            drawPath(bow, option.accent)
+            drawPath(bow, ink, style = Stroke(stroke * 0.75f))
+            drawCircle(ink, s * 0.025f, p(0.50f, 0.27f))
         }
         "flower" -> {
-            val flowerCenter = Offset(center.x + s * 0.23f, center.y - s * 0.24f)
             repeat(5) { index ->
-                val angle = (-90f + index * 72f) * (Math.PI / 180f).toFloat()
-                drawCircle(option.accent, s * 0.055f, Offset(flowerCenter.x + cos(angle) * s * 0.055f, flowerCenter.y + sin(angle) * s * 0.055f))
+                val angle = (-PI / 2.0 + index * 2.0 * PI / 5.0).toFloat()
+                drawCircle(Color(0xFFFFF3F6), s * 0.045f, p(0.73f + cos(angle) * 0.045f, 0.27f + sin(angle) * 0.045f))
             }
-            drawCircle(Color(0xFFFFD45E), s * 0.035f, flowerCenter)
+            drawCircle(option.accent, s * 0.027f, p(0.73f, 0.27f))
         }
     }
 }

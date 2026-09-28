@@ -32,6 +32,8 @@ import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -80,6 +82,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.ComposeViewport
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Settings
 import com.guesswhosesong.shared.models.Player
 import com.guesswhosesong.shared.models.RoomSettings
 import com.guesswhosesong.shared.models.AvatarCatalog
@@ -157,9 +161,9 @@ private fun WebApp() {
     val state by store.state.collectAsState()
     val authStatus by store.auth.status.collectAsState()
     val user by store.auth.user.collectAsState()
-    var savePlayerPage by remember { mutableStateOf(false) }
+    var settingsPageOpen by remember { mutableStateOf(false) }
     LaunchedEffect(state.page) {
-        if (state.page != WebPage.JOIN) savePlayerPage = false
+        if (state.page != WebPage.JOIN && state.page != WebPage.LOBBY) settingsPageOpen = false
     }
     DisposableEffect(Unit) { onDispose { store.close() } }
 
@@ -182,17 +186,16 @@ private fun WebApp() {
                     )
                 ) {
                     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                        if (savePlayerPage) {
-                            SavePlayerPage(
+                        if (settingsPageOpen) {
+                            PlayerSettingsPage(
                                 store = store,
                                 state = state,
                                 status = authStatus,
                                 user = user,
-                                onBackToGame = { savePlayerPage = false },
-                                onKeepGuest = { savePlayerPage = false }
+                                onBackToGame = { settingsPageOpen = false }
                             )
                         } else {
-                            JoinPage(store, state, authStatus, user, onSavePlayer = { savePlayerPage = true })
+                            JoinPage(store, state, onSettings = { settingsPageOpen = true })
                         }
                     }
                 }
@@ -208,7 +211,11 @@ private fun WebApp() {
                     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                         when (state.page) {
                             WebPage.JOIN -> Unit
-                            WebPage.LOBBY -> LobbyPage(store, state)
+                            WebPage.LOBBY -> if (settingsPageOpen) {
+                                PlayerSettingsPage(store, state, authStatus, user, onBackToGame = { settingsPageOpen = false })
+                            } else {
+                                LobbyPage(store, state, onSettings = { settingsPageOpen = true })
+                            }
                             WebPage.SUBMISSION -> SubmissionPage(store, state)
                             WebPage.GAME -> GamePage(store, state)
                             WebPage.RESULTS -> ResultsPage(store, state)
@@ -255,6 +262,7 @@ private fun PostJoinFrame(
     kicker: String,
     description: String,
     state: WebUiState,
+    onSettings: (() -> Unit)? = null,
     content: @Composable (wide: Boolean) -> Unit
 ) {
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -302,6 +310,14 @@ private fun PostJoinFrame(
                                 Text("ROOM", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
                                 Text(code, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
                             }
+                        }
+                    }
+                    onSettings?.let { openSettings ->
+                        TextButton(
+                            onClick = openSettings,
+                            modifier = Modifier.semantics { contentDescription = "Settings" }
+                        ) {
+                            Text("⚙", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
                         }
                     }
                 }
@@ -361,31 +377,50 @@ private fun FrontPageFrame(
     state: WebUiState,
     isSavePlayer: Boolean,
     onHeaderAction: () -> Unit,
-    content: @Composable () -> Unit
+    content: @Composable (compact: Boolean) -> Unit
 ) {
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val wide = maxWidth >= 1120.dp
-        val compactHeader = maxWidth < 320.dp
-        val horizontalPadding = if (wide) 36.dp else 18.dp
+    val background = if (isSavePlayer) {
+        Modifier.fillMaxSize()
+    } else {
+        Modifier.fillMaxSize().background(
+            Brush.verticalGradient(
+                colorStops = arrayOf(
+                    0f to Color(0xFFFFFBF2),
+                    0.42f to Color(0xFFFFFBF2),
+                    0.74f to Color(0xFFDDF49B),
+                    1f to Color(0xFFB8E86F)
+                )
+            )
+        )
+    }
+    BoxWithConstraints(background) {
+        // Use the same side-by-side hero composition on landscape tablets and desktop.
+        val wide = maxWidth >= 960.dp
+        val compactHeader = maxWidth < 380.dp
+        val horizontalPadding = when {
+            wide -> 36.dp
+            maxWidth < 360.dp -> 14.dp
+            else -> 18.dp
+        }
         val headline = if (isSavePlayer) {
-            "Your songs.\nYour people. Your game."
+            "Make your player.\nMake it yours."
         } else {
             "Your friends picked the songs.\nCan you guess who?"
         }
         val headlineSize = when {
-            !wide -> 36
+            maxWidth < 360.dp -> 16
+            !wide -> 22
             maxWidth >= 1320.dp -> 48
             else -> 40
         }
         val artwork = if (isSavePlayer) Res.drawable.save_player_hero else Res.drawable.welcome_hero
-
         Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
             Column(
                 modifier = Modifier.fillMaxWidth()
                     .widthIn(max = 1320.dp)
-                    .padding(horizontal = horizontalPadding, vertical = 18.dp)
+                    .padding(horizontal = horizontalPadding, vertical = if (compactHeader) 10.dp else 18.dp)
                     .align(Alignment.CenterHorizontally),
-                verticalArrangement = Arrangement.spacedBy(18.dp)
+                verticalArrangement = Arrangement.spacedBy(if (compactHeader) 12.dp else 18.dp)
             ) {
                 if (wide) {
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -394,13 +429,22 @@ private fun FrontPageFrame(
                         FrontPageHeaderAction(isSavePlayer, onHeaderAction)
                     }
                 } else {
-                    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         FrontPageWordmark(wide = false, compact = compactHeader)
-                        FrontPageHeaderAction(isSavePlayer, onHeaderAction, Modifier.align(Alignment.End))
+                        Spacer(Modifier.weight(1f))
+                        FrontPageHeaderAction(isSavePlayer, onHeaderAction)
                     }
                 }
-                state.notice?.let { MessageBanner(it, isError = false) }
-                state.error?.let { MessageBanner(it, isError = true) }
+                state.notice?.let { notice ->
+                    Box(Modifier.fillMaxWidth()) {
+                        MessageBanner(notice, isError = false)
+                    }
+                }
+                state.error?.let { error ->
+                    Box(Modifier.fillMaxWidth()) {
+                        MessageBanner(error, isError = true)
+                    }
+                }
                 if (wide) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -411,13 +455,15 @@ private fun FrontPageFrame(
                             FrontPageCopy(headline, wide = true, headlineSize = headlineSize)
                             FrontPageArtwork(artwork, isSavePlayer)
                         }
-                        FrontPageCard(Modifier.weight(0.8f), content)
+                        FrontPageCard(Modifier.weight(0.8f)) { content(false) }
                     }
                 } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                        FrontPageCopy(headline, wide = false, headlineSize = headlineSize)
+                    Column(verticalArrangement = Arrangement.spacedBy(if (compactHeader) 12.dp else 16.dp)) {
+                        Box(Modifier.fillMaxWidth()) {
+                            FrontPageCopy(headline, wide = false, headlineSize = headlineSize)
+                        }
                         FrontPageArtwork(artwork, isSavePlayer)
-                        FrontPageCard(Modifier.fillMaxWidth(), content)
+                        FrontPageCard(Modifier.fillMaxWidth()) { content(compactHeader) }
                     }
                 }
                 Spacer(Modifier.height(20.dp))
@@ -430,40 +476,28 @@ private fun FrontPageFrame(
 private fun FrontPageWordmark(wide: Boolean, compact: Boolean = false) {
     val logoSize = when {
         wide -> 40.sp
-        compact -> 28.sp
-        else -> 34.sp
+        compact -> 22.sp
+        else -> 24.sp
     }
     val logoLineHeight = when {
         wide -> 40.sp
-        compact -> 30.sp
-        else -> 35.sp
+        compact -> 24.sp
+        else -> 30.sp
     }
     val logoFont = FontFamily(Font(Res.font.comfortaa_bold, FontWeight.Bold))
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 5.dp)) {
-        FrontPageConfetti(left = true, compact = compact)
-        Column {
-            FrontPageDisplayText(
-                "Guess",
-                fontSize = logoSize,
-                lineHeight = logoLineHeight,
-                fontFamily = logoFont,
-                letterSpacing = (-1.1).sp,
-                strokeWidth = 2.dp,
-                maxLines = 1,
-                textAlign = TextAlign.Start
-            )
-            FrontPageDisplayText(
-                "Whose Song",
-                fontSize = logoSize,
-                lineHeight = logoLineHeight,
-                fontFamily = logoFont,
-                letterSpacing = (-1.1).sp,
-                strokeWidth = 2.dp,
-                maxLines = 1,
-                textAlign = TextAlign.Start
-            )
-        }
-        FrontPageConfetti(left = false, compact = compact)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compact) 0.dp else 5.dp)) {
+        if (!compact) FrontPageConfetti(left = true, compact = !wide)
+        FrontPageDisplayText(
+            "Guess Whose Song",
+            fontSize = logoSize,
+            lineHeight = logoLineHeight,
+            fontFamily = logoFont,
+            letterSpacing = (-1.1).sp,
+            strokeWidth = 2.dp,
+            maxLines = 1,
+            textAlign = TextAlign.Start
+        )
+        if (!compact) FrontPageConfetti(left = false, compact = !wide)
     }
 }
 
@@ -511,8 +545,19 @@ private fun FrontPageConfetti(left: Boolean, compact: Boolean = false) {
 
 @Composable
 private fun FrontPageHeaderAction(isSavePlayer: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    TextButton(onClick = onClick, modifier = modifier) {
-        Text(if (isSavePlayer) "Back to game" else "Save your player", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+    if (isSavePlayer) {
+        TextButton(onClick = onClick, modifier = modifier) {
+            Text("Back", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+        }
+    } else {
+        IconButton(
+            onClick = onClick,
+            modifier = modifier.size(42.dp).clip(CircleShape)
+                .background(MaterialTheme.colorScheme.primaryContainer)
+                .semantics { contentDescription = "Settings" }
+        ) {
+            Icon(Icons.Filled.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(22.dp))
+        }
     }
 }
 
@@ -521,7 +566,7 @@ private fun FrontPageCopy(headline: String, wide: Boolean, headlineSize: Int) {
     FrontPageDisplayText(
         headline,
         fontSize = headlineSize.sp,
-        lineHeight = if (wide) (headlineSize + 8).sp else 41.sp,
+        lineHeight = if (wide) (headlineSize + 8).sp else (headlineSize + 5).sp,
         letterSpacing = (-1.1).sp,
         modifier = Modifier.fillMaxWidth()
     )
@@ -529,12 +574,19 @@ private fun FrontPageCopy(headline: String, wide: Boolean, headlineSize: Int) {
 
 @Composable
 private fun FrontPageArtwork(artwork: org.jetbrains.compose.resources.DrawableResource, isSavePlayer: Boolean) {
-    Image(
-        painter = painterResource(artwork),
-        contentDescription = if (isSavePlayer) "Colorful music characters playing together" else "Friends enjoying music together outdoors",
-        contentScale = ContentScale.Crop,
-        modifier = Modifier.fillMaxWidth().aspectRatio(1.5f).clip(RoundedCornerShape(28.dp))
-    )
+    Surface(
+        modifier = Modifier.fillMaxWidth().aspectRatio(1.5f),
+        shape = RoundedCornerShape(28.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+        color = Color.Transparent
+    ) {
+        Image(
+            painter = painterResource(artwork),
+            contentDescription = if (isSavePlayer) "Colorful music characters playing together" else "Friends enjoying music together outdoors",
+            contentScale = ContentScale.Fit,
+            modifier = Modifier.fillMaxSize()
+        )
+    }
 }
 
 @Composable
@@ -555,80 +607,16 @@ private fun FrontPageCard(modifier: Modifier = Modifier, content: @Composable ()
 private fun JoinPage(
     store: WebGameStore,
     state: WebUiState,
-    status: AuthStatus,
-    user: WebUser?,
-    onSavePlayer: () -> Unit
+    onSettings: () -> Unit
 ) {
-    var customizationOpen by remember { mutableStateOf(false) }
-    var draftCustomization by remember { mutableStateOf(state.avatarCustomization) }
-    FrontPageFrame(state, isSavePlayer = false, onHeaderAction = onSavePlayer) {
-        Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
-            Text(
-                when (status) {
-                    AuthStatus.LOADING -> "Preparing your guest player…"
-                    AuthStatus.ERROR -> "Guest sign-in is unavailable. Check Firebase web configuration."
-                    AuthStatus.READY -> if (user?.isAnonymous == true) "Playing as a guest" else "Your Google player is connected."
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            OutlinedTextField(
-                value = state.displayName,
-                onValueChange = store::setDisplayName,
-                label = { Text("Your name") },
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Pick your character", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
-                    TextButton(onClick = {
-                        if (customizationOpen) {
-                            customizationOpen = false
-                        } else {
-                            draftCustomization = state.avatarCustomization
-                            customizationOpen = true
-                        }
-                    }) { Text(if (customizationOpen) "Close editor" else "Customize") }
-                }
-                WebAvatarPicker(
-                    selectedId = if (customizationOpen) draftCustomization.shapeId else state.avatarId,
-                    selectedCustomization = if (customizationOpen) draftCustomization else state.avatarCustomization,
-                    onSelected = { shapeId ->
-                        if (customizationOpen) draftCustomization = draftCustomization.copy(shapeId = shapeId)
-                        else store.setAvatarId(shapeId)
-                    }
-                )
-                if (customizationOpen) {
-                    WebAvatarEditor(
-                        customization = draftCustomization,
-                        onChange = { draftCustomization = it },
-                        onRandomize = {
-                            draftCustomization = AvatarCustomization(
-                                shapeId = AvatarCustomizationCatalog.shapeIds.random(),
-                                colorId = AvatarCustomizationCatalog.colorIds.random(),
-                                eyesId = AvatarCustomizationCatalog.eyesIds.random(),
-                                mouthId = AvatarCustomizationCatalog.mouthIds.random(),
-                                accessoryId = AvatarCustomizationCatalog.accessoryIds.random()
-                            )
-                        },
-                        onReset = { draftCustomization = AvatarCustomization.defaultsFor(draftCustomization.shapeId) },
-                        onCancel = {
-                            draftCustomization = state.avatarCustomization
-                            customizationOpen = false
-                        },
-                        onSave = {
-                            store.setAvatarCustomization(draftCustomization)
-                            customizationOpen = false
-                        }
-                    )
-                }
-            }
+    FrontPageFrame(state, isSavePlayer = false, onHeaderAction = onSettings) { compact ->
+        Column(verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 14.dp)) {
             Button(
                 onClick = store::createRoom,
-                enabled = status == AuthStatus.READY && !state.isBusy && !customizationOpen,
+                enabled = !state.isBusy,
+                border = BorderStroke(1.dp, Color(0xFFC96B24)),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF983D), contentColor = Color.White),
-                modifier = Modifier.fillMaxWidth().height(52.dp)
+                modifier = Modifier.fillMaxWidth().height(if (compact) 48.dp else 54.dp)
             ) {
                 if (state.isBusy) CircularProgressIndicator(modifier = Modifier.width(22.dp).height(22.dp), strokeWidth = 2.dp, color = Color.White)
                 else Text("Create room", fontWeight = FontWeight.Bold)
@@ -644,91 +632,142 @@ private fun JoinPage(
                 label = { Text("Room code") },
                 placeholder = { Text("ABCD12") },
                 singleLine = true,
+                shape = RoundedCornerShape(20.dp),
                 modifier = Modifier.fillMaxWidth()
             )
             Button(
                 onClick = store::joinRoom,
-                enabled = status == AuthStatus.READY && !state.isBusy && !customizationOpen,
+                enabled = !state.isBusy,
+                border = BorderStroke(1.dp, Color(0xFF7769D9)),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFAEA4FF), contentColor = Color(0xFF17161A)),
-                modifier = Modifier.fillMaxWidth().height(52.dp)
+                modifier = Modifier.fillMaxWidth().height(if (compact) 48.dp else 52.dp)
             ) { Text("Join room", fontWeight = FontWeight.Bold) }
         }
     }
 }
 
 @Composable
-private fun SavePlayerPage(
+private fun PlayerSettingsPage(
     store: WebGameStore,
     state: WebUiState,
     status: AuthStatus,
     user: WebUser?,
-    onBackToGame: () -> Unit,
-    onKeepGuest: () -> Unit
+    onBackToGame: () -> Unit
 ) {
-    FrontPageFrame(state, isSavePlayer = true, onHeaderAction = onBackToGame) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val compact = maxWidth < 280.dp
-                if (compact) {
-                    FrontPageDisplayText(
-                        "Save your player",
-                        fontSize = 22.sp,
-                        lineHeight = 28.sp,
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        modifier = Modifier.fillMaxWidth()
+    var draftName by remember(state.displayName) { mutableStateOf(state.displayName) }
+    var draftAvatar by remember(state.avatarCustomization) { mutableStateOf(state.avatarCustomization) }
+    var nameError by remember { mutableStateOf<String?>(null) }
+    var avatarEditorOpen by remember { mutableStateOf(true) }
+    val isGoogleLinked = user?.isAnonymous == false
+    val isHost = state.room?.hostId == state.selfPlayerId
+
+    FrontPageFrame(state, isSavePlayer = true, onHeaderAction = onBackToGame) { compact ->
+        Column(verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 14.dp)) {
+            GamePanel("Your player", "Your name and character show up for friends throughout the game.") {
+                OutlinedTextField(
+                    value = draftName,
+                    onValueChange = { draftName = it.take(24); nameError = null },
+                    label = { Text("Display name") },
+                    placeholder = { Text("dashingbuilder") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+                nameError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                WebAvatarPicker(
+                    selectedId = draftAvatar.shapeId,
+                    selectedCustomization = draftAvatar,
+                    onSelected = { draftAvatar = AvatarCustomization.defaultsFor(it) }
+                )
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    WebAvatarCharacter(draftAvatar, Modifier.size(58.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text("Character preview", fontWeight = FontWeight.Bold)
+                        Text("Choose a shape, then tune its details.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    TextButton(onClick = { avatarEditorOpen = !avatarEditorOpen }) {
+                        Text(if (avatarEditorOpen) "Hide editor" else "Customize")
+                    }
+                }
+                if (avatarEditorOpen) {
+                    WebAvatarEditor(
+                        customization = draftAvatar,
+                        onChange = { draftAvatar = it },
+                        onRandomize = { draftAvatar = randomAvatarCustomization(draftAvatar.shapeId) },
+                        onReset = { draftAvatar = AvatarCustomization.defaultsFor(draftAvatar.shapeId) },
+                        onCancel = { draftAvatar = state.avatarCustomization; avatarEditorOpen = false },
+                        onSave = { avatarEditorOpen = false }
                     )
-                } else {
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
-                        FrontPageConfetti(left = true)
-                        FrontPageDisplayText("Save your player", fontSize = 29.sp, lineHeight = 34.sp, textAlign = TextAlign.Center, maxLines = 1)
-                        FrontPageConfetti(left = false)
-                    }
                 }
             }
-            Text("Link Google to pick up where you left off.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            when (status) {
-                AuthStatus.LOADING -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    CircularProgressIndicator(modifier = Modifier.width(20.dp).height(20.dp), strokeWidth = 2.dp)
-                    Text("Getting your player ready…", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                AuthStatus.ERROR -> Text("Account linking is unavailable. Check Firebase web configuration.", color = MaterialTheme.colorScheme.error, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-                AuthStatus.READY -> if (user?.isAnonymous != true) {
-                    Surface(color = Color(0xFFE2F5E8), shape = RoundedCornerShape(50)) {
-                        Text("GOOGLE ACCOUNT LINKED", modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp), style = MaterialTheme.typography.labelSmall, color = Color(0xFF176B34), fontWeight = FontWeight.Black, letterSpacing = 0.7.sp)
+
+            GamePanel("Connections", "Google and Spotify are optional. Guest play works without linking an account.") {
+                when (status) {
+                    AuthStatus.LOADING -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.width(20.dp).height(20.dp), strokeWidth = 2.dp)
+                        Text("Checking Google account…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    AuthStatus.ERROR -> Text("Google account linking is unavailable. Check Firebase web configuration.", color = MaterialTheme.colorScheme.error)
+                    AuthStatus.READY -> {
+                        OutlinedButton(
+                            onClick = if (isGoogleLinked) ({}) else store::linkGoogle,
+                            enabled = !isGoogleLinked,
+                            modifier = Modifier.fillMaxWidth().height(52.dp)
+                        ) {
+                            GoogleGMark()
+                            Spacer(Modifier.width(10.dp))
+                            Text(if (isGoogleLinked) "Google account linked" else "Link Google account")
+                        }
+                        if (!isGoogleLinked) TextButton(onClick = store::recoverGoogle, modifier = Modifier.fillMaxWidth()) {
+                            Text("Recover an existing Google player")
+                        }
                     }
                 }
-            }
-            if (status == AuthStatus.READY && user?.isAnonymous == true) {
-                Button(
-                    onClick = store::linkGoogle,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF983D), contentColor = Color(0xFF17161A)),
-                    modifier = Modifier.fillMaxWidth().height(56.dp)
+                OutlinedButton(
+                    onClick = if (state.spotifyConnected) store::disconnectSpotify else store::connectSpotify,
+                    modifier = Modifier.fillMaxWidth().height(52.dp),
+                    border = BorderStroke(1.dp, Color(0xFF1DB954))
                 ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        GoogleGMark()
-                        Spacer(Modifier.width(10.dp))
-                        Text("Link Google account", fontWeight = FontWeight.Black)
-                    }
+                    SpotifyMark()
+                    Spacer(Modifier.width(10.dp))
+                    Text(if (state.spotifyConnected) "Spotify connected · Disconnect" else "Connect Spotify")
+                }
+                TextButton(onClick = store::refreshSpotify, modifier = Modifier.align(Alignment.End)) { Text("Refresh Spotify status") }
+            }
+
+            if (isHost) {
+                GamePanel("Room settings", "Only the host can change these rules.") {
+                    LobbySettings(store, state.room.settings)
                 }
             }
-            Button(
-                onClick = onKeepGuest,
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFF1EBDD), contentColor = Color(0xFF17161A)),
-                modifier = Modifier.fillMaxWidth().height(54.dp)
-            ) { Text(if (user?.isAnonymous == false) "Continue playing" else "Keep playing as guest", fontWeight = FontWeight.Bold) }
-            if (status == AuthStatus.READY && user?.isAnonymous == true) {
-                Text("You can link an account later from settings.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
-            }
-            if (status == AuthStatus.READY && user?.isAnonymous == true) {
-                TextButton(onClick = store::recoverGoogle, modifier = Modifier.fillMaxWidth()) { Text("Recover an existing Google player") }
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(onClick = onBackToGame, modifier = Modifier.weight(1f).height(52.dp)) { Text("Cancel") }
+                Button(
+                    onClick = {
+                        val cleanName = draftName.trim()
+                        if (cleanName.isBlank() || cleanName.length > 24 || cleanName.any(Char::isISOControl)) {
+                            nameError = "Enter a name with 1 to 24 characters"
+                        } else {
+                            store.savePlayerProfile(cleanName, draftAvatar)
+                            onBackToGame()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF983D), contentColor = Color(0xFF17161A)),
+                    modifier = Modifier.weight(1f).height(52.dp)
+                ) { Text("Save settings", fontWeight = FontWeight.Black) }
             }
         }
     }
+}
+
+private fun randomAvatarCustomization(shapeId: String): AvatarCustomization {
+    val defaults = AvatarCustomization.defaultsFor(shapeId)
+    return defaults.copy(
+        colorId = AvatarCustomizationCatalog.colorIds.random(),
+        eyesId = AvatarCustomizationCatalog.eyesIds.random(),
+        mouthId = AvatarCustomizationCatalog.mouthIds.random(),
+        accessoryId = AvatarCustomizationCatalog.accessoryIds.random()
+    )
 }
 
 @Composable
@@ -766,6 +805,27 @@ private fun GoogleGMark() {
 }
 
 @Composable
+private fun SpotifyMark() {
+    Canvas(modifier = Modifier.size(24.dp).semantics { contentDescription = "Spotify" }) {
+        val diameter = size.minDimension
+        val center = Offset(size.width / 2f, size.height / 2f)
+        drawCircle(Color(0xFF1DB954), radius = diameter / 2f, center = center)
+        val stroke = diameter * 0.075f
+        listOf(
+            Triple(0.27f, 0.39f, 0.74f),
+            Triple(0.31f, 0.51f, 0.68f),
+            Triple(0.36f, 0.63f, 0.58f)
+        ).forEach { (left, y, right) ->
+            val wave = Path().apply {
+                moveTo(size.width * left, size.height * y)
+                quadraticTo(size.width * 0.52f, size.height * (y - 0.10f), size.width * right, size.height * y)
+            }
+            drawPath(wave, Color(0xFF101010), style = Stroke(width = stroke, cap = StrokeCap.Round))
+        }
+    }
+}
+
+@Composable
 private fun WebAvatarPicker(
     selectedId: String,
     selectedCustomization: AvatarCustomization,
@@ -780,7 +840,7 @@ private fun WebAvatarPicker(
                         modifier = Modifier.weight(1f).height(62.dp)
                             .clickable { onSelected(id) }
                             .semantics {
-                                contentDescription = "${id.avatarLabel()} character${if (isSelected) ", selected" else ""}"
+                                contentDescription = "${id.avatarShapeLabel()} character${if (isSelected) ", selected" else ""}"
                                 role = Role.RadioButton
                                 selected = isSelected
                             },
@@ -799,7 +859,7 @@ private fun WebAvatarPicker(
                                 modifier = Modifier.fillMaxSize().padding(2.dp)
                             )
                         }
-                        Text(id.avatarLabel(), fontSize = 9.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium, maxLines = 1)
+                        Text(id.avatarShapeLabel(), fontSize = 9.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium, maxLines = 1)
                     }
                 }
                 repeat(4 - rowIds.size) {
@@ -873,13 +933,13 @@ private fun CustomizationOptionRow(
                 OutlinedButton(
                     onClick = { onSelected(id) },
                     modifier = Modifier.height(36.dp).semantics {
-                        contentDescription = "$title ${id.avatarLabel()}${if (selected) ", selected" else ""}"
+                        contentDescription = "$title ${id.optionLabel(title)}${if (selected) ", selected" else ""}"
                         this.selected = selected
                     },
                     shape = RoundedCornerShape(50),
                     border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)
                 ) {
-                    Text(id.avatarLabel(), fontSize = 12.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
+                    Text(id.optionLabel(title), fontSize = 12.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
                 }
             }
         }
@@ -888,16 +948,39 @@ private fun CustomizationOptionRow(
 
 private fun String.avatarLabel(): String = replaceFirstChar { it.uppercase() }
 
+private fun String.avatarShapeLabel(): String = when (this) {
+    "violet" -> "Triangle"
+    "tangerine" -> "Honey"
+    "berry" -> "Diamond"
+    "mint" -> "Heart"
+    else -> avatarLabel()
+}
+
+private fun String.optionLabel(group: String): String = when (group) {
+    "Shape" -> avatarShapeLabel()
+    "Color" -> when (this) {
+        "sunny" -> "Orange"
+        "violet" -> "Lavender"
+        "cloud" -> "Sky blue"
+        "star" -> "Yellow"
+        "tangerine" -> "Coral"
+        "berry" -> "Pink"
+        "mint" -> "Mint"
+        else -> "Lime"
+    }
+    else -> avatarLabel()
+}
+
 @Composable
-private fun LobbyPage(store: WebGameStore, state: WebUiState) {
+private fun LobbyPage(store: WebGameStore, state: WebUiState, onSettings: () -> Unit) {
     val room = state.room
     val isHost = room?.hostId == state.selfPlayerId
-    var settingsExpanded by remember { mutableStateOf(false) }
     PostJoinFrame(
         title = "Room lobby",
         kicker = "THE HANGOUT",
         description = "Get your people in the room, then let the music do the talking.",
-        state = state
+        state = state,
+        onSettings = onSettings
     ) { wide ->
         val mainColumn: @Composable () -> Unit = {
             if (room == null) {
@@ -941,15 +1024,6 @@ private fun LobbyPage(store: WebGameStore, state: WebUiState) {
             }
         }
         val sideColumn: @Composable () -> Unit = {
-            if (isHost) {
-                    GamePanel("Room settings", "Shape the next round for your group.") {
-                        OutlinedButton(onClick = { settingsExpanded = !settingsExpanded }, modifier = Modifier.fillMaxWidth()) {
-                        Text(if (settingsExpanded) "Hide settings" else "${room.settings.roundLengthPreset.songsPerPlayer} songs · ${room.settings.playerLimit} players · ${room.settings.votingTimerSeconds}s voting")
-                    }
-                    if (settingsExpanded) LobbySettings(store, room.settings)
-                }
-            }
-            SpotifyLobbyControl(store, state)
             if (room != null) {
                 ChatPanel(store, state)
                 OutlinedButton(onClick = store::leaveRoom, modifier = Modifier.fillMaxWidth()) { Text("Leave room") }
@@ -1015,24 +1089,6 @@ private fun SettingChoices(title: String, choices: List<String>, selectedValue: 
 }
 
 @Composable
-private fun SpotifyLobbyControl(store: WebGameStore, state: WebUiState) {
-    GamePanel("Spotify", if (state.spotifyConnected) "Your top tracks are ready to add to the game." else "Connect for quick song picks. This is optional.") {
-        if (!state.spotifyConnected) {
-            Button(onClick = store::connectSpotify, colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1DB954)), modifier = Modifier.fillMaxWidth()) {
-                Text("Connect Spotify", color = Color.White, fontWeight = FontWeight.Bold)
-            }
-        } else {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Surface(color = Color(0xFFE2F5E8), shape = RoundedCornerShape(50)) {
-                    Text("CONNECTED", modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp), style = MaterialTheme.typography.labelSmall, color = Color(0xFF176B34), fontWeight = FontWeight.Black, letterSpacing = 0.6.sp)
-                }
-                Text("Top tracks ready", style = MaterialTheme.typography.bodySmall)
-            }
-        }
-    }
-}
-
-@Composable
 private fun PlayerRow(player: Player, isSelf: Boolean, canKick: Boolean, onKick: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         WebAvatarSwatch(player.avatarId, customization = player.avatarCustomization)
@@ -1076,15 +1132,15 @@ private fun WebAvatarCharacter(customization: AvatarCustomization, modifier: Mod
 }
 
 private val WebAvatarColors = mapOf(
-    "sunny" to Color(0xFFFFB43E), "lime" to Color(0xFFB8F45D), "violet" to Color(0xFF8F7CF7),
-    "tangerine" to Color(0xFFFF8B3D), "cloud" to Color(0xFF9CCBFF), "star" to Color(0xFFFFDF72),
-    "berry" to Color(0xFFFF91B3), "mint" to Color(0xFF8CE7C1)
+    "sunny" to Color(0xFFFFAE29), "lime" to Color(0xFFB6F45B), "violet" to Color(0xFFA394F1),
+    "tangerine" to Color(0xFFEF9387), "cloud" to Color(0xFFAED5F4), "star" to Color(0xFFFFD43B),
+    "berry" to Color(0xFFF17FAC), "mint" to Color(0xFF73D9CA)
 )
 
 private val WebAvatarAccents = mapOf(
-    "sunny" to Color(0xFFFFD56D), "lime" to Color(0xFF75C94A), "violet" to Color(0xFF6553C9),
-    "tangerine" to Color(0xFFFFCF5C), "cloud" to Color(0xFF679DEB), "star" to Color(0xFFE6A72E),
-    "berry" to Color(0xFFD95178), "mint" to Color(0xFF42B88B)
+    "sunny" to Color(0xFFEF8F18), "lime" to Color(0xFF77C945), "violet" to Color(0xFF7060C8),
+    "tangerine" to Color(0xFFCD675D), "cloud" to Color(0xFF79ACD7), "star" to Color(0xFFD49E22),
+    "berry" to Color(0xFFC94C78), "mint" to Color(0xFF39AD9B)
 )
 
 private fun webAvatarFill(colorId: String): Color = WebAvatarColors[colorId] ?: WebAvatarColors.getValue("sunny")
@@ -1096,135 +1152,183 @@ private fun DrawScope.drawWebAvatar(customization: AvatarCustomization) {
     val ink = Color(0xFF17161A)
     val fill = webAvatarFill(customization.colorId)
     val accent = WebAvatarAccents[customization.colorId] ?: Color(0xFFFFD56D)
-    val stroke = (s * 0.045f).coerceAtLeast(1.4f)
+    val stroke = (s * 0.034f).coerceAtLeast(1.1f)
     val outline = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round)
-    val center = Offset(x + s * 0.5f, y + s * 0.5f)
-    val faceY = when (customization.shapeId) {
-        "violet" -> y + s * 0.53f
-        "cloud" -> y + s * 0.54f
-        else -> y + s * 0.49f
+    fun p(nx: Float, ny: Float) = Offset(x + s * nx, y + s * ny)
+
+    fun drawBody(path: Path) {
+        drawPath(path, fill)
+        drawPath(path, ink, style = outline)
     }
-    val eyeOffset = s * 0.12f
-    val eyeY = faceY - s * 0.04f
-    val mouthY = faceY + s * 0.10f
+
+    fun drawLegs(leftX: Float, rightX: Float, startY: Float) {
+        drawLine(ink, p(leftX, startY), p(leftX - 0.02f, 0.93f), strokeWidth = stroke * 0.9f, cap = StrokeCap.Round)
+        drawLine(ink, p(rightX, startY), p(rightX + 0.02f, 0.93f), strokeWidth = stroke * 0.9f, cap = StrokeCap.Round)
+        drawOval(ink, p(leftX - 0.055f, 0.92f), Size(s * 0.09f, s * 0.035f))
+        drawOval(ink, p(rightX - 0.035f, 0.92f), Size(s * 0.09f, s * 0.035f))
+    }
+
+    fun drawArms(leftX: Float, rightX: Float, armY: Float, leftHandY: Float, rightHandY: Float) {
+        val leftHand = p(leftX - 0.12f, leftHandY)
+        val rightHand = p(rightX + 0.12f, rightHandY)
+        drawLine(ink, p(leftX, armY), leftHand, strokeWidth = stroke * 0.85f, cap = StrokeCap.Round)
+        drawLine(ink, p(rightX, armY), rightHand, strokeWidth = stroke * 0.85f, cap = StrokeCap.Round)
+        listOf(leftHand, rightHand).forEach { hand ->
+            drawCircle(Color(0xFFFFFBF3), s * 0.023f, hand)
+            drawCircle(ink, s * 0.023f, hand, style = Stroke(stroke * 0.55f))
+        }
+    }
+
+    when (customization.shapeId) {
+        "lime" -> { drawArms(0.22f, 0.78f, 0.55f, 0.56f, 0.56f); drawLegs(0.42f, 0.58f, 0.73f) }
+        "violet" -> { drawArms(0.25f, 0.75f, 0.58f, 0.65f, 0.36f); drawLegs(0.42f, 0.58f, 0.75f) }
+        "tangerine" -> { drawArms(0.24f, 0.76f, 0.56f, 0.59f, 0.59f); drawLegs(0.42f, 0.58f, 0.75f) }
+        "berry" -> { drawArms(0.29f, 0.71f, 0.53f, 0.61f, 0.40f); drawLegs(0.44f, 0.56f, 0.79f) }
+        "cloud" -> drawLegs(0.42f, 0.58f, 0.70f)
+        "star" -> drawLegs(0.43f, 0.57f, 0.76f)
+        "mint" -> drawLegs(0.43f, 0.57f, 0.77f)
+        else -> drawLegs(0.43f, 0.57f, 0.75f)
+    }
 
     when (customization.shapeId) {
         "sunny" -> {
-            val radius = s * 0.30f
-            repeat(10) { index ->
-                val angle = (index * 36f - 90f) * (PI / 180.0).toFloat()
-                val inner = Offset(center.x + cos(angle) * radius * 1.22f, center.y + sin(angle) * radius * 1.22f)
-                val outer = Offset(center.x + cos(angle) * radius * 1.52f, center.y + sin(angle) * radius * 1.52f)
-                drawLine(accent, inner, outer, strokeWidth = stroke * 1.2f, cap = StrokeCap.Round)
-            }
-            drawCircle(fill, radius, center)
-            drawCircle(ink, radius, center, style = outline)
+            drawCircle(fill, s * 0.30f, p(0.5f, 0.48f))
+            drawCircle(ink, s * 0.30f, p(0.5f, 0.48f), style = outline)
         }
         "lime" -> {
-            val topLeft = Offset(x + s * 0.24f, y + s * 0.24f)
-            val bodySize = Size(s * 0.52f, s * 0.52f)
-            val corners = CornerRadius(s * 0.14f)
-            drawRoundRect(fill, topLeft = topLeft, size = bodySize, cornerRadius = corners)
-            drawRoundRect(ink, topLeft = topLeft, size = bodySize, cornerRadius = corners, style = outline)
-            drawLine(accent, Offset(x + s * 0.31f, y + s * 0.32f), Offset(x + s * 0.68f, y + s * 0.32f), strokeWidth = stroke * 1.4f, cap = StrokeCap.Round)
+            val square = Size(s * 0.56f, s * 0.52f)
+            drawRoundRect(fill, p(0.22f, 0.23f), square, CornerRadius(s * 0.055f))
+            drawRoundRect(ink, p(0.22f, 0.23f), square, CornerRadius(s * 0.055f), style = outline)
+            drawLine(accent, p(0.28f, 0.29f), p(0.72f, 0.29f), strokeWidth = stroke * 1.35f, cap = StrokeCap.Round)
         }
         "violet" -> {
-            val body = Path().apply {
-                moveTo(center.x, y + s * 0.13f)
-                lineTo(x + s * 0.84f, y + s * 0.80f)
-                lineTo(x + s * 0.16f, y + s * 0.80f)
+            val triangle = Path().apply {
+                val top = p(0.5f, 0.17f); moveTo(top.x, top.y)
+                val right = p(0.83f, 0.77f); lineTo(right.x, right.y)
+                val left = p(0.17f, 0.77f); lineTo(left.x, left.y)
                 close()
             }
-            drawPath(body, fill)
-            drawPath(body, ink, style = outline)
-        }
-        "tangerine" -> {
-            val bodyTop = y + s * 0.21f
-            drawOval(fill, topLeft = Offset(x + s * 0.22f, bodyTop), size = Size(s * 0.56f, s * 0.58f))
-            drawOval(ink, topLeft = Offset(x + s * 0.22f, bodyTop), size = Size(s * 0.56f, s * 0.58f), style = outline)
-            drawLine(ink, Offset(center.x, y + s * 0.22f), Offset(center.x + s * 0.06f, y + s * 0.10f), strokeWidth = stroke, cap = StrokeCap.Round)
-            drawCircle(accent, s * 0.055f, Offset(center.x + s * 0.07f, y + s * 0.09f))
+            drawBody(triangle)
         }
         "cloud" -> {
-            val body = Path().apply {
-                moveTo(x + s * 0.16f, y + s * 0.62f)
-                cubicTo(x + s * 0.12f, y + s * 0.43f, x + s * 0.29f, y + s * 0.35f, x + s * 0.41f, y + s * 0.46f)
-                cubicTo(x + s * 0.45f, y + s * 0.21f, x + s * 0.75f, y + s * 0.22f, x + s * 0.79f, y + s * 0.47f)
-                cubicTo(x + s * 0.96f, y + s * 0.47f, x + s * 0.95f, y + s * 0.71f, x + s * 0.78f, y + s * 0.73f)
-                lineTo(x + s * 0.27f, y + s * 0.73f)
-                cubicTo(x + s * 0.17f, y + s * 0.72f, x + s * 0.13f, y + s * 0.67f, x + s * 0.16f, y + s * 0.62f)
+            val cloud = Path().apply {
+                val start = p(0.14f, 0.62f); moveTo(start.x, start.y)
+                cubicTo(p(0.10f, 0.53f).x, p(0.10f, 0.53f).y, p(0.18f, 0.43f).x, p(0.18f, 0.43f).y, p(0.32f, 0.46f).x, p(0.32f, 0.46f).y)
+                cubicTo(p(0.34f, 0.29f).x, p(0.34f, 0.29f).y, p(0.51f, 0.25f).x, p(0.51f, 0.25f).y, p(0.59f, 0.41f).x, p(0.59f, 0.41f).y)
+                cubicTo(p(0.73f, 0.34f).x, p(0.73f, 0.34f).y, p(0.87f, 0.44f).x, p(0.87f, 0.44f).y, p(0.84f, 0.56f).x, p(0.84f, 0.56f).y)
+                cubicTo(p(0.91f, 0.64f).x, p(0.91f, 0.64f).y, p(0.83f, 0.73f).x, p(0.83f, 0.73f).y, p(0.70f, 0.72f).x, p(0.70f, 0.72f).y)
+                lineTo(p(0.28f, 0.72f).x, p(0.28f, 0.72f).y)
+                cubicTo(p(0.15f, 0.74f).x, p(0.15f, 0.74f).y, p(0.10f, 0.68f).x, p(0.10f, 0.68f).y, p(0.14f, 0.62f).x, p(0.14f, 0.62f).y)
                 close()
             }
-            drawPath(body, fill)
-            drawPath(body, ink, style = outline)
+            drawBody(cloud)
         }
         "star" -> {
-            val body = Path()
+            val star = Path()
             repeat(10) { index ->
-                val angle = (-90f + index * 36f) * (PI / 180.0).toFloat()
-                val radius = if (index % 2 == 0) s * 0.40f else s * 0.18f
-                val point = Offset(center.x + cos(angle) * radius, center.y + sin(angle) * radius)
-                if (index == 0) body.moveTo(point.x, point.y) else body.lineTo(point.x, point.y)
+                val angle = (-PI / 2.0 + index * PI / 5.0).toFloat()
+                val radius = if (index % 2 == 0) 0.39f else 0.18f
+                val point = p(0.5f + cos(angle) * radius, 0.51f + sin(angle) * radius)
+                if (index == 0) star.moveTo(point.x, point.y) else star.lineTo(point.x, point.y)
             }
-            body.close()
-            drawPath(body, fill)
-            drawPath(body, ink, style = outline)
+            star.close()
+            drawBody(star)
         }
-        "berry" -> {
-            drawCircle(fill, s * 0.31f, Offset(center.x, center.y + s * 0.03f))
-            drawCircle(ink, s * 0.31f, Offset(center.x, center.y + s * 0.03f), style = outline)
-            drawCircle(accent, s * 0.025f, Offset(center.x - s * 0.13f, center.y - s * 0.08f))
-            drawCircle(accent, s * 0.025f, Offset(center.x + s * 0.13f, center.y - s * 0.08f))
-            drawLine(accent, Offset(center.x, y + s * 0.24f), Offset(center.x + s * 0.05f, y + s * 0.13f), strokeWidth = stroke, cap = StrokeCap.Round)
-        }
-        else -> {
-            val leaf = Path().apply {
-                moveTo(center.x, y + s * 0.16f)
-                cubicTo(x + s * 0.86f, y + s * 0.30f, x + s * 0.78f, y + s * 0.77f, center.x, y + s * 0.84f)
-                cubicTo(x + s * 0.22f, y + s * 0.77f, x + s * 0.14f, y + s * 0.30f, center.x, y + s * 0.16f)
+        "tangerine" -> {
+            val honeycomb = Path().apply {
+                listOf(0.35f to 0.29f, 0.65f to 0.29f, 0.78f to 0.42f, 0.78f to 0.61f,
+                    0.65f to 0.75f, 0.35f to 0.75f, 0.22f to 0.61f, 0.22f to 0.42f).forEachIndexed { index, point ->
+                    val at = p(point.first, point.second)
+                    if (index == 0) moveTo(at.x, at.y) else lineTo(at.x, at.y)
+                }
                 close()
             }
-            drawPath(leaf, fill)
-            drawPath(leaf, ink, style = outline)
-            drawLine(accent, Offset(center.x, y + s * 0.26f), Offset(center.x, y + s * 0.72f), strokeWidth = stroke * 0.9f, cap = StrokeCap.Round)
+            drawBody(honeycomb)
+        }
+        "berry" -> {
+            val diamond = Path().apply {
+                val top = p(0.50f, 0.16f); moveTo(top.x, top.y)
+                cubicTo(p(0.59f, 0.27f).x, p(0.59f, 0.27f).y, p(0.73f, 0.42f).x, p(0.73f, 0.42f).y, p(0.80f, 0.50f).x, p(0.80f, 0.50f).y)
+                cubicTo(p(0.71f, 0.60f).x, p(0.71f, 0.60f).y, p(0.58f, 0.76f).x, p(0.58f, 0.76f).y, p(0.50f, 0.82f).x, p(0.50f, 0.82f).y)
+                cubicTo(p(0.42f, 0.76f).x, p(0.42f, 0.76f).y, p(0.29f, 0.60f).x, p(0.29f, 0.60f).y, p(0.20f, 0.50f).x, p(0.20f, 0.50f).y)
+                cubicTo(p(0.27f, 0.42f).x, p(0.27f, 0.42f).y, p(0.41f, 0.27f).x, p(0.41f, 0.27f).y, p(0.50f, 0.16f).x, p(0.50f, 0.16f).y)
+                close()
+            }
+            drawBody(diamond)
+        }
+        else -> {
+            val heart = Path().apply {
+                val tip = p(0.50f, 0.78f); moveTo(tip.x, tip.y)
+                cubicTo(p(0.43f, 0.72f).x, p(0.43f, 0.72f).y, p(0.19f, 0.54f).x, p(0.19f, 0.54f).y, p(0.19f, 0.40f).x, p(0.19f, 0.40f).y)
+                cubicTo(p(0.19f, 0.24f).x, p(0.19f, 0.24f).y, p(0.36f, 0.22f).x, p(0.36f, 0.22f).y, p(0.50f, 0.36f).x, p(0.50f, 0.36f).y)
+                cubicTo(p(0.64f, 0.22f).x, p(0.64f, 0.22f).y, p(0.81f, 0.24f).x, p(0.81f, 0.24f).y, p(0.81f, 0.40f).x, p(0.81f, 0.40f).y)
+                cubicTo(p(0.81f, 0.54f).x, p(0.81f, 0.54f).y, p(0.57f, 0.72f).x, p(0.57f, 0.72f).y, p(0.50f, 0.78f).x, p(0.50f, 0.78f).y)
+                close()
+            }
+            drawBody(heart)
         }
     }
 
-    drawWebEyes(customization.eyesId, center.x - eyeOffset, center.x + eyeOffset, eyeY, ink, stroke, s)
-    drawWebMouth(customization.mouthId, center.x, mouthY, ink, stroke, s)
-    drawWebAccessory(customization.accessoryId, center.x, y, s, ink, accent, stroke)
+    if (customization.accessoryId == "headphones") {
+        val band = Path().apply {
+            val left = p(0.23f, 0.46f); moveTo(left.x, left.y)
+            cubicTo(p(0.20f, 0.11f).x, p(0.20f, 0.11f).y, p(0.80f, 0.11f).x, p(0.80f, 0.11f).y, p(0.77f, 0.46f).x, p(0.77f, 0.46f).y)
+        }
+        drawPath(band, ink, style = Stroke(stroke * 1.7f, cap = StrokeCap.Round))
+        drawRoundRect(ink, p(0.14f, 0.40f), Size(s * 0.12f, s * 0.19f), CornerRadius(s * 0.045f))
+        drawRoundRect(Color(0xFF466EE6), p(0.17f, 0.43f), Size(s * 0.055f, s * 0.12f), CornerRadius(s * 0.025f))
+        drawRoundRect(ink, p(0.74f, 0.40f), Size(s * 0.12f, s * 0.19f), CornerRadius(s * 0.045f))
+        drawRoundRect(Color(0xFF466EE6), p(0.77f, 0.43f), Size(s * 0.055f, s * 0.12f), CornerRadius(s * 0.025f))
+    }
+    if (customization.accessoryId == "cap") drawWebCap(x, y, s, ink, stroke)
+
+    val faceY = when (customization.shapeId) {
+        "cloud" -> 0.54f
+        "star" -> 0.51f
+        "tangerine" -> 0.53f
+        "berry" -> 0.49f
+        "mint" -> 0.48f
+        else -> 0.49f
+    }
+    val faceScale = 0.82f
+    val eyeY = faceY - 0.045f * faceScale
+    val eyeOffset = s * 0.115f * faceScale
+    drawWebEyes(customization.eyesId, p(0.5f, eyeY).x - eyeOffset, p(0.5f, eyeY).x + eyeOffset, p(0.5f, eyeY).y, ink, stroke, s)
+    drawWebMouth(customization.mouthId, p(0.5f, faceY + 0.075f).x, p(0.5f, faceY + 0.075f).y, ink, stroke, s)
+    if (customization.accessoryId == "glasses") drawWebGlasses(p(0.5f, eyeY).x, p(0.5f, eyeY).y, eyeOffset, s, ink, stroke)
+    if (customization.accessoryId == "bow") drawWebBow(x, y, s, ink, accent, stroke)
+    if (customization.accessoryId == "flower") drawWebFlower(x, y, s, ink, accent, stroke)
 }
 
 private fun DrawScope.drawWebEyes(eyesId: String, leftX: Float, rightX: Float, y: Float, ink: Color, stroke: Float, s: Float) {
     when (eyesId) {
         "happy" -> listOf(leftX, rightX).forEach { x ->
             val eye = Path().apply {
-                moveTo(x - s * 0.055f, y + s * 0.01f)
-                cubicTo(x - s * 0.025f, y - s * 0.04f, x + s * 0.025f, y - s * 0.04f, x + s * 0.055f, y + s * 0.01f)
+                moveTo(x - s * 0.045f, y)
+                cubicTo(x - s * 0.02f, y + s * 0.045f, x + s * 0.02f, y + s * 0.045f, x + s * 0.045f, y)
             }
-            drawPath(eye, ink, style = Stroke(stroke * 1.25f, cap = StrokeCap.Round))
+            drawPath(eye, ink, style = Stroke(stroke * 1.2f, cap = StrokeCap.Round))
         }
         "sleepy" -> listOf(leftX, rightX).forEach { x ->
-            drawLine(ink, Offset(x - s * 0.055f, y), Offset(x + s * 0.055f, y + s * 0.015f), strokeWidth = stroke * 1.25f, cap = StrokeCap.Round)
+            drawLine(ink, Offset(x - s * 0.04f, y), Offset(x + s * 0.04f, y + s * 0.01f), strokeWidth = stroke * 1.15f, cap = StrokeCap.Round)
         }
         "wink" -> {
-            drawCircle(ink, stroke * 1.1f, Offset(leftX, y))
+            drawCircle(ink, s * 0.021f, Offset(leftX, y))
             val wink = Path().apply {
-                moveTo(rightX - s * 0.06f, y + s * 0.01f)
-                cubicTo(rightX - s * 0.02f, y - s * 0.045f, rightX + s * 0.025f, y - s * 0.035f, rightX + s * 0.06f, y + s * 0.005f)
+                moveTo(rightX - s * 0.045f, y)
+                cubicTo(rightX - s * 0.02f, y + s * 0.045f, rightX + s * 0.02f, y + s * 0.045f, rightX + s * 0.045f, y)
             }
             drawPath(wink, ink, style = Stroke(stroke * 1.2f, cap = StrokeCap.Round))
         }
         "sunglasses" -> {
             listOf(leftX, rightX).forEach { x ->
-                drawRoundRect(ink, Offset(x - s * 0.075f, y - s * 0.035f), Size(s * 0.15f, s * 0.10f), CornerRadius(s * 0.035f))
-                drawLine(Color.White.copy(alpha = 0.65f), Offset(x - s * 0.04f, y - s * 0.02f), Offset(x + s * 0.015f, y - s * 0.02f), strokeWidth = stroke * 0.55f, cap = StrokeCap.Round)
+                drawRoundRect(ink, Offset(x - s * 0.075f, y - s * 0.045f), Size(s * 0.15f, s * 0.09f), CornerRadius(s * 0.025f))
             }
-            drawLine(ink, Offset(leftX + s * 0.07f, y), Offset(rightX - s * 0.07f, y), strokeWidth = stroke, cap = StrokeCap.Round)
+            drawLine(ink, Offset(leftX + s * 0.07f, y), Offset(rightX - s * 0.07f, y), strokeWidth = stroke * 0.9f, cap = StrokeCap.Round)
         }
         else -> {
-            drawCircle(ink, stroke * 1.15f, Offset(leftX, y))
-            drawCircle(ink, stroke * 1.15f, Offset(rightX, y))
+            drawCircle(ink, s * 0.021f, Offset(leftX, y))
+            drawCircle(ink, s * 0.021f, Offset(rightX, y))
         }
     }
 }
@@ -1232,79 +1336,65 @@ private fun DrawScope.drawWebEyes(eyesId: String, leftX: Float, rightX: Float, y
 private fun DrawScope.drawWebMouth(mouthId: String, centerX: Float, y: Float, ink: Color, stroke: Float, s: Float) {
     when (mouthId) {
         "grin" -> {
-            val topLeft = Offset(centerX - s * 0.11f, y - s * 0.015f)
-            val mouthSize = Size(s * 0.22f, s * 0.12f)
-            drawRoundRect(Color.White, topLeft, mouthSize, CornerRadius(s * 0.035f))
-            drawRoundRect(ink, topLeft, mouthSize, CornerRadius(s * 0.035f), style = Stroke(stroke * 0.85f))
-            drawLine(ink, Offset(centerX, y), Offset(centerX, y + s * 0.09f), strokeWidth = stroke * 0.55f)
+            drawOval(ink, Offset(centerX - s * 0.07f, y - s * 0.025f), Size(s * 0.14f, s * 0.12f))
         }
         "open", "tongue" -> {
-            drawOval(ink, Offset(centerX - s * 0.07f, y - s * 0.005f), Size(s * 0.14f, s * 0.16f))
-            if (mouthId == "tongue") drawOval(Color(0xFFFF6D91), Offset(centerX - s * 0.045f, y + s * 0.075f), Size(s * 0.09f, s * 0.065f))
+            drawOval(ink, Offset(centerX - s * 0.055f, y - s * 0.025f), Size(s * 0.11f, s * 0.10f))
+            if (mouthId == "tongue") drawOval(Color(0xFFEF7187), Offset(centerX - s * 0.035f, y + s * 0.025f), Size(s * 0.07f, s * 0.045f))
         }
         else -> {
             val smile = Path().apply {
-                moveTo(centerX - s * 0.11f, y)
-                cubicTo(centerX - s * 0.05f, y + s * 0.11f, centerX + s * 0.05f, y + s * 0.11f, centerX + s * 0.11f, y)
+                moveTo(centerX - s * 0.075f, y)
+                cubicTo(centerX - s * 0.04f, y + s * 0.065f, centerX + s * 0.04f, y + s * 0.065f, centerX + s * 0.075f, y)
             }
-            drawPath(smile, ink, style = Stroke(stroke * 1.15f, cap = StrokeCap.Round))
+            drawPath(smile, ink, style = Stroke(stroke * 1.2f, cap = StrokeCap.Round))
         }
     }
 }
 
-private fun DrawScope.drawWebAccessory(accessoryId: String, centerX: Float, y: Float, s: Float, ink: Color, accent: Color, stroke: Float) {
-    when (accessoryId) {
-        "headphones" -> {
-            drawArc(ink, 200f, 140f, false, Offset(centerX - s * 0.33f, y + s * 0.16f), Size(s * 0.66f, s * 0.55f), style = Stroke(stroke * 1.6f, cap = StrokeCap.Round))
-            drawRoundRect(accent, Offset(centerX - s * 0.35f, y + s * 0.44f), Size(s * 0.09f, s * 0.20f), CornerRadius(s * 0.035f))
-            drawRoundRect(accent, Offset(centerX + s * 0.26f, y + s * 0.44f), Size(s * 0.09f, s * 0.20f), CornerRadius(s * 0.035f))
-            drawRoundRect(ink, Offset(centerX - s * 0.35f, y + s * 0.44f), Size(s * 0.09f, s * 0.20f), CornerRadius(s * 0.035f), style = Stroke(stroke * 0.6f))
-            drawRoundRect(ink, Offset(centerX + s * 0.26f, y + s * 0.44f), Size(s * 0.09f, s * 0.20f), CornerRadius(s * 0.035f), style = Stroke(stroke * 0.6f))
-        }
-        "glasses" -> {
-            val lensY = y + s * 0.41f
-            listOf(centerX - s * 0.12f, centerX + s * 0.12f).forEach { lensX ->
-                drawRoundRect(ink, Offset(lensX - s * 0.085f, lensY), Size(s * 0.17f, s * 0.11f), CornerRadius(s * 0.04f), style = Stroke(stroke * 1.1f))
-            }
-            drawLine(ink, Offset(centerX - s * 0.04f, lensY + s * 0.045f), Offset(centerX + s * 0.04f, lensY + s * 0.045f), strokeWidth = stroke)
-        }
-        "cap" -> {
-            val cap = Path().apply {
-                moveTo(centerX - s * 0.28f, y + s * 0.31f)
-                cubicTo(centerX - s * 0.23f, y + s * 0.10f, centerX + s * 0.20f, y + s * 0.10f, centerX + s * 0.27f, y + s * 0.31f)
-                lineTo(centerX + s * 0.36f, y + s * 0.35f)
-                cubicTo(centerX + s * 0.25f, y + s * 0.42f, centerX - s * 0.16f, y + s * 0.40f, centerX - s * 0.28f, y + s * 0.31f)
-                close()
-            }
-            drawPath(cap, accent)
-            drawPath(cap, ink, style = Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
-        }
-        "bow" -> {
-            val left = Path().apply {
-                moveTo(centerX, y + s * 0.24f)
-                cubicTo(centerX - s * 0.28f, y + s * 0.08f, centerX - s * 0.34f, y + s * 0.30f, centerX - s * 0.10f, y + s * 0.36f)
-                close()
-            }
-            val right = Path().apply {
-                moveTo(centerX, y + s * 0.24f)
-                cubicTo(centerX + s * 0.28f, y + s * 0.08f, centerX + s * 0.34f, y + s * 0.30f, centerX + s * 0.10f, y + s * 0.36f)
-                close()
-            }
-            drawPath(left, Color(0xFFFF91B3)); drawPath(left, ink, style = Stroke(stroke * 0.75f))
-            drawPath(right, Color(0xFFFF91B3)); drawPath(right, ink, style = Stroke(stroke * 0.75f))
-            drawCircle(accent, s * 0.045f, Offset(centerX, y + s * 0.29f))
-        }
-        "flower" -> {
-            val flowerX = centerX + s * 0.23f
-            val flowerY = y + s * 0.27f
-            repeat(5) { index ->
-                val angle = (index * 72f - 90f) * (PI / 180.0).toFloat()
-                drawCircle(Color.White, s * 0.065f, Offset(flowerX + cos(angle) * s * 0.07f, flowerY + sin(angle) * s * 0.07f))
-                drawCircle(ink, s * 0.065f, Offset(flowerX + cos(angle) * s * 0.07f, flowerY + sin(angle) * s * 0.07f), style = Stroke(stroke * 0.65f))
-            }
-            drawCircle(accent, s * 0.04f, Offset(flowerX, flowerY))
-        }
+private fun DrawScope.drawWebCap(x: Float, y: Float, s: Float, ink: Color, stroke: Float) {
+    fun p(nx: Float, ny: Float) = Offset(x + s * nx, y + s * ny)
+    val cap = Path().apply {
+        val start = p(0.29f, 0.33f); moveTo(start.x, start.y)
+        cubicTo(p(0.30f, 0.16f).x, p(0.30f, 0.16f).y, p(0.67f, 0.15f).x, p(0.67f, 0.15f).y, p(0.72f, 0.31f).x, p(0.72f, 0.31f).y)
+        lineTo(p(0.82f, 0.35f).x, p(0.82f, 0.35f).y)
+        cubicTo(p(0.72f, 0.41f).x, p(0.72f, 0.41f).y, p(0.39f, 0.41f).x, p(0.39f, 0.41f).y, p(0.27f, 0.35f).x, p(0.27f, 0.35f).y)
+        close()
     }
+    drawPath(cap, Color(0xFF3969E8))
+    drawPath(cap, ink, style = Stroke(stroke * 0.9f, cap = StrokeCap.Round, join = StrokeJoin.Round))
+}
+
+private fun DrawScope.drawWebGlasses(centerX: Float, y: Float, offset: Float, s: Float, ink: Color, stroke: Float) {
+    listOf(centerX - offset, centerX + offset).forEach { eyeX ->
+        drawRoundRect(ink, Offset(eyeX - s * 0.075f, y - s * 0.045f), Size(s * 0.15f, s * 0.09f), CornerRadius(s * 0.025f), style = Stroke(stroke))
+    }
+    drawLine(ink, Offset(centerX - offset + s * 0.07f, y), Offset(centerX + offset - s * 0.07f, y), strokeWidth = stroke)
+}
+
+private fun DrawScope.drawWebBow(x: Float, y: Float, s: Float, ink: Color, accent: Color, stroke: Float) {
+    fun p(nx: Float, ny: Float) = Offset(x + s * nx, y + s * ny)
+    val bow = Path().apply {
+        val middle = p(0.50f, 0.24f); moveTo(middle.x, middle.y)
+        cubicTo(p(0.39f, 0.13f).x, p(0.39f, 0.13f).y, p(0.31f, 0.18f).x, p(0.31f, 0.18f).y, p(0.42f, 0.31f).x, p(0.42f, 0.31f).y)
+        cubicTo(p(0.45f, 0.34f).x, p(0.45f, 0.34f).y, p(0.48f, 0.29f).x, p(0.48f, 0.29f).y, p(0.50f, 0.24f).x, p(0.50f, 0.24f).y)
+        cubicTo(p(0.61f, 0.13f).x, p(0.61f, 0.13f).y, p(0.69f, 0.18f).x, p(0.69f, 0.18f).y, p(0.58f, 0.31f).x, p(0.58f, 0.31f).y)
+        close()
+    }
+    drawPath(bow, accent)
+    drawPath(bow, ink, style = Stroke(stroke * 0.75f))
+    drawCircle(ink, s * 0.025f, p(0.50f, 0.27f))
+}
+
+private fun DrawScope.drawWebFlower(x: Float, y: Float, s: Float, ink: Color, accent: Color, stroke: Float) {
+    fun p(nx: Float, ny: Float) = Offset(x + s * nx, y + s * ny)
+    repeat(5) { index ->
+        val angle = (-PI / 2.0 + index * 2.0 * PI / 5.0).toFloat()
+        val center = p(0.73f + cos(angle) * 0.045f, 0.27f + sin(angle) * 0.045f)
+        drawCircle(Color(0xFFFFF3F6), s * 0.045f, center)
+        drawCircle(ink, s * 0.045f, center, style = Stroke(stroke * 0.55f))
+    }
+    drawCircle(accent, s * 0.027f, p(0.73f, 0.27f))
 }
 
 @Composable

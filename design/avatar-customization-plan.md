@@ -18,12 +18,12 @@ Let players make a recognizable character from the game's eight existing shapes 
 Represent customization with five small stable IDs:
 
 - `shapeId`: one of `sunny`, `lime`, `violet`, `tangerine`, `cloud`, `star`, `berry`, or `mint`.
-- `colorId`: one of the eight curated avatar colors: `sunny` (#FFB43E), `lime` (#B8F45D), `violet` (#8F7CF7), `tangerine` (#FF8B3D), `cloud` (#9CCBFF), `star` (#FFDF72), `berry` (#FF91B3), or `mint` (#8CE7C1).
+- `colorId`: one of the eight curated avatar colors: `sunny` (#FFAE29), `lime` (#B6F45B), `violet` (#A394F1), `tangerine` (#EF9387), `cloud` (#AED5F4), `star` (#FFD43B), `berry` (#F17FAC), or `mint` (#73D9CA).
 - `eyesId`: `dots`, `happy`, `sleepy`, `wink`, or `sunglasses`.
 - `mouthId`: `smile`, `grin`, `open`, or `tongue`.
 - `accessoryId`: `none`, `headphones`, `glasses`, `cap`, `bow`, or `flower`.
 
-New presets start with their original matching color and the `dots` / `smile` / `none` face-accessory combination.
+New presets follow the reference sheet's eight designs and ordering: orange circle with headphones, green square, lavender sunglasses triangle, blue cloud, pink star, yellow capped honeycomb, aqua diamond, and coral heart with headphones. Default shape-to-color IDs are `sunny`→`sunny`, `lime`→`lime`, `violet`→`violet`, `cloud`→`cloud`, `star`→`berry`, `tangerine`→`star`, `berry`→`mint`, and `mint`→`tangerine`. Their expressions and accessories are the preset defaults; color, eyes, mouth, and accessory remain independently editable.
 
 Keep `Player.avatarId` as the legacy shape field. Add an optional serialized customization object to room players and join/create requests. When an older client omits it, derive the existing preset from `avatarId`; normalize defaults at the server boundary and reject unknown option IDs. Never accept arbitrary colors, image URLs, drawing instructions, or unbounded accessory data from clients.
 
@@ -31,7 +31,7 @@ Keep `Player.avatarId` as the legacy shape field. Add an optional serialized cus
 
 - Render characters from layers: base shape, fill color, facial features, and accessory. Keep the dark outline and simple face style consistent with the existing characters.
 - Android and web use the same option IDs and visual rules, with a live preview in the editor.
-- Retain the existing preset row/grid as the quick path. Make the editor optional and compact on phones; use a wider panel on desktop.
+- Retain the eight-character reference grid as the quick path. Match its silhouettes, pastel fills, dark hand-drawn outlines, small faces, and thin legs/arms on both clients. Make the editor optional and compact on phones; use a wider panel on desktop.
 - Update avatar displays in the lobby, player list, voting choices, reveal, and results. Use the legacy preset if a server snapshot has no customization object.
 - Keep the generated transparent PNGs for decorative illustration or future use; the editable character itself should be drawn from configurable layers.
 

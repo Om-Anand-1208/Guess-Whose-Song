@@ -19,6 +19,7 @@ import com.guesswhosesong.shared.dto.ServerMessage
 import com.guesswhosesong.shared.dto.StartGame
 import com.guesswhosesong.shared.dto.SubmissionStarted
 import com.guesswhosesong.shared.dto.UpdatePendingSongs
+import com.guesswhosesong.shared.dto.UpdatePlayerProfile
 import com.guesswhosesong.shared.dto.UpdateSettings
 import com.guesswhosesong.shared.dto.VotingStarted
 import com.guesswhosesong.shared.dto.VoteCountUpdated
@@ -33,6 +34,7 @@ import com.guesswhosesong.shared.models.TrackSearchResult
 import com.guesswhosesong.shared.models.AvatarCatalog
 import com.guesswhosesong.shared.models.AvatarCustomization
 import com.guesswhosesong.shared.models.AvatarCustomizationCatalog
+import com.guesswhosesong.shared.models.PlayerIdentityDefaults
 import com.guesswhosesong.shared.dto.GWSJson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -51,8 +53,8 @@ enum class WebPage { JOIN, LOBBY, SUBMISSION, GAME, RESULTS }
 
 data class WebUiState(
     val page: WebPage = WebPage.JOIN,
-    val displayName: String = sessionGet("gws.displayName").orEmpty(),
-    val avatarId: String = AvatarCatalog.normalize(sessionGet("gws.avatarId").orEmpty()),
+    val displayName: String = loadPlayerDisplayName(),
+    val avatarId: String = loadPlayerAvatarId(),
     val avatarCustomization: AvatarCustomization = loadAvatarCustomization(avatarId),
     val joinCode: String = sessionGet("gws.joinCode").orEmpty(),
     val room: Room? = null,
@@ -90,6 +92,7 @@ class WebGameStore {
     val connectionState: StateFlow<ConnectionState> = socket.state
 
     init {
+        persistPlayerProfile(state.value.displayName, state.value.avatarCustomization)
         scope.launch { socket.messages.collect(::applyMessage) }
         scope.launch {
             socket.lastError.collect { message ->
@@ -104,6 +107,38 @@ class WebGameStore {
 
     fun setDisplayName(value: String) {
         _state.update { it.copy(displayName = value.take(24), error = null) }
+    }
+
+    fun savePlayerProfile(displayName: String, value: AvatarCustomization) {
+        val name = displayName.trim()
+        if (name.isBlank() || name.length > 24 || name.any(Char::isISOControl)) {
+            fail("Enter a name with 1 to 24 characters")
+            return
+        }
+        val customization = normalizeAvatarCustomization(value)
+        _state.update { current ->
+            val room = current.room?.let { existing ->
+                existing.copy(players = existing.players.map { player ->
+                    if (player.id == current.selfPlayerId) player.copy(
+                        displayName = name,
+                        avatarId = customization.shapeId,
+                        avatarCustomization = customization
+                    ) else player
+                })
+            }
+            current.copy(
+                displayName = name,
+                avatarId = customization.shapeId,
+                avatarCustomization = customization,
+                room = room,
+                error = null,
+                notice = null
+            )
+        }
+        persistPlayerProfile(name, customization)
+        if (state.value.page == WebPage.LOBBY) {
+            send(UpdatePlayerProfile(name, customization))
+        }
     }
 
     fun setAvatarId(value: String) {
@@ -314,7 +349,13 @@ class WebGameStore {
 
     fun leaveRoom() {
         socket.disconnect()
-        _state.value = WebUiState()
+        _state.update { current ->
+            WebUiState(
+                displayName = current.displayName,
+                avatarId = current.avatarId,
+                avatarCustomization = current.avatarCustomization
+            )
+        }
     }
 
     private fun syncPendingSongs() {
@@ -374,15 +415,29 @@ class WebGameStore {
     private fun applyMessage(message: ServerMessage) {
         when (message) {
             is RoomJoined -> _state.update {
+                val self = message.room.players.find { player -> player.id == message.selfPlayerId }
                 it.copy(
                     room = message.room,
                     selfPlayerId = message.selfPlayerId,
+                    displayName = self?.displayName ?: it.displayName,
+                    avatarId = self?.avatarId ?: it.avatarId,
+                    avatarCustomization = self?.avatarCustomization?.let { avatar -> normalizeAvatarCustomization(avatar) } ?: it.avatarCustomization,
                     page = pageFor(message.room.state),
                     error = null,
                     notice = null
                 )
             }
-            is RoomUpdated -> _state.update { current -> current.copy(room = message.room, page = pageFor(message.room.state)) }
+            is RoomUpdated -> _state.update { current ->
+                val self = message.room.players.find { player -> player.id == current.selfPlayerId }
+                if (self != null) persistPlayerProfile(self.displayName, self.avatarCustomization?.let(::normalizeAvatarCustomization) ?: AvatarCustomization.defaultsFor(self.avatarId))
+                current.copy(
+                    room = message.room,
+                    displayName = self?.displayName ?: current.displayName,
+                    avatarId = self?.avatarId ?: current.avatarId,
+                    avatarCustomization = self?.avatarCustomization?.let(::normalizeAvatarCustomization) ?: current.avatarCustomization,
+                    page = pageFor(message.room.state)
+                )
+            }
             is SubmissionStarted -> _state.update { it.copy(page = WebPage.SUBMISSION, deadlineEpochMillis = message.deadlineEpochMillis, reveal = null, revealStartedAtEpochMillis = 0L) }
             is RoundPreviewStarted -> {
                 _state.update { it.copy(page = WebPage.GAME, preview = message, voting = null, votesCast = 0, totalVotes = 0, reveal = null, revealStartedAtEpochMillis = 0L) }
@@ -436,10 +491,39 @@ class WebGameStore {
 
 private fun loadAvatarCustomization(avatarId: String): AvatarCustomization {
     val defaults = AvatarCustomization.defaultsFor(avatarId)
-    val saved = sessionGet("gws.avatarCustomization")
+    val saved = playerPreferenceGet("gws.avatarCustomization")
         ?.let { encoded -> runCatching { GWSJson.decodeFromString<AvatarCustomization>(encoded) }.getOrNull() }
         ?: return defaults
     return normalizeAvatarCustomization(saved)
+}
+
+private fun loadPlayerDisplayName(): String =
+    playerPreferenceGet("gws.displayName")?.trim()?.takeIf { it.isNotBlank() && it.length <= 24 }
+        ?: PlayerIdentityDefaults.randomDisplayName()
+
+private fun loadPlayerAvatarId(): String {
+    playerPreferenceGet("gws.avatarId")?.let { saved ->
+        if (saved in AvatarCustomizationCatalog.shapeIds) return saved
+    }
+    playerPreferenceGet("gws.avatarCustomization")
+        ?.let { encoded -> runCatching { GWSJson.decodeFromString<AvatarCustomization>(encoded) }.getOrNull() }
+        ?.shapeId
+        ?.takeIf { it in AvatarCustomizationCatalog.shapeIds }
+        ?.let { return it }
+    return PlayerIdentityDefaults.randomAvatarCustomization().shapeId
+}
+
+private fun playerPreferenceGet(key: String): String? = localGet(key) ?: sessionGet(key)
+
+private fun playerPreferenceSet(key: String, value: String) {
+    localSet(key, value)
+    sessionSet(key, value)
+}
+
+private fun persistPlayerProfile(displayName: String, customization: AvatarCustomization) {
+    playerPreferenceSet("gws.displayName", displayName)
+    playerPreferenceSet("gws.avatarId", customization.shapeId)
+    playerPreferenceSet("gws.avatarCustomization", GWSJson.encodeToString(customization))
 }
 
 private fun normalizeAvatarCustomization(value: AvatarCustomization): AvatarCustomization {
@@ -456,6 +540,6 @@ private fun normalizeAvatarCustomization(value: AvatarCustomization): AvatarCust
 }
 
 private fun persistAvatarCustomization(value: AvatarCustomization) {
-    sessionSet("gws.avatarId", value.shapeId)
-    sessionSet("gws.avatarCustomization", GWSJson.encodeToString(value))
+    playerPreferenceSet("gws.avatarId", value.shapeId)
+    playerPreferenceSet("gws.avatarCustomization", GWSJson.encodeToString(value))
 }

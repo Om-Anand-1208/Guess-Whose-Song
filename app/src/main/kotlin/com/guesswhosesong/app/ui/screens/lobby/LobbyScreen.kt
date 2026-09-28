@@ -1,8 +1,11 @@
 package com.guesswhosesong.app.ui.screens.lobby
 
+import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
@@ -22,8 +25,11 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Settings
@@ -35,6 +41,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -52,14 +60,19 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.guesswhosesong.app.ui.components.AvatarOptions
+import com.guesswhosesong.app.ui.components.AvatarPicker
 import com.guesswhosesong.app.ui.components.EmptyAvatarBadge
+import com.guesswhosesong.app.ui.components.GoogleGMark
 import com.guesswhosesong.app.ui.components.GuessWhoseSongWordmark
+import com.guesswhosesong.app.ui.components.SpotifyMark
 import com.guesswhosesong.app.ui.theme.GwsPalette
 import com.guesswhosesong.shared.models.AvatarCustomization
 import com.guesswhosesong.shared.models.Player
@@ -77,6 +90,9 @@ fun LobbyScreen(
     val uiState by viewModel.uiState.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
     val context = LocalContext.current
+    val googleLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result -> result.data?.let(viewModel::linkGoogle) }
 
     LaunchedEffect(joinCode) {
         viewModel.connect(joinCode, displayName, avatarCustomization)
@@ -125,14 +141,12 @@ fun LobbyScreen(
                 )
             }
             ConnectionPill(connected = uiState.isConnected)
-            if (isHost) {
-                IconButton(onClick = { showSettings = true }) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "Game settings",
-                        tint = GwsPalette.Ink
-                    )
-                }
+            IconButton(onClick = { showSettings = true }) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "Settings",
+                    tint = GwsPalette.Ink
+                )
             }
         }
 
@@ -218,12 +232,6 @@ fun LobbyScreen(
             }
         }
 
-        SpotifyLobbyCard(
-            connected = uiState.isSpotifyConnected,
-            onConnect = viewModel::connectSpotify
-        )
-        Spacer(Modifier.height(9.dp))
-
         when {
             room == null -> {
                 Surface(
@@ -285,13 +293,29 @@ fun LobbyScreen(
     }
 
     if (showSettings && room != null) {
-        HostSettingsSheet(
-            currentSettings = room.settings,
-            onSettingsUpdated = { settings ->
-                viewModel.updateSettings(settings)
-                showSettings = false
+        LobbySettingsSheet(
+            displayName = self?.displayName ?: displayName,
+            avatarCustomization = self?.avatarCustomization ?: avatarCustomization,
+            isSpotifyConnected = uiState.isSpotifyConnected,
+            isAccountLinked = uiState.isAccountLinked,
+            accountStatus = uiState.accountStatus,
+            accountStatusIsError = uiState.accountStatusIsError,
+            roomSettings = room.settings,
+            isHost = isHost,
+            profileError = uiState.error,
+            onConnectSpotify = viewModel::connectSpotify,
+            onDisconnectSpotify = viewModel::disconnectSpotify,
+            onLinkGoogle = {
+                val activity = context as? Activity
+                if (activity != null) googleLauncher.launch(viewModel.googleSignInIntent(activity))
             },
-            onDismiss = { showSettings = false }
+            onDismiss = { showSettings = false },
+            onSave = { name, avatar, settings ->
+                if (viewModel.updatePlayerProfile(name, avatar)) {
+                    if (isHost) viewModel.updateSettings(settings)
+                    showSettings = false
+                }
+            }
         )
     }
 }
@@ -574,65 +598,133 @@ fun PlayerListItem(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun HostSettingsSheet(
-    currentSettings: RoomSettings,
-    onSettingsUpdated: (RoomSettings) -> Unit,
-    onDismiss: () -> Unit
+private fun LobbySettingsSheet(
+    displayName: String,
+    avatarCustomization: AvatarCustomization,
+    isSpotifyConnected: Boolean,
+    isAccountLinked: Boolean,
+    accountStatus: String?,
+    accountStatusIsError: Boolean,
+    roomSettings: RoomSettings,
+    isHost: Boolean,
+    profileError: String?,
+    onConnectSpotify: () -> Unit,
+    onDisconnectSpotify: () -> Unit,
+    onLinkGoogle: () -> Unit,
+    onDismiss: () -> Unit,
+    onSave: (String, AvatarCustomization, RoomSettings) -> Unit
 ) {
-    var settings by remember { mutableStateOf(currentSettings) }
+    var draftName by remember(displayName) { mutableStateOf(displayName) }
+    var draftAvatar by remember(displayName) { mutableStateOf(avatarCustomization) }
+    var settings by remember(roomSettings) { mutableStateOf(roomSettings) }
 
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = GwsPalette.Paper) {
-        Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
-            Text("Tune the room", style = MaterialTheme.typography.headlineSmall, color = GwsPalette.Ink)
+        Column(
+            modifier = Modifier.fillMaxWidth()
+                .verticalScroll(rememberScrollState())
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 8.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text("Settings", style = MaterialTheme.typography.headlineSmall, color = GwsPalette.Ink)
             Text(
-                "Make the round feel like your group.",
+                "Update your player and connections.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = GwsPalette.Ink.copy(alpha = 0.66f),
-                modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
+                modifier = Modifier.padding(bottom = 2.dp)
             )
 
-            Text("Round length", style = MaterialTheme.typography.labelLarge, color = GwsPalette.Ink)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                com.guesswhosesong.shared.models.RoundLengthPreset.entries.forEach { preset ->
-                    FilterChip(
-                        selected = settings.roundLengthPreset == preset,
-                        onClick = { settings = settings.copy(roundLengthPreset = preset) },
-                        label = { Text(preset.name.lowercase().replaceFirstChar { it.uppercaseChar() }) }
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-            Text("Voting time", style = MaterialTheme.typography.labelLarge, color = GwsPalette.Ink)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 8.dp)) {
-                listOf(10, 15, 20, 30).forEach { secs ->
-                    FilterChip(
-                        selected = settings.votingTimerSeconds == secs,
-                        onClick = { settings = settings.copy(votingTimerSeconds = secs) },
-                        label = { Text("${secs}s") }
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-            Text("Player limit: ${settings.playerLimit}", style = MaterialTheme.typography.labelLarge, color = GwsPalette.Ink)
-            Slider(
-                value = settings.playerLimit.toFloat(),
-                onValueChange = { settings = settings.copy(playerLimit = it.toInt()) },
-                valueRange = 2f..20f,
-                steps = 17
+            OutlinedTextField(
+                value = draftName,
+                onValueChange = { draftName = it.take(24) },
+                label = { Text("Display name") },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None, imeAction = ImeAction.Done),
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier.fillMaxWidth()
+            )
+            AvatarPicker(
+                customization = draftAvatar,
+                onPresetSelected = { draftAvatar = AvatarCustomization.defaultsFor(it) },
+                onCustomizationChanged = { draftAvatar = it }
             )
 
-            Spacer(Modifier.height(16.dp))
+            OutlinedButton(
+                onClick = if (isSpotifyConnected) onDisconnectSpotify else onConnectSpotify,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(15.dp),
+                border = BorderStroke(1.dp, Color(0xFF1DB954))
+            ) {
+                SpotifyMark()
+                Spacer(Modifier.width(10.dp))
+                Text(if (isSpotifyConnected) "Spotify connected · Disconnect" else "Connect Spotify")
+            }
+            OutlinedButton(
+                onClick = onLinkGoogle,
+                enabled = !isAccountLinked,
+                modifier = Modifier.fillMaxWidth().height(52.dp),
+                shape = RoundedCornerShape(15.dp),
+                border = BorderStroke(1.dp, GwsPalette.Ink.copy(alpha = 0.14f))
+            ) {
+                GoogleGMark()
+                Spacer(Modifier.width(10.dp))
+                Text(if (isAccountLinked) "Google account linked" else "Link Google account")
+            }
+            accountStatus?.let { message ->
+                Text(
+                    message,
+                    color = if (accountStatusIsError) MaterialTheme.colorScheme.error else Color(0xFF32805A),
+                    style = MaterialTheme.typography.bodySmall
+                )
+            }
+
+            if (isHost) {
+                androidx.compose.material3.HorizontalDivider(color = GwsPalette.Ink.copy(alpha = 0.12f))
+                Text("Room settings", style = MaterialTheme.typography.titleMedium, color = GwsPalette.Ink, fontWeight = FontWeight.Black)
+                Text("Make the round feel like your group.", style = MaterialTheme.typography.bodySmall, color = GwsPalette.Ink.copy(alpha = 0.66f))
+
+                Text("Round length", style = MaterialTheme.typography.labelLarge, color = GwsPalette.Ink)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    com.guesswhosesong.shared.models.RoundLengthPreset.entries.forEach { preset ->
+                        FilterChip(
+                            selected = settings.roundLengthPreset == preset,
+                            onClick = { settings = settings.copy(roundLengthPreset = preset) },
+                            label = { Text(preset.name.lowercase().replaceFirstChar { it.uppercaseChar() }) }
+                        )
+                    }
+                }
+
+                Text("Voting time", style = MaterialTheme.typography.labelLarge, color = GwsPalette.Ink)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(10, 15, 20, 30).forEach { secs ->
+                        FilterChip(
+                            selected = settings.votingTimerSeconds == secs,
+                            onClick = { settings = settings.copy(votingTimerSeconds = secs) },
+                            label = { Text("${secs}s") }
+                        )
+                    }
+                }
+
+                Text("Player limit: ${settings.playerLimit}", style = MaterialTheme.typography.labelLarge, color = GwsPalette.Ink)
+                Slider(
+                    value = settings.playerLimit.toFloat(),
+                    onValueChange = { settings = settings.copy(playerLimit = it.toInt()) },
+                    valueRange = 2f..20f,
+                    steps = 17
+                )
+            }
+
+            profileError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+
             Button(
-                onClick = { onSettingsUpdated(settings) },
+                onClick = { onSave(draftName, draftAvatar, settings) },
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(16.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = GwsPalette.Tangerine, contentColor = GwsPalette.Ink)
             ) {
-                Text("Save settings", fontWeight = FontWeight.Black)
+                Text("Save changes", fontWeight = FontWeight.Black)
             }
-            Spacer(Modifier.navigationBarsPadding().height(16.dp))
+            Spacer(Modifier.height(12.dp))
         }
     }
 }

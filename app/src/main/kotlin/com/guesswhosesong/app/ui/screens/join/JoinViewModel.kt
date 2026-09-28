@@ -11,6 +11,7 @@ import com.guesswhosesong.app.data.repository.RoomRepository
 import com.guesswhosesong.app.data.spotify.SpotifyAuthManager
 import com.guesswhosesong.shared.models.AvatarCatalog
 import com.guesswhosesong.shared.models.AvatarCustomization
+import com.guesswhosesong.shared.models.PlayerIdentityDefaults
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
@@ -48,10 +49,13 @@ class JoinViewModel @Inject constructor(
 
     private val avatarPreferences = context.getSharedPreferences("player_avatar", Context.MODE_PRIVATE)
     private val initialCustomization = loadAvatarCustomization()
+    private val initialDisplayName = loadPlayerName()
     private val _uiState = MutableStateFlow(
         JoinUiState(
+            displayName = initialDisplayName,
             avatarId = initialCustomization.shapeId,
-            avatarCustomization = initialCustomization
+            avatarCustomization = initialCustomization,
+            isAccountLinked = playerIdentityManager.isAccountLinked()
         )
     )
     val uiState: StateFlow<JoinUiState> = _uiState.asStateFlow()
@@ -79,6 +83,34 @@ class JoinViewModel @Inject constructor(
         _uiState.update { it.copy(displayName = name.take(24), error = null) }
     }
 
+    fun savePlayerProfile(displayName: String, customization: AvatarCustomization): Boolean {
+        val name = displayName.trim()
+        if (name.isBlank() || name.length > 24 || name.any(Char::isISOControl)) {
+            _uiState.update { it.copy(error = "Enter a name with 1 to 24 characters") }
+            return false
+        }
+        val normalized = AvatarCustomization.normalize(customization, _uiState.value.avatarId)
+        saveAvatarCustomization(normalized)
+        avatarPreferences.edit().putString("displayName", name).apply()
+        _uiState.update {
+            it.copy(displayName = name, avatarId = normalized.shapeId, avatarCustomization = normalized, error = null)
+        }
+        return true
+    }
+
+    fun refreshSavedProfile() {
+        val name = loadPlayerName()
+        val customization = loadAvatarCustomization()
+        _uiState.update {
+            it.copy(
+                displayName = name,
+                avatarId = customization.shapeId,
+                avatarCustomization = customization,
+                isAccountLinked = playerIdentityManager.isAccountLinked()
+            )
+        }
+    }
+
     fun onAvatarSelected(avatarId: String) {
         val customization = AvatarCustomization.defaultsFor(AvatarCatalog.normalize(avatarId))
         saveAvatarCustomization(customization)
@@ -100,6 +132,7 @@ class JoinViewModel @Inject constructor(
     }
 
     fun createRoom() {
+        refreshSavedProfile()
         val name = _uiState.value.displayName.trim()
         if (name.isBlank()) {
             _uiState.update { it.copy(error = "Enter your name first") }
@@ -127,6 +160,7 @@ class JoinViewModel @Inject constructor(
     }
 
     fun joinRoom() {
+        refreshSavedProfile()
         val name = _uiState.value.displayName.trim()
         val code = _uiState.value.joinCode.trim()
         val customization = _uiState.value.avatarCustomization
@@ -188,9 +222,11 @@ class JoinViewModel @Inject constructor(
     }
 
     private fun loadAvatarCustomization(): AvatarCustomization {
-        val shapeId = AvatarCatalog.normalize(avatarPreferences.getString("shapeId", null).orEmpty())
+        val savedShapeId = avatarPreferences.getString("shapeId", null)
+        val shapeId = savedShapeId?.let(AvatarCatalog::normalize)
+            ?: PlayerIdentityDefaults.randomAvatarCustomization().shapeId
         val defaults = AvatarCustomization.defaultsFor(shapeId)
-        return AvatarCustomization.normalize(
+        val normalized = AvatarCustomization.normalize(
             AvatarCustomization(
                 shapeId = shapeId,
                 colorId = avatarPreferences.getString("colorId", defaults.colorId) ?: defaults.colorId,
@@ -200,7 +236,16 @@ class JoinViewModel @Inject constructor(
             ),
             shapeId
         )
+        saveAvatarCustomization(normalized)
+        return normalized
     }
+
+    private fun loadPlayerName(): String = avatarPreferences.getString("displayName", null)
+        ?.trim()
+        ?.takeIf { it.isNotBlank() && it.length <= 24 }
+        ?: PlayerIdentityDefaults.randomDisplayName().also { generated ->
+            avatarPreferences.edit().putString("displayName", generated).apply()
+        }
 
     private fun saveAvatarCustomization(customization: AvatarCustomization) {
         val normalized = AvatarCustomization.normalize(customization, AvatarCatalog.DEFAULT_ID)

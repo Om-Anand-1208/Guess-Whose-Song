@@ -51,6 +51,8 @@ class PlayerIdentityManager @Inject constructor(
 
     fun currentUid(): String? = auth.currentUser?.uid
 
+    fun isAccountLinked(): Boolean = auth.currentUser?.isAnonymous == false
+
     fun googleSignInIntent(activity: Activity): Intent {
         val clientIdResource = activity.resources.getIdentifier(
             "default_web_client_id", "string", activity.packageName

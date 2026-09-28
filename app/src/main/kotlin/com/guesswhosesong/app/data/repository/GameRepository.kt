@@ -138,6 +138,8 @@ class GameRepository(private val wsManager: WebSocketManager) {
     suspend fun castVote(guessedPlayerId: String) = wsManager.send(CastVote(guessedPlayerId = guessedPlayerId))
     suspend fun sendChat(text: String) = wsManager.send(SendChat(text = text))
     suspend fun updateSettings(settings: RoomSettings) = wsManager.send(UpdateSettings(settings = settings))
+    suspend fun updatePlayerProfile(displayName: String, avatarCustomization: AvatarCustomization) =
+        wsManager.send(UpdatePlayerProfile(displayName = displayName, avatarCustomization = avatarCustomization))
     suspend fun kickPlayer(targetId: String) = wsManager.send(KickPlayer(targetPlayerId = targetId))
     suspend fun playAgain() {
         resetRoundState()

@@ -10,10 +10,30 @@ object GameConstants {
 /** Stable IDs for the little illustrated player characters shown across clients. */
 object AvatarCatalog {
     const val DEFAULT_ID = "sunny"
-    val ids = listOf("sunny", "lime", "violet", "tangerine", "cloud", "star", "berry", "mint")
+    val ids = listOf("sunny", "lime", "violet", "cloud", "star", "tangerine", "berry", "mint")
 
     fun isValid(id: String): Boolean = id in ids
     fun normalize(id: String): String = id.takeIf(::isValid) ?: DEFAULT_ID
+}
+
+/** Defaults assigned to a new guest so they can enter a room without filling out a profile first. */
+object PlayerIdentityDefaults {
+    private val adjectives = listOf(
+        "dashing", "mellow", "nimble", "curious", "groovy", "sunny", "fearless", "cozy",
+        "clever", "bouncy", "jazzy", "swift", "mighty", "cosmic", "playful", "daring",
+        "breezy", "brave", "radiant", "dreamy"
+    )
+    private val nouns = listOf(
+        "builder", "melody", "comet", "otter", "biscuit", "rocket", "drummer", "fox",
+        "noodle", "sprite", "penguin", "starling", "cactus", "muffin", "wizard", "pebble",
+        "toaster", "panda", "sparrow", "guitar"
+    )
+
+    fun randomDisplayName(): String =
+        adjectives.random() + nouns.random()
+
+    fun randomAvatarCustomization(): AvatarCustomization =
+        AvatarCustomization.defaultsFor(AvatarCatalog.ids.random())
 }
 
 /** The independently selected parts of a player's illustrated avatar. */
@@ -30,12 +50,29 @@ data class AvatarCustomization(
         fun defaultsFor(shapeId: String): AvatarCustomization {
             val safeShapeId = shapeId.takeIf { it in AvatarCustomizationCatalog.shapeIds }
                 ?: AvatarCatalog.DEFAULT_ID
+            val defaultColorId = when (safeShapeId) {
+                "star" -> "berry"       // pink star
+                "tangerine" -> "star"   // yellow capped character
+                "berry" -> "mint"       // aqua diamond
+                "mint" -> "tangerine"   // coral heart
+                else -> safeShapeId
+            }
+            val defaultEyesId = when (safeShapeId) {
+                "sunny", "cloud", "mint" -> "happy"
+                "violet" -> "sunglasses"
+                "tangerine" -> "sleepy"
+                else -> "dots"
+            }
             return AvatarCustomization(
                 shapeId = safeShapeId,
-                colorId = safeShapeId,
-                eyesId = "dots",
-                mouthId = "smile",
-                accessoryId = "none"
+                colorId = defaultColorId,
+                eyesId = defaultEyesId,
+                mouthId = if (safeShapeId == "mint") "smile" else "open",
+                accessoryId = when (safeShapeId) {
+                    "sunny", "mint" -> "headphones"
+                    "tangerine" -> "cap"
+                    else -> "none"
+                }
             )
         }
 

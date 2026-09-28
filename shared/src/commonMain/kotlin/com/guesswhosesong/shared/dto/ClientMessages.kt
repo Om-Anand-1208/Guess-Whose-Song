@@ -69,6 +69,14 @@ data class UpdateSettings(
     val settings: RoomSettings
 ) : ClientMessage()
 
+/** Updates only the sender's player card while the room is still in its lobby. */
+@Serializable
+@SerialName("UPDATE_PLAYER_PROFILE")
+data class UpdatePlayerProfile(
+    val displayName: String,
+    val avatarCustomization: AvatarCustomization
+) : ClientMessage()
+
 @Serializable
 @SerialName("KICK_PLAYER")
 data class KickPlayer(

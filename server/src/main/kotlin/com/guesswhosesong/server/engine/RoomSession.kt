@@ -249,6 +249,7 @@ class RoomSession(
         when (message) {
             is StartGame -> handleStartGame(playerId)
             is UpdateSettings -> handleUpdateSettings(playerId, message.settings)
+            is UpdatePlayerProfile -> handleUpdatePlayerProfile(playerId, message.displayName, message.avatarCustomization)
             is KickPlayer -> handleKickPlayer(playerId, message.targetPlayerId)
             is UpdatePendingSong -> handleUpdatePendingSong(playerId, message.song)
             is UpdatePendingSongs -> handleUpdatePendingSongs(playerId, message.songs)
@@ -302,6 +303,37 @@ class RoomSession(
             room = room.copy(settings = settings)
             persist()
         }
+        broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
+    }
+
+    private suspend fun handleUpdatePlayerProfile(
+        playerId: String,
+        displayName: String,
+        avatarCustomization: AvatarCustomization
+    ) {
+        if (!InputValidation.displayName(displayName) || !AvatarCustomization.isValid(avatarCustomization)) {
+            sendToPlayer(playerId, ErrorMessage("INVALID_PROFILE", "Enter a valid name and avatar"))
+            return
+        }
+
+        var error: ErrorMessage? = null
+        mutex.withLock {
+            when {
+                room.state != RoomState.LOBBY -> error = ErrorMessage("PROFILE_LOCKED", "Your player profile can only change in the lobby")
+                room.players.none { it.id == playerId } -> error = ErrorMessage("UNKNOWN_PLAYER", "Player not found in room")
+                else -> {
+                    room = room.copy(players = room.players.map { player ->
+                        if (player.id == playerId) player.copy(
+                            displayName = displayName.trim(),
+                            avatarId = avatarCustomization.shapeId,
+                            avatarCustomization = avatarCustomization
+                        ) else player
+                    })
+                    persist()
+                }
+            }
+        }
+        error?.let { sendToPlayer(playerId, it); return }
         broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
     }
 

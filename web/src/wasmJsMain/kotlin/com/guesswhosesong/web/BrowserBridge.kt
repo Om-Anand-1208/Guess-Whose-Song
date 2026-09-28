@@ -34,6 +34,12 @@ internal fun sessionSet(key: String, value: String) {
     js("window.sessionStorage.setItem(key, value)")
 }
 
+internal fun localGet(key: String): String? = js("window.localStorage.getItem(key)")
+
+internal fun localSet(key: String, value: String) {
+    js("window.localStorage.setItem(key, value)")
+}
+
 internal fun openExternal(url: String) {
     js("{ const opened = window.open(url, '_blank', 'noopener,noreferrer'); if (!opened) window.location.assign(url); }")
 }
