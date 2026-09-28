@@ -68,13 +68,14 @@ import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.guesswhosesong.app.R
 import com.guesswhosesong.app.ui.components.AvatarPicker
 import com.guesswhosesong.app.ui.theme.GwsPalette
+import com.guesswhosesong.shared.models.AvatarCustomization
 
 private val GwsDisplayFont = FontFamily(Font(R.font.comfortaa_bold, FontWeight.Bold))
 
 @Composable
 fun JoinScreen(
     viewModel: JoinViewModel = hiltViewModel(),
-    onNavigateToLobby: (joinCode: String, displayName: String, avatarId: String) -> Unit
+    onNavigateToLobby: (joinCode: String, displayName: String, avatarCustomization: AvatarCustomization) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val keyboard = LocalSoftwareKeyboardController.current
@@ -91,7 +92,7 @@ fun JoinScreen(
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
             when (event) {
-                is JoinEvent.NavigateToLobby -> onNavigateToLobby(event.joinCode, event.displayName, event.avatarId)
+                is JoinEvent.NavigateToLobby -> onNavigateToLobby(event.joinCode, event.displayName, event.avatarCustomization)
             }
         }
     }
@@ -118,13 +119,14 @@ fun JoinScreen(
         WelcomePage(
             displayName = uiState.displayName,
             joinCode = uiState.joinCode,
-            avatarId = uiState.avatarId,
+            avatarCustomization = uiState.avatarCustomization,
             isLoading = uiState.isLoading,
             isSpotifyConnected = uiState.isSpotifyConnected,
             error = uiState.error,
             onDisplayNameChange = viewModel::onDisplayNameChanged,
             onJoinCodeChange = viewModel::onJoinCodeChanged,
             onAvatarSelected = viewModel::onAvatarSelected,
+            onAvatarCustomizationChanged = viewModel::onAvatarCustomizationChanged,
             onCreateRoom = {
                 keyboard?.hide()
                 viewModel.createRoom()
@@ -144,13 +146,14 @@ fun JoinScreen(
 private fun WelcomePage(
     displayName: String,
     joinCode: String,
-    avatarId: String,
+    avatarCustomization: AvatarCustomization,
     isLoading: Boolean,
     isSpotifyConnected: Boolean,
     error: String?,
     onDisplayNameChange: (String) -> Unit,
     onJoinCodeChange: (String) -> Unit,
     onAvatarSelected: (String) -> Unit,
+    onAvatarCustomizationChanged: (AvatarCustomization) -> Unit,
     onCreateRoom: () -> Unit,
     onJoinRoom: () -> Unit,
     onConnectSpotify: () -> Unit,
@@ -202,8 +205,9 @@ private fun WelcomePage(
         )
 
         AvatarPicker(
-            selectedId = avatarId,
-            onSelected = onAvatarSelected,
+            customization = avatarCustomization,
+            onPresetSelected = onAvatarSelected,
+            onCustomizationChanged = onAvatarCustomizationChanged,
             modifier = Modifier.padding(top = 14.dp, bottom = 8.dp)
         )
 

@@ -5,6 +5,7 @@ import com.guesswhosesong.shared.dto.*
 import com.guesswhosesong.shared.models.Room
 import com.guesswhosesong.shared.models.RoomSettings
 import com.guesswhosesong.shared.models.SongEntry
+import com.guesswhosesong.shared.models.AvatarCustomization
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -104,8 +105,13 @@ class GameRepository(private val wsManager: WebSocketManager) {
         }
     }
 
-    fun connect(joinCode: String, displayName: String, avatarId: String) {
-        wsManager.connect(joinCode, displayName, avatarId)
+    fun connect(
+        joinCode: String,
+        displayName: String,
+        avatarId: String,
+        avatarCustomization: AvatarCustomization? = null
+    ) {
+        wsManager.connect(joinCode, displayName, avatarId, avatarCustomization)
     }
 
     fun disconnect() {

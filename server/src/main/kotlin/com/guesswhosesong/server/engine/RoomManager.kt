@@ -25,8 +25,17 @@ class RoomManager(
     /**
      * Create a new room. Returns the created [RoomSession].
      */
-    fun createRoom(hostId: String, hostName: String, hostAvatarId: String = AvatarCatalog.DEFAULT_ID): RoomSession {
+    fun createRoom(
+        hostId: String,
+        hostName: String,
+        hostAvatarId: String = AvatarCatalog.DEFAULT_ID,
+        hostAvatarCustomization: AvatarCustomization? = null
+    ): RoomSession {
         val joinCode = generateJoinCode()
+        val hostCustomization = AvatarCustomization.normalize(
+            hostAvatarCustomization,
+            AvatarCatalog.normalize(hostAvatarId)
+        )
         val room = Room(
             id = joinCode,
             joinCode = joinCode,
@@ -37,7 +46,8 @@ class RoomManager(
                 Player(
                     id = hostId,
                     displayName = hostName,
-                    avatarId = AvatarCatalog.normalize(hostAvatarId),
+                    avatarId = hostCustomization.shapeId,
+                    avatarCustomization = hostCustomization,
                     isHost = true,
                     joinedAt = System.currentTimeMillis()
                 )

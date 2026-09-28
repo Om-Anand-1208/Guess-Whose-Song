@@ -1,18 +1,23 @@
 package com.guesswhosesong.app.data.repository
 
-import com.guesswhosesong.app.di.NetworkModule
 import com.guesswhosesong.app.data.player.PlayerIdentityManager
-import com.guesswhosesong.shared.dto.GWSJson
+import com.guesswhosesong.shared.models.AvatarCustomization
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.request.*
-import io.ktor.client.request.headers
 import io.ktor.http.*
 import kotlinx.serialization.Serializable
 
 @Serializable
 data class CreateRoomResponse(
     val joinCode: String
+)
+
+@Serializable
+data class CreateRoomRequest(
+    val displayName: String,
+    val avatarId: String,
+    val avatarCustomization: AvatarCustomization
 )
 
 @Serializable
@@ -35,13 +40,23 @@ class RoomRepository(
     /**
      * Creates a new room. Returns the join code.
      */
-    suspend fun createRoom(displayName: String, avatarId: String): Result<CreateRoomResponse> {
+    suspend fun createRoom(
+        displayName: String,
+        avatarId: String,
+        avatarCustomization: AvatarCustomization = AvatarCustomization.defaultsFor(avatarId)
+    ): Result<CreateRoomResponse> {
         return runCatching {
             val idToken = identityManager.getIdToken()
             httpClient.post("$baseUrl/rooms") {
                 contentType(ContentType.Application.Json)
                 bearerAuth(idToken)
-                setBody(mapOf("displayName" to displayName, "avatarId" to avatarId))
+                setBody(
+                    CreateRoomRequest(
+                        displayName = displayName,
+                        avatarId = avatarCustomization.shapeId,
+                        avatarCustomization = avatarCustomization
+                    )
+                )
             }.body<CreateRoomResponse>()
         }
     }

@@ -12,6 +12,7 @@ import com.guesswhosesong.server.security.InputValidation
 import com.guesswhosesong.server.security.WebSocketAuthentication
 import com.guesswhosesong.shared.dto.JoinRoom
 import com.guesswhosesong.shared.dto.toClientMessage
+import com.guesswhosesong.shared.models.AvatarCustomization
 import com.guesswhosesong.shared.models.AvatarCatalog
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -28,7 +29,8 @@ import java.util.UUID
 @Serializable
 private data class CreateRoomRequest(
     val displayName: String,
-    val avatarId: String = AvatarCatalog.DEFAULT_ID
+    val avatarId: String = AvatarCatalog.DEFAULT_ID,
+    val avatarCustomization: AvatarCustomization? = null
 )
 
 @Serializable
@@ -56,7 +58,7 @@ fun Route.roomRoutes(
 
         /**
          * POST /rooms
-         * Body: { displayName: String, avatarId: String }
+         * Body: { displayName: String, avatarId: String, avatarCustomization?: AvatarCustomization }
          * Header: Authorization: Bearer <Firebase ID token>
          * Creates a new room and returns the join code.
          */
@@ -85,11 +87,16 @@ fun Route.roomRoutes(
                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "displayName must be 1-24 characters"))
                 return@post
             }
+            if (body.avatarCustomization?.let { !AvatarCustomization.isValid(it) } == true) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid avatarCustomization"))
+                return@post
+            }
 
             val session = roomManager.createRoom(
                 hostId = user.uid,
                 hostName = body.displayName.trim(),
-                hostAvatarId = AvatarCatalog.normalize(body.avatarId)
+                hostAvatarId = AvatarCatalog.normalize(body.avatarId),
+                hostAvatarCustomization = body.avatarCustomization
             )
             call.respond(
                 HttpStatusCode.Created,
@@ -245,7 +252,8 @@ private suspend fun DefaultWebSocketServerSession.handleRoomWebSocket(
         }
         if (joinMessage !is JoinRoom ||
             !InputValidation.displayName(joinMessage.displayName) ||
-            !AvatarCatalog.isValid(joinMessage.avatarId)
+            !AvatarCatalog.isValid(joinMessage.avatarId) ||
+            joinMessage.avatarCustomization?.let { !AvatarCustomization.isValid(it) } == true
         ) {
             close(CloseReason(CloseReason.Codes.VIOLATED_POLICY, "JOIN_REQUIRED"))
             return
@@ -255,7 +263,8 @@ private suspend fun DefaultWebSocketServerSession.handleRoomWebSocket(
             playerId = user.uid,
             displayName = joinMessage.displayName.trim(),
             avatarId = joinMessage.avatarId,
-            socket = this
+            socket = this,
+            avatarCustomization = joinMessage.avatarCustomization
         )
         registered = true
 

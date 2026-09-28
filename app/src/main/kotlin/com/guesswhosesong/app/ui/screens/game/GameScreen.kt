@@ -600,7 +600,12 @@ fun PlayerVoteCard(player: Player, isSelf: Boolean, isSelected: Boolean, enabled
         shape = RoundedCornerShape(18.dp)
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            EmptyAvatarBadge(avatarId = player.avatarId, size = 43.dp, selected = isSelected)
+            EmptyAvatarBadge(
+                avatarId = player.avatarId,
+                size = 43.dp,
+                selected = isSelected,
+                customization = player.avatarCustomization
+            )
             Spacer(Modifier.height(6.dp))
             Text(player.displayName, style = MaterialTheme.typography.bodyMedium, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 5.dp))
             Text(
@@ -695,7 +700,8 @@ fun RevealPanel(
                     Spacer(Modifier.height(7.dp))
                     EmptyAvatarBadge(
                         avatarId = players.find { it.id == revealData.songEntry.submitterId }?.avatarId ?: "",
-                        size = 62.dp
+                        size = 62.dp,
+                        customization = players.find { it.id == revealData.songEntry.submitterId }?.avatarCustomization
                     )
                     if (isDecoy) {
                         Text("Nobody in the room submitted this song.", style = MaterialTheme.typography.bodySmall, color = GwsPalette.Ink.copy(alpha = 0.65f), textAlign = TextAlign.Center)
@@ -745,7 +751,11 @@ fun RevealPanel(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        EmptyAvatarBadge(avatarId = player?.avatarId ?: "", size = 38.dp)
+                        EmptyAvatarBadge(
+                            avatarId = player?.avatarId ?: "",
+                            size = 38.dp,
+                            customization = player?.avatarCustomization
+                        )
                         Spacer(Modifier.width(9.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(result.voterName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)

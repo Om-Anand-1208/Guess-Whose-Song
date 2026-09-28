@@ -38,10 +38,19 @@ class LobbyViewModel @Inject constructor(
     private val _events = MutableSharedFlow<LobbyEvent>()
     val events: SharedFlow<LobbyEvent> = _events.asSharedFlow()
 
-    fun connect(joinCode: String, displayName: String, avatarId: String) {
+    fun connect(
+        joinCode: String,
+        displayName: String,
+        avatarCustomization: AvatarCustomization
+    ) {
         viewModelScope.launch {
             try {
-                gameRepository.connect(joinCode, displayName, avatarId)
+                gameRepository.connect(
+                    joinCode,
+                    displayName,
+                    avatarCustomization.shapeId,
+                    avatarCustomization
+                )
                 observeMessages()
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "Connection failed: ${e.message}") }

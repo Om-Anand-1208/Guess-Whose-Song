@@ -59,8 +59,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.DrawScope
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -73,11 +77,14 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.ComposeViewport
 import com.guesswhosesong.shared.models.Player
 import com.guesswhosesong.shared.models.RoomSettings
 import com.guesswhosesong.shared.models.AvatarCatalog
+import com.guesswhosesong.shared.models.AvatarCustomization
+import com.guesswhosesong.shared.models.AvatarCustomizationCatalog
 import com.guesswhosesong.shared.models.GameConstants
 import com.guesswhosesong.web.generated.resources.Res
 import com.guesswhosesong.web.generated.resources.save_player_hero
@@ -90,6 +97,9 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import org.w3c.dom.HTMLElement
 import kotlinx.browser.document
+import kotlin.math.cos
+import kotlin.math.PI
+import kotlin.math.sin
 
 private val WebColorScheme = lightColorScheme(
     primary = Color(0xFF2980B9),
@@ -549,6 +559,8 @@ private fun JoinPage(
     user: WebUser?,
     onSavePlayer: () -> Unit
 ) {
+    var customizationOpen by remember { mutableStateOf(false) }
+    var draftCustomization by remember { mutableStateOf(state.avatarCustomization) }
     FrontPageFrame(state, isSavePlayer = false, onHeaderAction = onSavePlayer) {
         Column(verticalArrangement = Arrangement.spacedBy(13.dp)) {
             Text(
@@ -568,12 +580,53 @@ private fun JoinPage(
                 modifier = Modifier.fillMaxWidth()
             )
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Pick your character", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
-                WebAvatarPicker(selectedId = state.avatarId, onSelected = store::setAvatarId)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("Pick your character", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                    TextButton(onClick = {
+                        if (customizationOpen) {
+                            customizationOpen = false
+                        } else {
+                            draftCustomization = state.avatarCustomization
+                            customizationOpen = true
+                        }
+                    }) { Text(if (customizationOpen) "Close editor" else "Customize") }
+                }
+                WebAvatarPicker(
+                    selectedId = if (customizationOpen) draftCustomization.shapeId else state.avatarId,
+                    selectedCustomization = if (customizationOpen) draftCustomization else state.avatarCustomization,
+                    onSelected = { shapeId ->
+                        if (customizationOpen) draftCustomization = draftCustomization.copy(shapeId = shapeId)
+                        else store.setAvatarId(shapeId)
+                    }
+                )
+                if (customizationOpen) {
+                    WebAvatarEditor(
+                        customization = draftCustomization,
+                        onChange = { draftCustomization = it },
+                        onRandomize = {
+                            draftCustomization = AvatarCustomization(
+                                shapeId = AvatarCustomizationCatalog.shapeIds.random(),
+                                colorId = AvatarCustomizationCatalog.colorIds.random(),
+                                eyesId = AvatarCustomizationCatalog.eyesIds.random(),
+                                mouthId = AvatarCustomizationCatalog.mouthIds.random(),
+                                accessoryId = AvatarCustomizationCatalog.accessoryIds.random()
+                            )
+                        },
+                        onReset = { draftCustomization = AvatarCustomization.defaultsFor(draftCustomization.shapeId) },
+                        onCancel = {
+                            draftCustomization = state.avatarCustomization
+                            customizationOpen = false
+                        },
+                        onSave = {
+                            store.setAvatarCustomization(draftCustomization)
+                            customizationOpen = false
+                        }
+                    )
+                }
             }
             Button(
                 onClick = store::createRoom,
-                enabled = status == AuthStatus.READY && !state.isBusy,
+                enabled = status == AuthStatus.READY && !state.isBusy && !customizationOpen,
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF983D), contentColor = Color.White),
                 modifier = Modifier.fillMaxWidth().height(52.dp)
             ) {
@@ -595,7 +648,7 @@ private fun JoinPage(
             )
             Button(
                 onClick = store::joinRoom,
-                enabled = status == AuthStatus.READY && !state.isBusy,
+                enabled = status == AuthStatus.READY && !state.isBusy && !customizationOpen,
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFAEA4FF), contentColor = Color(0xFF17161A)),
                 modifier = Modifier.fillMaxWidth().height(52.dp)
             ) { Text("Join room", fontWeight = FontWeight.Bold) }
@@ -713,40 +766,127 @@ private fun GoogleGMark() {
 }
 
 @Composable
-private fun WebAvatarPicker(selectedId: String, onSelected: (String) -> Unit) {
-    val colors = mapOf(
-        "sunny" to Color(0xFFFFB43E), "lime" to Color(0xFFB8F45D), "violet" to Color(0xFF8F7CF7),
-        "tangerine" to Color(0xFFFF8B3D), "cloud" to Color(0xFF9CCBFF), "star" to Color(0xFFFFDF72),
-        "berry" to Color(0xFFFF91B3), "mint" to Color(0xFF8CE7C1)
-    )
+private fun WebAvatarPicker(
+    selectedId: String,
+    selectedCustomization: AvatarCustomization,
+    onSelected: (String) -> Unit
+) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        AvatarCatalog.ids.chunked(4).forEachIndexed { rowIndex, rowIds ->
+        AvatarCatalog.ids.chunked(4).forEach { rowIds ->
             Row(modifier = Modifier.fillMaxWidth()) {
-                rowIds.forEachIndexed { columnIndex, id ->
-                    val index = rowIndex * 4 + columnIndex
+                rowIds.forEach { id ->
                     val isSelected = id == selectedId
-                    Box(modifier = Modifier.weight(1f).height(48.dp), contentAlignment = Alignment.Center) {
+                    Column(
+                        modifier = Modifier.weight(1f).height(62.dp)
+                            .clickable { onSelected(id) }
+                            .semantics {
+                                contentDescription = "${id.avatarLabel()} character${if (isSelected) ", selected" else ""}"
+                                role = Role.RadioButton
+                                selected = isSelected
+                            },
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(1.dp)
+                    ) {
                         Box(
-                            modifier = Modifier.size(38.dp)
-                                .clip(CircleShape)
-                                .background(colors.getValue(id))
-                                .border(if (isSelected) 3.dp else 1.dp, if (isSelected) Color(0xFF17161A) else Color(0xFFCFC6B9), CircleShape)
-                                .clickable { onSelected(id) }
-                                .semantics {
-                                    contentDescription = "Avatar color ${index + 1}"
-                                    role = Role.RadioButton
-                                    selected = isSelected
-                                }
-                        )
+                            modifier = Modifier.size(42.dp)
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(Color(0xFFFFF8EC))
+                                .border(if (isSelected) 2.dp else 1.dp, if (isSelected) Color(0xFF17161A) else Color(0xFFCFC6B9), RoundedCornerShape(14.dp)),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            WebAvatarCharacter(
+                                if (isSelected) selectedCustomization else AvatarCustomization.defaultsFor(id),
+                                modifier = Modifier.fillMaxSize().padding(2.dp)
+                            )
+                        }
+                        Text(id.avatarLabel(), fontSize = 9.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium, maxLines = 1)
                     }
                 }
                 repeat(4 - rowIds.size) {
-                    Spacer(modifier = Modifier.weight(1f).height(48.dp))
+                    Spacer(modifier = Modifier.weight(1f).height(62.dp))
                 }
             }
         }
     }
 }
+
+@Composable
+private fun WebAvatarEditor(
+    customization: AvatarCustomization,
+    onChange: (AvatarCustomization) -> Unit,
+    onRandomize: () -> Unit,
+    onReset: () -> Unit,
+    onCancel: () -> Unit,
+    onSave: () -> Unit
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        color = Color(0xFFFFF8EC),
+        shape = RoundedCornerShape(18.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+    ) {
+        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                WebAvatarCharacter(customization, Modifier.size(68.dp))
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text("Your character", fontWeight = FontWeight.Black)
+                    Text("Mix a shape, color, expression, and accessory.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                TextButton(onClick = onRandomize) { Text("Randomize") }
+            }
+            CustomizationOptionRow("Color", AvatarCustomizationCatalog.colorIds, customization.colorId) {
+                onChange(customization.copy(colorId = it))
+            }
+            CustomizationOptionRow("Eyes", AvatarCustomizationCatalog.eyesIds, customization.eyesId) {
+                onChange(customization.copy(eyesId = it))
+            }
+            CustomizationOptionRow("Mouth", AvatarCustomizationCatalog.mouthIds, customization.mouthId) {
+                onChange(customization.copy(mouthId = it))
+            }
+            CustomizationOptionRow("Accessory", AvatarCustomizationCatalog.accessoryIds, customization.accessoryId) {
+                onChange(customization.copy(accessoryId = it))
+            }
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(onClick = onReset, modifier = Modifier.weight(1f)) { Text("Reset") }
+                OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Cancel") }
+                Button(onClick = onSave, modifier = Modifier.weight(1f)) { Text("Save") }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CustomizationOptionRow(
+    title: String,
+    options: List<String>,
+    selectedId: String,
+    onSelected: (String) -> Unit
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(title, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
+        Row(
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            options.forEach { id ->
+                val selected = selectedId == id
+                OutlinedButton(
+                    onClick = { onSelected(id) },
+                    modifier = Modifier.height(36.dp).semantics {
+                        contentDescription = "$title ${id.avatarLabel()}${if (selected) ", selected" else ""}"
+                        this.selected = selected
+                    },
+                    shape = RoundedCornerShape(50),
+                    border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Text(id.avatarLabel(), fontSize = 12.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
+                }
+            }
+        }
+    }
+}
+
+private fun String.avatarLabel(): String = replaceFirstChar { it.uppercase() }
 
 @Composable
 private fun LobbyPage(store: WebGameStore, state: WebUiState) {
@@ -895,7 +1035,7 @@ private fun SpotifyLobbyControl(store: WebGameStore, state: WebUiState) {
 @Composable
 private fun PlayerRow(player: Player, isSelf: Boolean, canKick: Boolean, onKick: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        WebAvatarSwatch(player.avatarId)
+        WebAvatarSwatch(player.avatarId, customization = player.avatarCustomization)
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -911,18 +1051,260 @@ private fun PlayerRow(player: Player, isSelf: Boolean, canKick: Boolean, onKick:
 }
 
 @Composable
-private fun WebAvatarSwatch(avatarId: String, selected: Boolean = false) {
-    val colors = mapOf(
-        "sunny" to Color(0xFFFFE9C8), "lime" to Color(0xFFEDF3D8), "violet" to Color(0xFFEAE6FF),
-        "tangerine" to Color(0xFFF8E6DA), "cloud" to Color(0xFFE4EDF1), "star" to Color(0xFFFFF2CF),
-        "berry" to Color(0xFFF5E5EA), "mint" to Color(0xFFE5F1E9)
-    )
+private fun WebAvatarSwatch(
+    avatarId: String,
+    selected: Boolean = false,
+    customization: AvatarCustomization? = null,
+    size: Dp = 46.dp
+) {
+    val appearance = AvatarCustomization.normalize(customization, avatarId)
+    val fillColor = webAvatarFill(appearance.colorId)
     Box(
-        modifier = Modifier.width(46.dp).height(46.dp)
+        modifier = Modifier.size(size)
             .clip(RoundedCornerShape(15.dp))
-            .background(colors[avatarId] ?: Color(0xFFEAE6FF))
+            .background(fillColor.copy(alpha = 0.19f))
             .border(if (selected) 2.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(15.dp))
-    )
+    ) {
+        WebAvatarCharacter(appearance, Modifier.fillMaxSize().padding(size / 10f))
+    }
+}
+
+@Composable
+private fun WebAvatarCharacter(customization: AvatarCustomization, modifier: Modifier = Modifier) {
+    val appearance = AvatarCustomization.normalize(customization, customization.shapeId)
+    Canvas(modifier = modifier.aspectRatio(1f)) { drawWebAvatar(appearance) }
+}
+
+private val WebAvatarColors = mapOf(
+    "sunny" to Color(0xFFFFB43E), "lime" to Color(0xFFB8F45D), "violet" to Color(0xFF8F7CF7),
+    "tangerine" to Color(0xFFFF8B3D), "cloud" to Color(0xFF9CCBFF), "star" to Color(0xFFFFDF72),
+    "berry" to Color(0xFFFF91B3), "mint" to Color(0xFF8CE7C1)
+)
+
+private val WebAvatarAccents = mapOf(
+    "sunny" to Color(0xFFFFD56D), "lime" to Color(0xFF75C94A), "violet" to Color(0xFF6553C9),
+    "tangerine" to Color(0xFFFFCF5C), "cloud" to Color(0xFF679DEB), "star" to Color(0xFFE6A72E),
+    "berry" to Color(0xFFD95178), "mint" to Color(0xFF42B88B)
+)
+
+private fun webAvatarFill(colorId: String): Color = WebAvatarColors[colorId] ?: WebAvatarColors.getValue("sunny")
+
+private fun DrawScope.drawWebAvatar(customization: AvatarCustomization) {
+    val s = size.minDimension
+    val x = (size.width - s) / 2f
+    val y = (size.height - s) / 2f
+    val ink = Color(0xFF17161A)
+    val fill = webAvatarFill(customization.colorId)
+    val accent = WebAvatarAccents[customization.colorId] ?: Color(0xFFFFD56D)
+    val stroke = (s * 0.045f).coerceAtLeast(1.4f)
+    val outline = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round)
+    val center = Offset(x + s * 0.5f, y + s * 0.5f)
+    val faceY = when (customization.shapeId) {
+        "violet" -> y + s * 0.53f
+        "cloud" -> y + s * 0.54f
+        else -> y + s * 0.49f
+    }
+    val eyeOffset = s * 0.12f
+    val eyeY = faceY - s * 0.04f
+    val mouthY = faceY + s * 0.10f
+
+    when (customization.shapeId) {
+        "sunny" -> {
+            val radius = s * 0.30f
+            repeat(10) { index ->
+                val angle = (index * 36f - 90f) * (PI / 180.0).toFloat()
+                val inner = Offset(center.x + cos(angle) * radius * 1.22f, center.y + sin(angle) * radius * 1.22f)
+                val outer = Offset(center.x + cos(angle) * radius * 1.52f, center.y + sin(angle) * radius * 1.52f)
+                drawLine(accent, inner, outer, strokeWidth = stroke * 1.2f, cap = StrokeCap.Round)
+            }
+            drawCircle(fill, radius, center)
+            drawCircle(ink, radius, center, style = outline)
+        }
+        "lime" -> {
+            val topLeft = Offset(x + s * 0.24f, y + s * 0.24f)
+            val bodySize = Size(s * 0.52f, s * 0.52f)
+            val corners = CornerRadius(s * 0.14f)
+            drawRoundRect(fill, topLeft = topLeft, size = bodySize, cornerRadius = corners)
+            drawRoundRect(ink, topLeft = topLeft, size = bodySize, cornerRadius = corners, style = outline)
+            drawLine(accent, Offset(x + s * 0.31f, y + s * 0.32f), Offset(x + s * 0.68f, y + s * 0.32f), strokeWidth = stroke * 1.4f, cap = StrokeCap.Round)
+        }
+        "violet" -> {
+            val body = Path().apply {
+                moveTo(center.x, y + s * 0.13f)
+                lineTo(x + s * 0.84f, y + s * 0.80f)
+                lineTo(x + s * 0.16f, y + s * 0.80f)
+                close()
+            }
+            drawPath(body, fill)
+            drawPath(body, ink, style = outline)
+        }
+        "tangerine" -> {
+            val bodyTop = y + s * 0.21f
+            drawOval(fill, topLeft = Offset(x + s * 0.22f, bodyTop), size = Size(s * 0.56f, s * 0.58f))
+            drawOval(ink, topLeft = Offset(x + s * 0.22f, bodyTop), size = Size(s * 0.56f, s * 0.58f), style = outline)
+            drawLine(ink, Offset(center.x, y + s * 0.22f), Offset(center.x + s * 0.06f, y + s * 0.10f), strokeWidth = stroke, cap = StrokeCap.Round)
+            drawCircle(accent, s * 0.055f, Offset(center.x + s * 0.07f, y + s * 0.09f))
+        }
+        "cloud" -> {
+            val body = Path().apply {
+                moveTo(x + s * 0.16f, y + s * 0.62f)
+                cubicTo(x + s * 0.12f, y + s * 0.43f, x + s * 0.29f, y + s * 0.35f, x + s * 0.41f, y + s * 0.46f)
+                cubicTo(x + s * 0.45f, y + s * 0.21f, x + s * 0.75f, y + s * 0.22f, x + s * 0.79f, y + s * 0.47f)
+                cubicTo(x + s * 0.96f, y + s * 0.47f, x + s * 0.95f, y + s * 0.71f, x + s * 0.78f, y + s * 0.73f)
+                lineTo(x + s * 0.27f, y + s * 0.73f)
+                cubicTo(x + s * 0.17f, y + s * 0.72f, x + s * 0.13f, y + s * 0.67f, x + s * 0.16f, y + s * 0.62f)
+                close()
+            }
+            drawPath(body, fill)
+            drawPath(body, ink, style = outline)
+        }
+        "star" -> {
+            val body = Path()
+            repeat(10) { index ->
+                val angle = (-90f + index * 36f) * (PI / 180.0).toFloat()
+                val radius = if (index % 2 == 0) s * 0.40f else s * 0.18f
+                val point = Offset(center.x + cos(angle) * radius, center.y + sin(angle) * radius)
+                if (index == 0) body.moveTo(point.x, point.y) else body.lineTo(point.x, point.y)
+            }
+            body.close()
+            drawPath(body, fill)
+            drawPath(body, ink, style = outline)
+        }
+        "berry" -> {
+            drawCircle(fill, s * 0.31f, Offset(center.x, center.y + s * 0.03f))
+            drawCircle(ink, s * 0.31f, Offset(center.x, center.y + s * 0.03f), style = outline)
+            drawCircle(accent, s * 0.025f, Offset(center.x - s * 0.13f, center.y - s * 0.08f))
+            drawCircle(accent, s * 0.025f, Offset(center.x + s * 0.13f, center.y - s * 0.08f))
+            drawLine(accent, Offset(center.x, y + s * 0.24f), Offset(center.x + s * 0.05f, y + s * 0.13f), strokeWidth = stroke, cap = StrokeCap.Round)
+        }
+        else -> {
+            val leaf = Path().apply {
+                moveTo(center.x, y + s * 0.16f)
+                cubicTo(x + s * 0.86f, y + s * 0.30f, x + s * 0.78f, y + s * 0.77f, center.x, y + s * 0.84f)
+                cubicTo(x + s * 0.22f, y + s * 0.77f, x + s * 0.14f, y + s * 0.30f, center.x, y + s * 0.16f)
+                close()
+            }
+            drawPath(leaf, fill)
+            drawPath(leaf, ink, style = outline)
+            drawLine(accent, Offset(center.x, y + s * 0.26f), Offset(center.x, y + s * 0.72f), strokeWidth = stroke * 0.9f, cap = StrokeCap.Round)
+        }
+    }
+
+    drawWebEyes(customization.eyesId, center.x - eyeOffset, center.x + eyeOffset, eyeY, ink, stroke, s)
+    drawWebMouth(customization.mouthId, center.x, mouthY, ink, stroke, s)
+    drawWebAccessory(customization.accessoryId, center.x, y, s, ink, accent, stroke)
+}
+
+private fun DrawScope.drawWebEyes(eyesId: String, leftX: Float, rightX: Float, y: Float, ink: Color, stroke: Float, s: Float) {
+    when (eyesId) {
+        "happy" -> listOf(leftX, rightX).forEach { x ->
+            val eye = Path().apply {
+                moveTo(x - s * 0.055f, y + s * 0.01f)
+                cubicTo(x - s * 0.025f, y - s * 0.04f, x + s * 0.025f, y - s * 0.04f, x + s * 0.055f, y + s * 0.01f)
+            }
+            drawPath(eye, ink, style = Stroke(stroke * 1.25f, cap = StrokeCap.Round))
+        }
+        "sleepy" -> listOf(leftX, rightX).forEach { x ->
+            drawLine(ink, Offset(x - s * 0.055f, y), Offset(x + s * 0.055f, y + s * 0.015f), strokeWidth = stroke * 1.25f, cap = StrokeCap.Round)
+        }
+        "wink" -> {
+            drawCircle(ink, stroke * 1.1f, Offset(leftX, y))
+            val wink = Path().apply {
+                moveTo(rightX - s * 0.06f, y + s * 0.01f)
+                cubicTo(rightX - s * 0.02f, y - s * 0.045f, rightX + s * 0.025f, y - s * 0.035f, rightX + s * 0.06f, y + s * 0.005f)
+            }
+            drawPath(wink, ink, style = Stroke(stroke * 1.2f, cap = StrokeCap.Round))
+        }
+        "sunglasses" -> {
+            listOf(leftX, rightX).forEach { x ->
+                drawRoundRect(ink, Offset(x - s * 0.075f, y - s * 0.035f), Size(s * 0.15f, s * 0.10f), CornerRadius(s * 0.035f))
+                drawLine(Color.White.copy(alpha = 0.65f), Offset(x - s * 0.04f, y - s * 0.02f), Offset(x + s * 0.015f, y - s * 0.02f), strokeWidth = stroke * 0.55f, cap = StrokeCap.Round)
+            }
+            drawLine(ink, Offset(leftX + s * 0.07f, y), Offset(rightX - s * 0.07f, y), strokeWidth = stroke, cap = StrokeCap.Round)
+        }
+        else -> {
+            drawCircle(ink, stroke * 1.15f, Offset(leftX, y))
+            drawCircle(ink, stroke * 1.15f, Offset(rightX, y))
+        }
+    }
+}
+
+private fun DrawScope.drawWebMouth(mouthId: String, centerX: Float, y: Float, ink: Color, stroke: Float, s: Float) {
+    when (mouthId) {
+        "grin" -> {
+            val topLeft = Offset(centerX - s * 0.11f, y - s * 0.015f)
+            val mouthSize = Size(s * 0.22f, s * 0.12f)
+            drawRoundRect(Color.White, topLeft, mouthSize, CornerRadius(s * 0.035f))
+            drawRoundRect(ink, topLeft, mouthSize, CornerRadius(s * 0.035f), style = Stroke(stroke * 0.85f))
+            drawLine(ink, Offset(centerX, y), Offset(centerX, y + s * 0.09f), strokeWidth = stroke * 0.55f)
+        }
+        "open", "tongue" -> {
+            drawOval(ink, Offset(centerX - s * 0.07f, y - s * 0.005f), Size(s * 0.14f, s * 0.16f))
+            if (mouthId == "tongue") drawOval(Color(0xFFFF6D91), Offset(centerX - s * 0.045f, y + s * 0.075f), Size(s * 0.09f, s * 0.065f))
+        }
+        else -> {
+            val smile = Path().apply {
+                moveTo(centerX - s * 0.11f, y)
+                cubicTo(centerX - s * 0.05f, y + s * 0.11f, centerX + s * 0.05f, y + s * 0.11f, centerX + s * 0.11f, y)
+            }
+            drawPath(smile, ink, style = Stroke(stroke * 1.15f, cap = StrokeCap.Round))
+        }
+    }
+}
+
+private fun DrawScope.drawWebAccessory(accessoryId: String, centerX: Float, y: Float, s: Float, ink: Color, accent: Color, stroke: Float) {
+    when (accessoryId) {
+        "headphones" -> {
+            drawArc(ink, 200f, 140f, false, Offset(centerX - s * 0.33f, y + s * 0.16f), Size(s * 0.66f, s * 0.55f), style = Stroke(stroke * 1.6f, cap = StrokeCap.Round))
+            drawRoundRect(accent, Offset(centerX - s * 0.35f, y + s * 0.44f), Size(s * 0.09f, s * 0.20f), CornerRadius(s * 0.035f))
+            drawRoundRect(accent, Offset(centerX + s * 0.26f, y + s * 0.44f), Size(s * 0.09f, s * 0.20f), CornerRadius(s * 0.035f))
+            drawRoundRect(ink, Offset(centerX - s * 0.35f, y + s * 0.44f), Size(s * 0.09f, s * 0.20f), CornerRadius(s * 0.035f), style = Stroke(stroke * 0.6f))
+            drawRoundRect(ink, Offset(centerX + s * 0.26f, y + s * 0.44f), Size(s * 0.09f, s * 0.20f), CornerRadius(s * 0.035f), style = Stroke(stroke * 0.6f))
+        }
+        "glasses" -> {
+            val lensY = y + s * 0.41f
+            listOf(centerX - s * 0.12f, centerX + s * 0.12f).forEach { lensX ->
+                drawRoundRect(ink, Offset(lensX - s * 0.085f, lensY), Size(s * 0.17f, s * 0.11f), CornerRadius(s * 0.04f), style = Stroke(stroke * 1.1f))
+            }
+            drawLine(ink, Offset(centerX - s * 0.04f, lensY + s * 0.045f), Offset(centerX + s * 0.04f, lensY + s * 0.045f), strokeWidth = stroke)
+        }
+        "cap" -> {
+            val cap = Path().apply {
+                moveTo(centerX - s * 0.28f, y + s * 0.31f)
+                cubicTo(centerX - s * 0.23f, y + s * 0.10f, centerX + s * 0.20f, y + s * 0.10f, centerX + s * 0.27f, y + s * 0.31f)
+                lineTo(centerX + s * 0.36f, y + s * 0.35f)
+                cubicTo(centerX + s * 0.25f, y + s * 0.42f, centerX - s * 0.16f, y + s * 0.40f, centerX - s * 0.28f, y + s * 0.31f)
+                close()
+            }
+            drawPath(cap, accent)
+            drawPath(cap, ink, style = Stroke(stroke, cap = StrokeCap.Round, join = StrokeJoin.Round))
+        }
+        "bow" -> {
+            val left = Path().apply {
+                moveTo(centerX, y + s * 0.24f)
+                cubicTo(centerX - s * 0.28f, y + s * 0.08f, centerX - s * 0.34f, y + s * 0.30f, centerX - s * 0.10f, y + s * 0.36f)
+                close()
+            }
+            val right = Path().apply {
+                moveTo(centerX, y + s * 0.24f)
+                cubicTo(centerX + s * 0.28f, y + s * 0.08f, centerX + s * 0.34f, y + s * 0.30f, centerX + s * 0.10f, y + s * 0.36f)
+                close()
+            }
+            drawPath(left, Color(0xFFFF91B3)); drawPath(left, ink, style = Stroke(stroke * 0.75f))
+            drawPath(right, Color(0xFFFF91B3)); drawPath(right, ink, style = Stroke(stroke * 0.75f))
+            drawCircle(accent, s * 0.045f, Offset(centerX, y + s * 0.29f))
+        }
+        "flower" -> {
+            val flowerX = centerX + s * 0.23f
+            val flowerY = y + s * 0.27f
+            repeat(5) { index ->
+                val angle = (index * 72f - 90f) * (PI / 180.0).toFloat()
+                drawCircle(Color.White, s * 0.065f, Offset(flowerX + cos(angle) * s * 0.07f, flowerY + sin(angle) * s * 0.07f))
+                drawCircle(ink, s * 0.065f, Offset(flowerX + cos(angle) * s * 0.07f, flowerY + sin(angle) * s * 0.07f), style = Stroke(stroke * 0.65f))
+            }
+            drawCircle(accent, s * 0.04f, Offset(flowerX, flowerY))
+        }
+    }
 }
 
 @Composable
@@ -1257,7 +1639,7 @@ private fun VoteStage(
     }
     val totalVotes = state.totalVotes.takeIf { it > 0 } ?: voting.players.count { it.connected }
     val secondsLeft = secondsRemaining(voting.votingDeadlineEpochMillis, now)
-    val choices = voting.players.map { VoteChoice(it.id, it.displayName, it.avatarId, isSelf = it.id == state.selfPlayerId) } +
+    val choices = voting.players.map { VoteChoice(it.id, it.displayName, it.avatarId, it.avatarCustomization, isSelf = it.id == state.selfPlayerId) } +
         VoteChoice(GameConstants.DECOY_ID, "Nobody / Decoy", "cloud", isDecoy = true)
     val optionRows = if (wide) choices.chunked(2) else choices.map { listOf(it) }
     GamePanel("Who submitted this song?", "Choose the player you think picked the track.") {
@@ -1292,7 +1674,7 @@ private fun VoteStage(
                         )
                     ) {
                         Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            WebAvatarSwatch(choice.avatarId)
+                            WebAvatarSwatch(choice.avatarId, customization = choice.avatarCustomization)
                             Spacer(Modifier.width(10.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(choice.name, fontWeight = FontWeight.Bold)
@@ -1356,7 +1738,14 @@ private fun VoteTrackSummary(preview: com.guesswhosesong.shared.dto.RoundPreview
     }
 }
 
-private data class VoteChoice(val id: String, val name: String, val avatarId: String, val isSelf: Boolean = false, val isDecoy: Boolean = false)
+private data class VoteChoice(
+    val id: String,
+    val name: String,
+    val avatarId: String,
+    val avatarCustomization: AvatarCustomization? = null,
+    val isSelf: Boolean = false,
+    val isDecoy: Boolean = false
+)
 
 @Composable
 private fun RevealStage(reveal: com.guesswhosesong.shared.dto.RoundRevealed, startedAt: Long, now: Long) {
@@ -1406,7 +1795,7 @@ private fun GamePlayersPanel(state: WebUiState) {
     GamePanel("In this round", "${state.room?.players?.size ?: 0} players in the room.") {
         state.room?.players.orEmpty().forEach { player ->
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                WebAvatarSwatch(player.avatarId)
+                WebAvatarSwatch(player.avatarId, customization = player.avatarCustomization)
                 Spacer(Modifier.width(10.dp))
                 Text(player.displayName, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
                 Text("${player.score}", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -1450,7 +1839,7 @@ private fun ResultsPage(store: WebGameStore, state: WebUiState) {
                         players.drop(3).forEachIndexed { offset, player ->
                             Row(modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
                                 Text("${(offset + 4).toString().padStart(2, '0')}", modifier = Modifier.width(40.dp), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
-                                WebAvatarSwatch(player.avatarId)
+                                WebAvatarSwatch(player.avatarId, customization = player.avatarCustomization)
                                 Spacer(Modifier.width(12.dp))
                                 Text(player.displayName + if (player.id == state.selfPlayerId) " (you)" else "", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                                 Text("${player.score} pts", fontWeight = FontWeight.Bold)
@@ -1490,7 +1879,7 @@ private fun ResultPodiumCard(index: Int, player: Player, selfPlayerId: String, m
         subtitle = if (player.id == selfPlayerId) "You" else "Final score",
         modifier = modifier
     ) {
-        WebAvatarSwatch(player.avatarId)
+        WebAvatarSwatch(player.avatarId, customization = player.avatarCustomization)
         Text(player.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
         Text("${player.score} pts", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
     }

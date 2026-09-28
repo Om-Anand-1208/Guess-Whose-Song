@@ -8,6 +8,7 @@ import com.guesswhosesong.shared.dto.RoomEnded
 import com.guesswhosesong.shared.dto.ServerMessage
 import com.guesswhosesong.shared.dto.toJson
 import com.guesswhosesong.shared.dto.toServerMessage
+import com.guesswhosesong.shared.models.AvatarCustomization
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,16 +39,23 @@ class WebSocketGameClient(private val api: WebApiClient) {
     private var roomCode: String? = null
     private var displayName: String? = null
     private var avatarId: String? = null
+    private var avatarCustomization: AvatarCustomization? = null
     private var reconnectJob: Job? = null
     private var intentionallyDisconnected = true
     private var stopReconnect = false
     private val outgoing = ArrayDeque<String>()
 
-    suspend fun connect(joinCode: String, name: String, selectedAvatarId: String) {
+    suspend fun connect(
+        joinCode: String,
+        name: String,
+        selectedAvatarId: String,
+        selectedAvatarCustomization: AvatarCustomization
+    ) {
         disconnect()
         roomCode = joinCode.uppercase()
         displayName = name
         avatarId = selectedAvatarId
+        avatarCustomization = selectedAvatarCustomization
         intentionallyDisconnected = false
         stopReconnect = false
         _lastError.value = null
@@ -67,6 +75,7 @@ class WebSocketGameClient(private val api: WebApiClient) {
         val code = roomCode ?: return
         val name = displayName ?: return
         val selectedAvatarId = avatarId ?: return
+        val selectedAvatarCustomization = avatarCustomization ?: return
         val ticket = api.webSocketTicket(code)
         val opened = CompletableDeferred<Unit>()
         val url = "${configuredWsBaseUrl().trimEnd('/')}/rooms/$code/ws"
@@ -76,7 +85,7 @@ class WebSocketGameClient(private val api: WebApiClient) {
             ticketProtocol = "gws-ticket.$ticket",
             onOpen = {
                 _state.value = ConnectionState.CONNECTED
-                sendImmediately(JoinRoom(name, selectedAvatarId))
+                sendImmediately(JoinRoom(name, selectedAvatarId, selectedAvatarCustomization))
                 opened.complete(Unit)
             },
             onMessage = { text ->
@@ -164,6 +173,7 @@ class WebSocketGameClient(private val api: WebApiClient) {
         socket = null
         roomCode = null
         displayName = null
+        avatarCustomization = null
         _state.value = ConnectionState.DISCONNECTED
     }
 

@@ -31,6 +31,9 @@ import com.guesswhosesong.shared.models.SongEntry
 import com.guesswhosesong.shared.models.SpotifySuggestion
 import com.guesswhosesong.shared.models.TrackSearchResult
 import com.guesswhosesong.shared.models.AvatarCatalog
+import com.guesswhosesong.shared.models.AvatarCustomization
+import com.guesswhosesong.shared.models.AvatarCustomizationCatalog
+import com.guesswhosesong.shared.dto.GWSJson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -41,6 +44,8 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
 
 enum class WebPage { JOIN, LOBBY, SUBMISSION, GAME, RESULTS }
 
@@ -48,6 +53,7 @@ data class WebUiState(
     val page: WebPage = WebPage.JOIN,
     val displayName: String = sessionGet("gws.displayName").orEmpty(),
     val avatarId: String = AvatarCatalog.normalize(sessionGet("gws.avatarId").orEmpty()),
+    val avatarCustomization: AvatarCustomization = loadAvatarCustomization(avatarId),
     val joinCode: String = sessionGet("gws.joinCode").orEmpty(),
     val room: Room? = null,
     val selfPlayerId: String = "",
@@ -101,7 +107,16 @@ class WebGameStore {
     }
 
     fun setAvatarId(value: String) {
-        _state.update { it.copy(avatarId = AvatarCatalog.normalize(value), error = null) }
+        val shapeId = AvatarCatalog.normalize(value)
+        val customization = AvatarCustomization.defaultsFor(shapeId)
+        _state.update { it.copy(avatarId = shapeId, avatarCustomization = customization, error = null) }
+        persistAvatarCustomization(customization)
+    }
+
+    fun setAvatarCustomization(value: AvatarCustomization) {
+        val customization = normalizeAvatarCustomization(value)
+        _state.update { it.copy(avatarId = customization.shapeId, avatarCustomization = customization, error = null) }
+        persistAvatarCustomization(customization)
     }
 
     fun setJoinCode(value: String) {
@@ -117,8 +132,9 @@ class WebGameStore {
             val name = validatedName() ?: return@launch
             busy {
                 val avatarId = state.value.avatarId
-                val created = api.createRoom(name, avatarId)
-                connect(created.joinCode, name, avatarId)
+                val avatarCustomization = state.value.avatarCustomization
+                val created = api.createRoom(name, avatarId, avatarCustomization)
+                connect(created.joinCode, name, avatarId, avatarCustomization)
             }
         }
     }
@@ -128,11 +144,11 @@ class WebGameStore {
             val name = validatedName() ?: return@launch
             val code = state.value.joinCode.trim()
             if (code.length != 6) return@launch fail("Enter a valid six-character room code")
-            busy { connect(code, name, state.value.avatarId) }
+            busy { connect(code, name, state.value.avatarId, state.value.avatarCustomization) }
         }
     }
 
-    private suspend fun connect(code: String, name: String, avatarId: String) {
+    private suspend fun connect(code: String, name: String, avatarId: String, avatarCustomization: AvatarCustomization) {
         _state.update {
             it.copy(
                 page = WebPage.LOBBY,
@@ -141,6 +157,7 @@ class WebGameStore {
                 joinCode = code,
                 displayName = name,
                 avatarId = avatarId,
+                avatarCustomization = avatarCustomization,
                 error = null,
                 notice = "Connecting to room…"
             )
@@ -148,7 +165,8 @@ class WebGameStore {
         sessionSet("gws.joinCode", code)
         sessionSet("gws.displayName", name)
         sessionSet("gws.avatarId", avatarId)
-        socket.connect(code, name, avatarId)
+        persistAvatarCustomization(avatarCustomization)
+        socket.connect(code, name, avatarId, avatarCustomization)
     }
 
     fun startGame() = send(StartGame())
@@ -414,4 +432,30 @@ class WebGameStore {
         socket.close()
         scope.coroutineContext[Job]?.cancel()
     }
+}
+
+private fun loadAvatarCustomization(avatarId: String): AvatarCustomization {
+    val defaults = AvatarCustomization.defaultsFor(avatarId)
+    val saved = sessionGet("gws.avatarCustomization")
+        ?.let { encoded -> runCatching { GWSJson.decodeFromString<AvatarCustomization>(encoded) }.getOrNull() }
+        ?: return defaults
+    return normalizeAvatarCustomization(saved)
+}
+
+private fun normalizeAvatarCustomization(value: AvatarCustomization): AvatarCustomization {
+    val shapeId = value.shapeId.takeIf { it in AvatarCustomizationCatalog.shapeIds }
+        ?: AvatarCatalog.normalize(value.shapeId)
+    val defaults = AvatarCustomization.defaultsFor(shapeId)
+    return value.copy(
+        shapeId = shapeId,
+        colorId = value.colorId.takeIf { it in AvatarCustomizationCatalog.colorIds } ?: defaults.colorId,
+        eyesId = value.eyesId.takeIf { it in AvatarCustomizationCatalog.eyesIds } ?: defaults.eyesId,
+        mouthId = value.mouthId.takeIf { it in AvatarCustomizationCatalog.mouthIds } ?: defaults.mouthId,
+        accessoryId = value.accessoryId.takeIf { it in AvatarCustomizationCatalog.accessoryIds } ?: defaults.accessoryId
+    )
+}
+
+private fun persistAvatarCustomization(value: AvatarCustomization) {
+    sessionSet("gws.avatarId", value.shapeId)
+    sessionSet("gws.avatarCustomization", GWSJson.encodeToString(value))
 }

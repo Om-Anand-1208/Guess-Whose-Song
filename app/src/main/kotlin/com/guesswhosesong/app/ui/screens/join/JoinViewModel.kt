@@ -1,6 +1,7 @@
 package com.guesswhosesong.app.ui.screens.join
 
 import android.app.Activity
+import android.content.Context
 import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,6 +10,8 @@ import com.guesswhosesong.app.data.player.AccountLinkResult
 import com.guesswhosesong.app.data.repository.RoomRepository
 import com.guesswhosesong.app.data.spotify.SpotifyAuthManager
 import com.guesswhosesong.shared.models.AvatarCatalog
+import com.guesswhosesong.shared.models.AvatarCustomization
+import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -17,6 +20,7 @@ import javax.inject.Inject
 data class JoinUiState(
     val displayName: String = "",
     val avatarId: String = AvatarCatalog.DEFAULT_ID,
+    val avatarCustomization: AvatarCustomization = AvatarCustomization.defaultsFor(AvatarCatalog.DEFAULT_ID),
     val joinCode: String = "",
     val isLoading: Boolean = false,
     val error: String? = null,
@@ -27,17 +31,29 @@ data class JoinUiState(
 )
 
 sealed class JoinEvent {
-    data class NavigateToLobby(val joinCode: String, val displayName: String, val avatarId: String) : JoinEvent()
+    data class NavigateToLobby(
+        val joinCode: String,
+        val displayName: String,
+        val avatarCustomization: AvatarCustomization
+    ) : JoinEvent()
 }
 
 @HiltViewModel
 class JoinViewModel @Inject constructor(
     private val roomRepository: RoomRepository,
     private val playerIdentityManager: PlayerIdentityManager,
-    private val spotifyAuthManager: SpotifyAuthManager
+    private val spotifyAuthManager: SpotifyAuthManager,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
-    private val _uiState = MutableStateFlow(JoinUiState())
+    private val avatarPreferences = context.getSharedPreferences("player_avatar", Context.MODE_PRIVATE)
+    private val initialCustomization = loadAvatarCustomization()
+    private val _uiState = MutableStateFlow(
+        JoinUiState(
+            avatarId = initialCustomization.shapeId,
+            avatarCustomization = initialCustomization
+        )
+    )
     val uiState: StateFlow<JoinUiState> = _uiState.asStateFlow()
 
     private val _events = MutableSharedFlow<JoinEvent>()
@@ -64,7 +80,19 @@ class JoinViewModel @Inject constructor(
     }
 
     fun onAvatarSelected(avatarId: String) {
-        _uiState.update { it.copy(avatarId = AvatarCatalog.normalize(avatarId), error = null) }
+        val customization = AvatarCustomization.defaultsFor(AvatarCatalog.normalize(avatarId))
+        saveAvatarCustomization(customization)
+        _uiState.update {
+            it.copy(avatarId = customization.shapeId, avatarCustomization = customization, error = null)
+        }
+    }
+
+    fun onAvatarCustomizationChanged(customization: AvatarCustomization) {
+        val normalized = AvatarCustomization.normalize(customization, _uiState.value.avatarId)
+        saveAvatarCustomization(normalized)
+        _uiState.update {
+            it.copy(avatarId = normalized.shapeId, avatarCustomization = normalized, error = null)
+        }
     }
 
     fun onJoinCodeChanged(code: String) {
@@ -80,11 +108,11 @@ class JoinViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
-                val avatarId = _uiState.value.avatarId
-                val result = roomRepository.createRoom(name, avatarId)
+                val customization = _uiState.value.avatarCustomization
+                val result = roomRepository.createRoom(name, customization.shapeId, customization)
                 result.fold(
                     onSuccess = { response ->
-                        _events.emit(JoinEvent.NavigateToLobby(response.joinCode, name, avatarId))
+                        _events.emit(JoinEvent.NavigateToLobby(response.joinCode, name, customization))
                     },
                     onFailure = { e ->
                         _uiState.update { it.copy(error = "Failed to create room: ${e.message}") }
@@ -101,7 +129,7 @@ class JoinViewModel @Inject constructor(
     fun joinRoom() {
         val name = _uiState.value.displayName.trim()
         val code = _uiState.value.joinCode.trim()
-        val avatarId = _uiState.value.avatarId
+        val customization = _uiState.value.avatarCustomization
         if (name.isBlank()) {
             _uiState.update { it.copy(error = "Enter your name first") }
             return
@@ -113,7 +141,7 @@ class JoinViewModel @Inject constructor(
         viewModelScope.launch {
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
-                _events.emit(JoinEvent.NavigateToLobby(code, name, avatarId))
+                _events.emit(JoinEvent.NavigateToLobby(code, name, customization))
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "Error: ${e.message}") }
             } finally {
@@ -157,5 +185,31 @@ class JoinViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    private fun loadAvatarCustomization(): AvatarCustomization {
+        val shapeId = AvatarCatalog.normalize(avatarPreferences.getString("shapeId", null).orEmpty())
+        val defaults = AvatarCustomization.defaultsFor(shapeId)
+        return AvatarCustomization.normalize(
+            AvatarCustomization(
+                shapeId = shapeId,
+                colorId = avatarPreferences.getString("colorId", defaults.colorId) ?: defaults.colorId,
+                eyesId = avatarPreferences.getString("eyesId", defaults.eyesId) ?: defaults.eyesId,
+                mouthId = avatarPreferences.getString("mouthId", defaults.mouthId) ?: defaults.mouthId,
+                accessoryId = avatarPreferences.getString("accessoryId", defaults.accessoryId) ?: defaults.accessoryId
+            ),
+            shapeId
+        )
+    }
+
+    private fun saveAvatarCustomization(customization: AvatarCustomization) {
+        val normalized = AvatarCustomization.normalize(customization, AvatarCatalog.DEFAULT_ID)
+        avatarPreferences.edit()
+            .putString("shapeId", normalized.shapeId)
+            .putString("colorId", normalized.colorId)
+            .putString("eyesId", normalized.eyesId)
+            .putString("mouthId", normalized.mouthId)
+            .putString("accessoryId", normalized.accessoryId)
+            .apply()
     }
 }

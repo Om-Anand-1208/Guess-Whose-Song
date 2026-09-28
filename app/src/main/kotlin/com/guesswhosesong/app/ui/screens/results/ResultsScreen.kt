@@ -215,7 +215,7 @@ private fun WinnerCard(winner: Player) {
             modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            EmptyAvatarBadge(winner.avatarId, size = 56.dp, selected = true)
+            EmptyAvatarBadge(winner.avatarId, size = 56.dp, selected = true, customization = winner.avatarCustomization)
             Spacer(Modifier.width(12.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Surface(color = Color.White.copy(alpha = 0.68f), shape = CircleShape) {
@@ -299,7 +299,7 @@ fun ScoreboardItem(rank: Int, player: Player, isSelf: Boolean) {
                 )
             }
             Spacer(Modifier.width(10.dp))
-            EmptyAvatarBadge(player.avatarId, size = 42.dp, selected = isSelf)
+            EmptyAvatarBadge(player.avatarId, size = 42.dp, selected = isSelf, customization = player.avatarCustomization)
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

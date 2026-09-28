@@ -61,6 +61,7 @@ import com.guesswhosesong.app.ui.components.AvatarOptions
 import com.guesswhosesong.app.ui.components.EmptyAvatarBadge
 import com.guesswhosesong.app.ui.components.GuessWhoseSongWordmark
 import com.guesswhosesong.app.ui.theme.GwsPalette
+import com.guesswhosesong.shared.models.AvatarCustomization
 import com.guesswhosesong.shared.models.Player
 import com.guesswhosesong.shared.models.RoomSettings
 
@@ -68,7 +69,7 @@ import com.guesswhosesong.shared.models.RoomSettings
 fun LobbyScreen(
     joinCode: String,
     displayName: String,
-    avatarId: String,
+    avatarCustomization: AvatarCustomization,
     viewModel: LobbyViewModel = hiltViewModel(),
     onNavigateToSubmission: () -> Unit,
     onKicked: () -> Unit
@@ -78,7 +79,7 @@ fun LobbyScreen(
     val context = LocalContext.current
 
     LaunchedEffect(joinCode) {
-        viewModel.connect(joinCode, displayName, avatarId)
+        viewModel.connect(joinCode, displayName, avatarCustomization)
     }
 
     LaunchedEffect(Unit) {
@@ -531,7 +532,12 @@ fun PlayerListItem(
             modifier = Modifier.padding(horizontal = 11.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            EmptyAvatarBadge(player.avatarId, size = 43.dp, selected = isSelf)
+            EmptyAvatarBadge(
+                player.avatarId,
+                size = 43.dp,
+                selected = isSelf,
+                customization = player.avatarCustomization
+            )
             Spacer(Modifier.width(11.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {

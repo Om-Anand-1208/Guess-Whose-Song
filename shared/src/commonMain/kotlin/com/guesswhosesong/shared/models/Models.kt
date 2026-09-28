@@ -16,6 +16,67 @@ object AvatarCatalog {
     fun normalize(id: String): String = id.takeIf(::isValid) ?: DEFAULT_ID
 }
 
+/** The independently selected parts of a player's illustrated avatar. */
+@Serializable
+data class AvatarCustomization(
+    val shapeId: String,
+    val colorId: String,
+    val eyesId: String,
+    val mouthId: String,
+    val accessoryId: String
+) {
+    companion object {
+        /** Build the legacy-compatible appearance for a shape, falling back safely. */
+        fun defaultsFor(shapeId: String): AvatarCustomization {
+            val safeShapeId = shapeId.takeIf { it in AvatarCustomizationCatalog.shapeIds }
+                ?: AvatarCatalog.DEFAULT_ID
+            return AvatarCustomization(
+                shapeId = safeShapeId,
+                colorId = safeShapeId,
+                eyesId = "dots",
+                mouthId = "smile",
+                accessoryId = "none"
+            )
+        }
+
+        /** Replace missing or unknown parts with safe defaults for the requested shape. */
+        fun normalize(config: AvatarCustomization?, fallbackShapeId: String): AvatarCustomization {
+            val fallback = defaultsFor(fallbackShapeId)
+            val safeShapeId = config?.shapeId?.takeIf { it in AvatarCustomizationCatalog.shapeIds }
+                ?: fallback.shapeId
+            val shapeDefaults = defaultsFor(safeShapeId)
+            return AvatarCustomization(
+                shapeId = safeShapeId,
+                colorId = config?.colorId?.takeIf { it in AvatarCustomizationCatalog.colorIds }
+                    ?: shapeDefaults.colorId,
+                eyesId = config?.eyesId?.takeIf { it in AvatarCustomizationCatalog.eyesIds }
+                    ?: shapeDefaults.eyesId,
+                mouthId = config?.mouthId?.takeIf { it in AvatarCustomizationCatalog.mouthIds }
+                    ?: shapeDefaults.mouthId,
+                accessoryId = config?.accessoryId?.takeIf { it in AvatarCustomizationCatalog.accessoryIds }
+                    ?: shapeDefaults.accessoryId
+            )
+        }
+
+        /** True only when every selected part belongs to its fixed catalog. */
+        fun isValid(config: AvatarCustomization): Boolean =
+            config.shapeId in AvatarCustomizationCatalog.shapeIds &&
+                config.colorId in AvatarCustomizationCatalog.colorIds &&
+                config.eyesId in AvatarCustomizationCatalog.eyesIds &&
+                config.mouthId in AvatarCustomizationCatalog.mouthIds &&
+                config.accessoryId in AvatarCustomizationCatalog.accessoryIds
+    }
+}
+
+/** Fixed, cross-client identifiers accepted for avatar customization. */
+object AvatarCustomizationCatalog {
+    val shapeIds = AvatarCatalog.ids
+    val colorIds = listOf("sunny", "lime", "violet", "tangerine", "cloud", "star", "berry", "mint")
+    val eyesIds = listOf("dots", "happy", "sleepy", "wink", "sunglasses")
+    val mouthIds = listOf("smile", "grin", "open", "tongue")
+    val accessoryIds = listOf("none", "headphones", "glasses", "cap", "bow", "flower")
+}
+
 @Serializable
 data class RoomSettings(
     val roundLengthPreset: RoundLengthPreset = RoundLengthPreset.STANDARD,
@@ -48,7 +109,8 @@ data class Player(
     val pendingSong: SongEntry? = null,
     val pendingSongs: List<SongEntry> = emptyList(),
     val songLocked: Boolean = false,
-    val joinedAt: Long = 0L // epoch millis, used for host reassignment ordering
+    val joinedAt: Long = 0L, // epoch millis, used for host reassignment ordering
+    val avatarCustomization: AvatarCustomization? = null
 )
 
 @Serializable

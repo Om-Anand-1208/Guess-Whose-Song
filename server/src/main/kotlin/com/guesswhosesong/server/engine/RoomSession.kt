@@ -69,7 +69,8 @@ class RoomSession(
         playerId: String,
         displayName: String,
         avatarId: String,
-        socket: DefaultWebSocketServerSession
+        socket: DefaultWebSocketServerSession,
+        avatarCustomization: AvatarCustomization? = null
     ) {
         val previousSocket = connections.put(playerId, socket)
         if (previousSocket != null && previousSocket !== socket) {
@@ -84,12 +85,17 @@ class RoomSession(
 
         mutex.withLock {
             val existingPlayer = room.players.find { it.id == playerId }
+            val playerCustomization = AvatarCustomization.normalize(
+                avatarCustomization ?: existingPlayer?.avatarCustomization,
+                avatarId
+            )
             room = if (existingPlayer != null) {
                 // Reconnect: mark as connected
                 room.copy(players = room.players.map { p ->
                     if (p.id == playerId) p.copy(
                         connected = true,
-                        avatarId = AvatarCatalog.normalize(avatarId),
+                        avatarId = playerCustomization.shapeId,
+                        avatarCustomization = playerCustomization,
                         spotifyConnected = p.spotifyConnected || hasSpotify
                     ) else p
                 })
@@ -98,7 +104,8 @@ class RoomSession(
                 val newPlayer = Player(
                     id = playerId,
                     displayName = displayName,
-                    avatarId = AvatarCatalog.normalize(avatarId),
+                    avatarId = playerCustomization.shapeId,
+                    avatarCustomization = playerCustomization,
                     isHost = room.players.isEmpty(),
                     spotifyConnected = hasSpotify,
                     joinedAt = System.currentTimeMillis()

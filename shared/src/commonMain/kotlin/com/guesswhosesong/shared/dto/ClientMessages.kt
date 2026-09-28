@@ -17,7 +17,8 @@ sealed class ClientMessage
 @SerialName("JOIN_ROOM")
 data class JoinRoom(
     val displayName: String,
-    val avatarId: String = AvatarCatalog.DEFAULT_ID
+    val avatarId: String = AvatarCatalog.DEFAULT_ID,
+    val avatarCustomization: AvatarCustomization? = null
 ) : ClientMessage()
 
 @Serializable

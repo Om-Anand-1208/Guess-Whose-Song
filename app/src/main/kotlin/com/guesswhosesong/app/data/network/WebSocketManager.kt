@@ -2,6 +2,8 @@ package com.guesswhosesong.app.data.network
 
 import com.guesswhosesong.app.data.player.PlayerIdentityManager
 import com.guesswhosesong.shared.dto.*
+import com.guesswhosesong.shared.models.AvatarCustomization
+import com.guesswhosesong.shared.models.AvatarCatalog
 import io.ktor.client.*
 import io.ktor.client.plugins.websocket.*
 import io.ktor.client.request.header
@@ -53,14 +55,23 @@ class WebSocketManager(
      * Connect to a room WebSocket.
      * Automatically reconnects on drop with exponential backoff.
      */
-    fun connect(joinCode: String, displayName: String, avatarId: String) {
+    fun connect(
+        joinCode: String,
+        displayName: String,
+        avatarId: String,
+        avatarCustomization: AvatarCustomization? = null
+    ) {
         stopReconnect = true
         connectionScope?.cancel()
         drainOutgoing()
         stopReconnect = false
         currentJoinCode = joinCode
         currentDisplayName = displayName
-        currentAvatarId = avatarId
+        val normalizedCustomization = AvatarCustomization.normalize(
+            avatarCustomization,
+            AvatarCatalog.normalize(avatarId)
+        )
+        currentAvatarId = normalizedCustomization.shapeId
 
         connectionScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
         connectionScope!!.launch {
@@ -77,7 +88,15 @@ class WebSocketManager(
                         _connectionState.value = ConnectionState.CONNECTED
                         _lastError.value = null
                         delay = RECONNECT_DELAY_MS // reset backoff on success
-                        send(Frame.Text(JoinRoom(displayName = displayName, avatarId = avatarId).toJson()))
+                        send(
+                            Frame.Text(
+                                JoinRoom(
+                                    displayName = displayName,
+                                    avatarId = normalizedCustomization.shapeId,
+                                    avatarCustomization = normalizedCustomization
+                                ).toJson()
+                            )
+                        )
 
                         // Fan out: send queued outgoing messages
                         val sendJob = launch {

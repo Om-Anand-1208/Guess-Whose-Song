@@ -11,16 +11,17 @@ import com.guesswhosesong.app.ui.screens.join.JoinScreen
 import com.guesswhosesong.app.ui.screens.lobby.LobbyScreen
 import com.guesswhosesong.app.ui.screens.results.ResultsScreen
 import com.guesswhosesong.app.ui.screens.submission.SubmissionScreen
+import com.guesswhosesong.shared.models.AvatarCustomization
 
 object Routes {
     const val JOIN = "join"
-    const val LOBBY = "lobby/{joinCode}/{displayName}/{avatarId}"
+    const val LOBBY = "lobby/{joinCode}/{displayName}/{shapeId}/{colorId}/{eyesId}/{mouthId}/{accessoryId}"
     const val SUBMISSION = "submission"
     const val GAME = "game"
     const val RESULTS = "results"
 
-    fun lobby(joinCode: String, displayName: String, avatarId: String) =
-        "lobby/$joinCode/${displayName.encodeUrl()}/$avatarId"
+    fun lobby(joinCode: String, displayName: String, avatarCustomization: AvatarCustomization) =
+        "lobby/$joinCode/${displayName.encodeUrl()}/${avatarCustomization.shapeId}/${avatarCustomization.colorId}/${avatarCustomization.eyesId}/${avatarCustomization.mouthId}/${avatarCustomization.accessoryId}"
 
     private fun String.encodeUrl() = java.net.URLEncoder.encode(this, "UTF-8")
 }
@@ -32,8 +33,8 @@ fun GWSNavHost() {
     NavHost(navController = navController, startDestination = Routes.JOIN) {
         composable(Routes.JOIN) {
             JoinScreen(
-                onNavigateToLobby = { joinCode, displayName, avatarId ->
-                    navController.navigate(Routes.lobby(joinCode, displayName, avatarId)) {
+                onNavigateToLobby = { joinCode, displayName, avatarCustomization ->
+                    navController.navigate(Routes.lobby(joinCode, displayName, avatarCustomization)) {
                         popUpTo(Routes.JOIN) { inclusive = true }
                     }
                 }
@@ -45,18 +46,31 @@ fun GWSNavHost() {
             arguments = listOf(
                 navArgument("joinCode") { type = NavType.StringType },
                 navArgument("displayName") { type = NavType.StringType },
-                navArgument("avatarId") { type = NavType.StringType }
+                navArgument("shapeId") { type = NavType.StringType },
+                navArgument("colorId") { type = NavType.StringType },
+                navArgument("eyesId") { type = NavType.StringType },
+                navArgument("mouthId") { type = NavType.StringType },
+                navArgument("accessoryId") { type = NavType.StringType }
             )
         ) { backStackEntry ->
             val joinCode = backStackEntry.arguments?.getString("joinCode") ?: ""
             val displayName = java.net.URLDecoder.decode(
                 backStackEntry.arguments?.getString("displayName") ?: "", "UTF-8"
             )
-            val avatarId = backStackEntry.arguments?.getString("avatarId") ?: "sunny"
+            val avatarCustomization = AvatarCustomization.normalize(
+                AvatarCustomization(
+                    shapeId = backStackEntry.arguments?.getString("shapeId") ?: "sunny",
+                    colorId = backStackEntry.arguments?.getString("colorId") ?: "sunny",
+                    eyesId = backStackEntry.arguments?.getString("eyesId") ?: "dots",
+                    mouthId = backStackEntry.arguments?.getString("mouthId") ?: "smile",
+                    accessoryId = backStackEntry.arguments?.getString("accessoryId") ?: "none"
+                ),
+                "sunny"
+            )
             LobbyScreen(
                 joinCode = joinCode,
                 displayName = displayName,
-                avatarId = avatarId,
+                avatarCustomization = avatarCustomization,
                 onNavigateToSubmission = {
                     navController.navigate(Routes.SUBMISSION) {
                         popUpTo(Routes.LOBBY) { inclusive = true }
