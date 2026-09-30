@@ -8,6 +8,7 @@ import com.guesswhosesong.server.redis.RoomRepository
 import com.guesswhosesong.server.redis.RoomRuntime
 import com.guesswhosesong.server.redis.RoomRuntimeRepository
 import com.guesswhosesong.server.security.InputValidation
+import com.guesswhosesong.server.spotify.SpotifyClient
 import com.guesswhosesong.shared.dto.*
 import com.guesswhosesong.shared.models.*
 import io.ktor.websocket.*
@@ -35,7 +36,8 @@ class RoomSession(
     initialRoom: Room,
     private val redisClient: RedisClient,
     private val onEnded: (String) -> Unit = {},
-    private val musicService: MusicService = MusicService()
+    private val musicService: MusicService = MusicService(),
+    private val spotifyClient: SpotifyClient = SpotifyClient()
 ) {
     private val logger = LoggerFactory.getLogger(RoomSession::class.java)
     private val mutex = Mutex()
@@ -500,8 +502,11 @@ class RoomSession(
             logger.warn("[${room.joinCode}] Duplicate vote ignored")
             return
         }
-        val validTarget = guessedPlayerId == ScoreEngine.DECOY_ID ||
-            room.players.any { it.id == guessedPlayerId }
+        val validTarget = if (room.settings.gameMode == GameMode.SPOTIFY_RECENT) {
+            room.songPool.any { it.submitterId == guessedPlayerId }
+        } else {
+            guessedPlayerId == ScoreEngine.DECOY_ID || room.players.any { it.id == guessedPlayerId }
+        }
         if (!validTarget || guessedPlayerId.length > 128) {
             sendToPlayer(voterId, ErrorMessage("INVALID_VOTE", "Unknown vote target"))
             return
@@ -586,6 +591,11 @@ class RoomSession(
     private var submissionCompleteSignal = CompletableDeferred<Unit>()
 
     private suspend fun runSubmissionPhase() {
+        if (room.settings.gameMode == GameMode.SPOTIFY_RECENT) {
+            runRecentlyPlayedPhase()
+            return
+        }
+
         submissionCompleteSignal = CompletableDeferred()
         mutex.withLock {
             room = room.copy(state = RoomState.SUBMISSION)
@@ -688,6 +698,117 @@ class RoomSession(
             endRoom()
             return
         }
+        startPlayingWithPool(pool)
+    }
+
+    private suspend fun runRecentlyPlayedPhase() {
+        mutex.withLock {
+            room = room.copy(state = RoomState.SUBMISSION)
+            persist()
+        }
+        broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
+        persistRuntime(RoomRuntime("SUBMISSION", 0, 0L, UUID.randomUUID().toString()))
+        broadcastAll(SubmissionStarted(deadlineEpochMillis = 0L))
+
+        val playedTracks = mutableListOf<PlayerRecentTrack>()
+        room.players.forEach { player ->
+            val token = try {
+                redisClient.get("spotify_token:${player.id}")
+            } catch (_: Exception) {
+                null
+            } ?: return@forEach
+
+            val recentTracks = try {
+                spotifyClient.getRecentlyPlayed(token, limit = 50)
+            } catch (_: SpotifyClient.UnauthorizedException) {
+                try { redisClient.del("spotify_token:${player.id}") } catch (_: Exception) { }
+                emptyList()
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                emptyList()
+            }
+            recentTracks.forEach { track -> playedTracks += PlayerRecentTrack(player.id, track) }
+        }
+
+        val uniqueTracks = RecentTrackDeduplicator.uniqueToOnePlayer(playedTracks)
+        val tracksByPlayer = uniqueTracks.groupBy { it.playerId }
+        val resolvedSongs = mutableListOf<SongEntry>()
+        val candidateOwners = room.players.map { it.id }.filter { !tracksByPlayer[it].isNullOrEmpty() }
+        val candidateOffsets = ConcurrentHashMap<String, Int>().apply {
+            candidateOwners.forEach { put(it, 0) }
+        }
+
+        suspend fun resolveNextPlayable(playerId: String): SongEntry? {
+            val candidates = tracksByPlayer[playerId].orEmpty()
+            while (candidateOffsets.getValue(playerId) < candidates.size) {
+                val index = candidateOffsets.getValue(playerId)
+                candidateOffsets[playerId] = index + 1
+                val track = candidates[index].track
+                val pending = SongEntry(
+                    songId = "recent-${track.spotifyTrackId?.takeIf(String::isNotBlank) ?: "$playerId-$index"}",
+                    title = track.title,
+                    artist = track.artist,
+                    albumArtUrl = track.albumArtUrl,
+                    previewUrl = "",
+                    submitterId = playerId
+                )
+                val resolved = try {
+                    musicService.resolveEntry(pending)
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (_: Exception) {
+                    null
+                }
+                if (resolved != null && resolved.previewUrl.isNotBlank()) {
+                    return resolved.copy(submitterId = playerId)
+                }
+            }
+            return null
+        }
+
+        var recentPool: RecentPlayedPool? = null
+        while (candidateOwners.isNotEmpty()) {
+            // Resolve in fair passes so a full pool does not require catalog-searching
+            // every track in every player's 50-item Spotify history.
+            val resolvedThisPass = coroutineScope {
+                candidateOwners.map { ownerId -> async { resolveNextPlayable(ownerId) } }.awaitAll()
+            }
+            resolvedSongs += resolvedThisPass.filterNotNull()
+            recentPool = RecentPlayedPoolBuilder.build(resolvedSongs, room.settings.roundCount)
+            if (recentPool?.songs?.size == room.settings.roundCount) break
+
+            val hasMoreCandidates = candidateOwners.any { ownerId ->
+                candidateOffsets.getValue(ownerId) < tracksByPlayer[ownerId].orEmpty().size
+            }
+            if (!hasMoreCandidates) break
+        }
+
+        if (recentPool == null) {
+            mutex.withLock {
+                room = room.copy(
+                    state = RoomState.LOBBY,
+                    songPool = emptyList(),
+                    currentRoundIndex = 0,
+                    players = room.players.map { it.copy(songLocked = false, pendingSong = null, pendingSongs = emptyList()) }
+                )
+                persist()
+            }
+            persistRuntime(RoomRuntime())
+            broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
+            broadcastAll(
+                ErrorMessage(
+                    "RECENT_TRACKS_UNAVAILABLE",
+                    "Recently Played mode needs unique playable tracks from at least two players. The game is still in the lobby."
+                )
+            )
+            return
+        }
+
+        startPlayingWithPool(recentPool.songs)
+    }
+
+    private suspend fun startPlayingWithPool(pool: List<SongEntry>) {
         mutex.withLock {
             room = room.copy(
                 state = RoomState.PLAYING,
@@ -762,7 +883,12 @@ class RoomSession(
             VotingStarted(
                 roundIndex = index,
                 players = players,
-                votingDeadlineEpochMillis = votingDeadline
+                votingDeadlineEpochMillis = votingDeadline,
+                eligibleOwnerIds = if (room.settings.gameMode == GameMode.SPOTIFY_RECENT) {
+                    room.songPool.map { it.submitterId }.distinct()
+                } else {
+                    emptyList()
+                }
             )
         )
 
@@ -785,7 +911,12 @@ class RoomSession(
             votes = finalVotes,
             roundResolved = false
         ))
-        val (voteResults, scoreDeltas) = ScoreEngine.computeRoundResults(song, finalVotes, room.players)
+        val (voteResults, scoreDeltas) = ScoreEngine.computeRoundResults(
+            song,
+            finalVotes,
+            room.players,
+            allowSubmitterSelfGuess = room.settings.gameMode == GameMode.SPOTIFY_RECENT
+        )
 
         mutex.withLock {
             room = room.copy(

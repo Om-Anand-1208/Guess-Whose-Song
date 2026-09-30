@@ -15,6 +15,15 @@ class SerializationTest {
         val decoded = GWSJson.decodeFromString<RoomSettings>("""{"roundLengthPreset":"STANDARD"}""")
         assertEquals(10, decoded.roundCount)
         assertEquals(10, RoomSettings().roundCount)
+        assertEquals(GameMode.MANUAL, decoded.gameMode)
+    }
+
+    @Test
+    fun `voting message defaults eligible owners for manual rooms`() {
+        val decoded = GWSJson.decodeFromString<VotingStarted>(
+            """{"type":"VOTING_STARTED","roundIndex":0,"players":[],"votingDeadlineEpochMillis":1234}"""
+        )
+        assertEquals(emptyList<String>(), decoded.eligibleOwnerIds)
     }
 
     @Test

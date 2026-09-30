@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImage
 import com.guesswhosesong.app.ui.theme.GwsPalette
+import com.guesswhosesong.shared.models.GameMode
 import com.guesswhosesong.shared.models.RoundCountRules
 import com.guesswhosesong.shared.models.SongEntry
 import com.guesswhosesong.shared.models.TrackSearchResult
@@ -35,9 +36,11 @@ import com.guesswhosesong.shared.models.TrackSearchResult
 @Composable
 fun SubmissionScreen(
     viewModel: SubmissionViewModel = hiltViewModel(),
-    onNavigateToGame: () -> Unit
+    onNavigateToGame: () -> Unit,
+    onReturnToLobby: (String, String, com.guesswhosesong.shared.models.AvatarCustomization, String) -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    var lobbyReturnHandled by remember { mutableStateOf(false) }
     val songs = if (uiState.pendingSongs.isNotEmpty()) uiState.pendingSongs
     else listOfNotNull(uiState.pendingSong)
     val targetRounds = uiState.room?.settings?.roundCount ?: RoundCountRules.DEFAULT_ROUNDS
@@ -48,6 +51,61 @@ fun SubmissionScreen(
                 SubmissionEvent.NavigateToGame -> onNavigateToGame()
             }
         }
+    }
+
+    val recentRoom = uiState.room?.takeIf { it.settings.gameMode == GameMode.SPOTIFY_RECENT }
+    LaunchedEffect(recentRoom?.joinCode, recentRoom?.state, uiState.recentPlayedFailure) {
+        val room = recentRoom ?: return@LaunchedEffect
+        val failureExplanation = uiState.recentPlayedFailure
+        if (room.state == com.guesswhosesong.shared.models.RoomState.LOBBY &&
+            failureExplanation != null && !lobbyReturnHandled
+        ) {
+            val self = room.players.find { it.id == uiState.selfPlayerId } ?: return@LaunchedEffect
+            lobbyReturnHandled = true
+            onReturnToLobby(
+                room.joinCode,
+                self.displayName,
+                com.guesswhosesong.shared.models.AvatarCustomization.normalize(
+                    self.avatarCustomization,
+                    self.avatarId
+                ),
+                failureExplanation
+            )
+        }
+    }
+
+    if (recentRoom != null) {
+        Scaffold(containerColor = GwsPalette.Paper) { padding ->
+            Column(
+                modifier = Modifier.fillMaxSize().padding(padding).padding(28.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                CircularProgressIndicator(color = GwsPalette.LavenderDeep)
+                Text(
+                    "Building the song pool",
+                    modifier = Modifier.padding(top = 20.dp),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    color = GwsPalette.Ink
+                )
+                Text(
+                    "Checking for unique, playable tracks in players’ recent Spotify history. Everyone can still vote, even if they have no eligible tracks.",
+                    modifier = Modifier.padding(top = 8.dp),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = GwsPalette.Ink.copy(alpha = 0.72f)
+                )
+                uiState.error?.let { error ->
+                    Text(
+                        error,
+                        modifier = Modifier.padding(top = 12.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
+            }
+        }
+        return
     }
 
     Scaffold(

@@ -118,7 +118,8 @@ object AvatarCustomizationCatalog {
 data class RoomSettings(
     val roundCount: Int = RoundCountRules.DEFAULT_ROUNDS,
     val playerLimit: Int = 10,
-    val votingTimerSeconds: Int = 20
+    val votingTimerSeconds: Int = 20,
+    val gameMode: GameMode = GameMode.MANUAL
 )
 
 /** Shared round-count and per-player submission rules used by every client and the server. */
@@ -225,7 +226,8 @@ data class SpotifySuggestion(
     val title: String,
     val artist: String,
     val albumArtUrl: String = "",
-    val category: SpotifyCategory
+    val category: SpotifyCategory,
+    val spotifyTrackId: String? = null
 )
 
 @Serializable

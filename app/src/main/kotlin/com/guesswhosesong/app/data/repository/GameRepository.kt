@@ -28,6 +28,9 @@ class GameRepository(private val wsManager: WebSocketManager) {
     private val _currentRoom = MutableStateFlow<Room?>(null)
     val currentRoom: StateFlow<Room?> = _currentRoom.asStateFlow()
 
+    private val _recentPlayedFailure = MutableStateFlow<String?>(null)
+    val recentPlayedFailure: StateFlow<String?> = _recentPlayedFailure.asStateFlow()
+
     private val _selfPlayerId = MutableStateFlow("")
     val selfPlayerId: StateFlow<String> = _selfPlayerId.asStateFlow()
 
@@ -56,15 +59,20 @@ class GameRepository(private val wsManager: WebSocketManager) {
                     is RoomJoined -> {
                         _selfPlayerId.value = message.selfPlayerId
                         _currentRoom.value = message.room
+                        _recentPlayedFailure.value = null
                         _latestGameResults.value = null
                     }
                     is RoomUpdated -> {
                         _currentRoom.value = message.room
                         if (message.room.state == com.guesswhosesong.shared.models.RoomState.SUBMISSION) {
+                            _recentPlayedFailure.value = null
                             resetRoundState()
                             _mySubmittedSongs.value = emptyList()
                             _pendingSongs.value = emptyList()
                         }
+                    }
+                    is ErrorMessage -> if (message.code == "RECENT_TRACKS_UNAVAILABLE") {
+                        _recentPlayedFailure.value = message.message
                     }
                     is RoundPreviewStarted -> {
                         _currentRoundPreview.value = message
@@ -81,6 +89,7 @@ class GameRepository(private val wsManager: WebSocketManager) {
                     }
                     is RoomEnded -> {
                         _currentRoom.value = null
+                        _recentPlayedFailure.value = null
                         _pendingSongs.value = emptyList()
                         _mySubmittedSongs.value = emptyList()
                         resetRoundState()

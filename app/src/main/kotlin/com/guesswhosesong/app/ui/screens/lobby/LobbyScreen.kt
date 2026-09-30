@@ -76,6 +76,7 @@ import com.guesswhosesong.app.ui.components.GoogleGMark
 import com.guesswhosesong.app.ui.components.SpotifyMark
 import com.guesswhosesong.app.ui.theme.GwsPalette
 import com.guesswhosesong.shared.models.AvatarCustomization
+import com.guesswhosesong.shared.models.GameMode
 import com.guesswhosesong.shared.models.Player
 import com.guesswhosesong.shared.models.RoomSettings
 import com.guesswhosesong.shared.models.RoundCountRules
@@ -699,6 +700,29 @@ internal fun LobbySettingsSheet(
                 Text("Room settings", style = MaterialTheme.typography.titleMedium, color = GwsPalette.Ink, fontWeight = FontWeight.Black)
                 Text("Make the round feel like your group.", style = MaterialTheme.typography.bodySmall, color = GwsPalette.Ink.copy(alpha = 0.66f))
 
+                Text("Game mode", style = MaterialTheme.typography.labelLarge, color = GwsPalette.Ink)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FilterChip(
+                        selected = settings.gameMode == GameMode.MANUAL,
+                        onClick = { settings = settings.copy(gameMode = GameMode.MANUAL) },
+                        label = { Text("Manual picks") }
+                    )
+                    FilterChip(
+                        selected = settings.gameMode == GameMode.SPOTIFY_RECENT,
+                        onClick = { settings = settings.copy(gameMode = GameMode.SPOTIFY_RECENT) },
+                        label = { Text("Recently Played") }
+                    )
+                }
+                Text(
+                    if (settings.gameMode == GameMode.SPOTIFY_RECENT) {
+                        "Use unique playable tracks from players’ recent Spotify history."
+                    } else {
+                        "Everyone chooses songs before the game starts."
+                    },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GwsPalette.Ink.copy(alpha = 0.66f)
+                )
+
                 Text("Total rounds", style = MaterialTheme.typography.labelLarge, color = GwsPalette.Ink)
                 RoundCountControl(
                     roundCount = settings.roundCount,
@@ -706,7 +730,11 @@ internal fun LobbySettingsSheet(
                     onRoundCountChange = { settings = settings.copy(roundCount = it) }
                 )
                 Text(
-                    "Choose from ${RoundCountRules.minimumForPlayerCount(currentPlayerCount)} to ${RoundCountRules.MAX_ROUNDS}. Everyone contributes at least one song.",
+                    if (settings.gameMode == GameMode.SPOTIFY_RECENT) {
+                        "Choose from ${RoundCountRules.minimumForPlayerCount(currentPlayerCount)} to ${RoundCountRules.MAX_ROUNDS} rounds."
+                    } else {
+                        "Choose from ${RoundCountRules.minimumForPlayerCount(currentPlayerCount)} to ${RoundCountRules.MAX_ROUNDS}. Everyone contributes at least one song."
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = GwsPalette.Ink.copy(alpha = 0.66f)
                 )

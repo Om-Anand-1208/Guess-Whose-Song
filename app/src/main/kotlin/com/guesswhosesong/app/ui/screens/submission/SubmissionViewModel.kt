@@ -33,6 +33,7 @@ data class SubmissionUiState(
     val totalCount: Int = 0,
     val submissionDeadlineEpochMs: Long = 0L,
     val error: String? = null,
+    val recentPlayedFailure: String? = null,
     val spotifyConnected: Boolean = false
 )
 
@@ -75,15 +76,51 @@ class SubmissionViewModel @Inject constructor(
                 spotifyConnected = isSpotify,
                 maxSongs = maxPicks,
                 pendingSongs = existingSongs,
-                pendingSong = existingSongs.firstOrNull()
+                pendingSong = existingSongs.firstOrNull(),
+                recentPlayedFailure = if (cachedRoom?.state == RoomState.LOBBY) {
+                    gameRepository.recentPlayedFailure.value
+                } else null
             )
         }
 
         observeMessages()
-        loadPopularSuggestions()
+        observeCachedRoom()
+        viewModelScope.launch {
+            gameRepository.recentPlayedFailure.collect { failure ->
+                _uiState.update {
+                    it.copy(
+                        recentPlayedFailure = failure,
+                        error = failure ?: it.error
+                    )
+                }
+            }
+        }
+        if (cachedRoom?.settings?.gameMode != GameMode.SPOTIFY_RECENT) {
+            loadPopularSuggestions()
+        }
         observeSearchQuery()
-        if (isSpotify) {
+        if (isSpotify && cachedRoom.settings.gameMode != GameMode.SPOTIFY_RECENT) {
             loadSpotifySuggestions()
+        }
+    }
+
+    private fun observeCachedRoom() {
+        viewModelScope.launch {
+            gameRepository.currentRoom.collect { room ->
+                if (room == null) return@collect
+                val selfId = _uiState.value.selfPlayerId.ifBlank { gameRepository.selfPlayerId.value }
+                val isSpotify = room.players.find { it.id == selfId }?.spotifyConnected == true
+                val maxPicks = RoundCountRules.maxSongsPerPlayer(room.settings.roundCount, room.players.size)
+                _uiState.update {
+                    it.copy(
+                        room = room,
+                        selfPlayerId = selfId,
+                        totalCount = room.players.size,
+                        spotifyConnected = isSpotify,
+                        maxSongs = maxPicks
+                    )
+                }
+            }
         }
     }
 
@@ -107,7 +144,9 @@ class SubmissionViewModel @Inject constructor(
                                 maxSongs = maxPicks
                             )
                         }
-                        if (isSpotify) loadSpotifySuggestions()
+                        if (isSpotify && message.room.settings.gameMode != GameMode.SPOTIFY_RECENT) {
+                            loadSpotifySuggestions()
+                        }
                     }
                     is RoomUpdated -> {
                         val room = message.room
@@ -123,7 +162,9 @@ class SubmissionViewModel @Inject constructor(
                                 maxSongs = maxPicks
                             )
                         }
-                        if (isSpotify && _uiState.value.spotifySuggestions.isEmpty()) {
+                        if (isSpotify && room.settings.gameMode != GameMode.SPOTIFY_RECENT &&
+                            _uiState.value.spotifySuggestions.isEmpty()
+                        ) {
                             loadSpotifySuggestions()
                         }
                         if (room.state == RoomState.PLAYING) {
@@ -136,7 +177,14 @@ class SubmissionViewModel @Inject constructor(
                     is SubmissionProgress -> _uiState.update {
                         it.copy(lockedCount = message.lockedCount, totalCount = message.totalCount)
                     }
-                    is ErrorMessage -> _uiState.update { it.copy(error = message.message) }
+                    is ErrorMessage -> _uiState.update {
+                        it.copy(
+                            error = message.message,
+                            recentPlayedFailure = if (message.code == "RECENT_TRACKS_UNAVAILABLE") {
+                                message.message
+                            } else it.recentPlayedFailure
+                        )
+                    }
                     else -> {}
                 }
             }
@@ -146,7 +194,9 @@ class SubmissionViewModel @Inject constructor(
                 if (connected) {
                     _uiState.update { it.copy(spotifyConnected = true) }
                     gameRepository.refreshSpotify()
-                    loadSpotifySuggestions()
+                    if (_uiState.value.room?.settings?.gameMode != GameMode.SPOTIFY_RECENT) {
+                        loadSpotifySuggestions()
+                    }
                 }
             }
         }

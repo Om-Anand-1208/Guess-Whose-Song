@@ -99,6 +99,31 @@ class ScoreEngineTest {
     }
 
     @Test
+    fun `recent mode self guess earns one point without stacking the submitter bonus`() {
+        val players = listOf(player("p1", "Alice"), player("p2", "Bob"))
+        val votes = mapOf("p1" to "p1", "p2" to "p2")
+        val (results, deltas) = ScoreEngine.computeRoundResults(
+            song("p1"), votes, players, allowSubmitterSelfGuess = true
+        )
+
+        assertTrue(results.find { it.voterId == "p1" }!!.correct)
+        assertEquals(1, deltas.find { it.playerId == "p1" }?.delta)
+        assertNull(deltas.find { it.playerId == "p2" })
+    }
+
+    @Test
+    fun `recent mode submitter keeps hidden bonus when they do not self guess`() {
+        val players = listOf(player("p1", "Alice"), player("p2", "Bob"))
+        val votes = mapOf("p1" to "p2", "p2" to "p2")
+        val (results, deltas) = ScoreEngine.computeRoundResults(
+            song("p1"), votes, players, allowSubmitterSelfGuess = true
+        )
+
+        assertFalse(results.find { it.voterId == "p1" }!!.correct)
+        assertEquals(1, deltas.find { it.playerId == "p1" }?.delta)
+    }
+
+    @Test
     fun `apply deltas updates scores correctly`() {
         val players = listOf(player("p1", "Alice", score = 2), player("p2", "Bob", score = 1))
         val deltas = listOf(ScoreDelta("p2", "Bob", delta = 1, newTotal = 2))

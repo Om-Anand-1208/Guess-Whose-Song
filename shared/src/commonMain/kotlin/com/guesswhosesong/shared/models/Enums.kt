@@ -12,6 +12,12 @@ enum class RoomState {
 }
 
 @Serializable
+enum class GameMode {
+    MANUAL,
+    SPOTIFY_RECENT
+}
+
+@Serializable
 enum class RoundPhase {
     PLAYING_PREVIEW,
     VOTING,

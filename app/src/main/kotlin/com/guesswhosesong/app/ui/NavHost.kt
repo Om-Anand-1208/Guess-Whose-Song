@@ -1,6 +1,8 @@
 package com.guesswhosesong.app.ui
 
+import android.widget.Toast
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalContext
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -83,10 +85,17 @@ fun GWSNavHost() {
         }
 
         composable(Routes.SUBMISSION) {
+            val context = LocalContext.current
             SubmissionScreen(
                 onNavigateToGame = {
                     navController.navigate(Routes.GAME) {
                         popUpTo(Routes.SUBMISSION) { inclusive = true }
+                    }
+                },
+                onReturnToLobby = { joinCode, displayName, avatarCustomization, explanation ->
+                    Toast.makeText(context, explanation, Toast.LENGTH_LONG).show()
+                    navController.navigate(Routes.lobby(joinCode, displayName, avatarCustomization)) {
+                        popUpTo(0) { inclusive = true }
                     }
                 }
             )

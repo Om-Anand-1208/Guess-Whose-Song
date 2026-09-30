@@ -82,7 +82,9 @@ data class RoundPreviewStarted(
 data class VotingStarted(
     val roundIndex: Int,
     val players: List<Player>, // full list, anonymized (no pendingSong)
-    val votingDeadlineEpochMillis: Long
+    val votingDeadlineEpochMillis: Long,
+    /** Empty in manual mode, otherwise the player IDs that own songs in this pool. */
+    val eligibleOwnerIds: List<String> = emptyList()
 ) : ServerMessage()
 
 /** Live counter: how many have voted (no actual vote data leaked) */

@@ -90,6 +90,7 @@ import com.guesswhosesong.shared.models.RoomSettings
 import com.guesswhosesong.shared.models.AvatarCustomization
 import com.guesswhosesong.shared.models.AvatarCustomizationCatalog
 import com.guesswhosesong.shared.models.GameConstants
+import com.guesswhosesong.shared.models.GameMode
 import com.guesswhosesong.shared.models.RoundCountRules
 import com.guesswhosesong.web.generated.resources.Res
 import com.guesswhosesong.web.generated.resources.google_g_logo
@@ -1139,7 +1140,12 @@ private fun LobbyPage(store: WebGameStore, state: WebUiState, onSettings: () -> 
                 }
                 if (isHost) {
                     val enoughRounds = RoundCountRules.isValid(room.settings.roundCount, room.players.size)
-                    GamePanel("Ready to start?", "Song selection opens for everyone when the host starts the game.") {
+                    val startDescription = if (room.settings.gameMode == GameMode.SPOTIFY_RECENT) {
+                        "The room will build a pool from unique playable recent Spotify tracks."
+                    } else {
+                        "Song selection opens for everyone when the host starts the game."
+                    }
+                    GamePanel("Ready to start?", startDescription) {
                         Button(onClick = store::startGame, enabled = room.players.size >= 2 && enoughRounds, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                             Text("Start game", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         }
@@ -1181,6 +1187,26 @@ private fun LobbySettings(store: WebGameStore, settings: RoomSettings, playerCou
     var selectedRounds by remember(settings.roundCount) { mutableStateOf(settings.roundCount) }
     val effectiveSettings = settings.copy(roundCount = selectedRounds)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        SettingChoices(
+            title = "Game mode",
+            choices = listOf("Manual picks", "Recently Played"),
+            selectedValue = if (settings.gameMode == GameMode.SPOTIFY_RECENT) "Recently Played" else "Manual picks"
+        ) { selected ->
+            store.updateSettings(
+                effectiveSettings.copy(
+                    gameMode = if (selected == "Recently Played") GameMode.SPOTIFY_RECENT else GameMode.MANUAL
+                )
+            )
+        }
+        Text(
+            if (settings.gameMode == GameMode.SPOTIFY_RECENT) {
+                "Use unique playable tracks from players’ recent Spotify history."
+            } else {
+                "Everyone chooses songs before the game starts."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         Text("Total rounds", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             TextButton(
@@ -1201,7 +1227,15 @@ private fun LobbySettings(store: WebGameStore, settings: RoomSettings, playerCou
                 modifier = Modifier.semantics { contentDescription = "Increase rounds" }
             ) { Text("+", fontSize = 20.sp, fontWeight = FontWeight.Black) }
         }
-        Text("Choose from $minimumRounds to ${RoundCountRules.MAX_ROUNDS}. Everyone contributes at least one song.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(
+            if (settings.gameMode == GameMode.SPOTIFY_RECENT) {
+                "Choose from $minimumRounds to ${RoundCountRules.MAX_ROUNDS} rounds."
+            } else {
+                "Choose from $minimumRounds to ${RoundCountRules.MAX_ROUNDS}. Everyone contributes at least one song."
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
         SettingChoices("Player limit", listOf("2", "4", "6", "10", "20"), effectiveSettings.playerLimit.toString()) { selected ->
             store.updateSettings(effectiveSettings.copy(playerLimit = selected.toInt()))
         }
@@ -1567,6 +1601,19 @@ private fun SpotifyControls(store: WebGameStore, state: WebUiState) {
 private fun SubmissionPage(store: WebGameStore, state: WebUiState) {
     val now = rememberClockNow()
     val room = state.room
+    if (room?.settings?.gameMode == GameMode.SPOTIFY_RECENT) {
+        PostJoinFrame(
+            title = "Building the song pool",
+            kicker = "RECENTLY PLAYED",
+            description = "Checking for unique playable tracks from players’ recent Spotify history.",
+            state = state
+        ) { _ ->
+            GamePanel("Gathering recent tracks", "Players without eligible tracks can still vote.") {
+                CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
+            }
+        }
+        return
+    }
     val maxSongs = room?.let { RoundCountRules.maxSongsPerPlayer(it.settings.roundCount, it.players.size) } ?: 1
     val selfPlayer = state.room?.players?.firstOrNull { it.id == state.selfPlayerId }
     val locked = selfPlayer?.songLocked == true
@@ -1887,10 +1934,20 @@ private fun VoteStage(
     }
     val totalVotes = state.totalVotes.takeIf { it > 0 } ?: voting.players.count { it.connected }
     val secondsLeft = secondsRemaining(voting.votingDeadlineEpochMillis, now)
-    val choices = voting.players.map { VoteChoice(it.id, it.displayName, it.avatarId, it.avatarCustomization, isSelf = it.id == state.selfPlayerId) } +
-        VoteChoice(GameConstants.DECOY_ID, "Nobody / Decoy", "cloud", isDecoy = true)
+    val recentMode = state.room?.settings?.gameMode == GameMode.SPOTIFY_RECENT
+    val eligibleOwnerIds = voting.eligibleOwnerIds.toSet()
+    val eligiblePlayers = if (recentMode) {
+        voting.players.filter { it.id in eligibleOwnerIds }
+    } else {
+        voting.players
+    }
+    val choices = eligiblePlayers.map { VoteChoice(it.id, it.displayName, it.avatarId, it.avatarCustomization, isSelf = it.id == state.selfPlayerId) } +
+        if (recentMode) emptyList() else listOf(VoteChoice(GameConstants.DECOY_ID, "Nobody / Decoy", "cloud", isDecoy = true))
     val optionRows = if (wide) choices.chunked(2) else choices.map { listOf(it) }
-    GamePanel("Who submitted this song?", "Choose the player you think picked the track.") {
+    GamePanel(
+        "Who submitted this song?",
+        if (recentMode) "Choose whose recent listening history this track came from." else "Choose the player you think picked the track."
+    ) {
         preview?.let { VoteTrackSummary(it, wide) }
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(16.dp)) {
@@ -1906,7 +1963,7 @@ private fun VoteStage(
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
                 row.forEach { choice ->
                     val selected = choice.id == selectedVoteId
-                    val enabled = !submitted && !choice.isSelf && secondsLeft > 0
+                    val enabled = !submitted && (recentMode || !choice.isSelf) && secondsLeft > 0
                     Surface(
                         modifier = Modifier.weight(1f).heightIn(min = 88.dp)
                             .clickable(enabled = enabled) { selectedVoteId = choice.id },
@@ -1928,6 +1985,8 @@ private fun VoteStage(
                                 Text(choice.name, fontWeight = FontWeight.Bold)
                                 Text(
                                     when {
+                                        choice.isSelf && recentMode && selected -> "You · selected"
+                                        choice.isSelf && recentMode -> "You · select yourself"
                                         choice.isSelf -> "You · choose someone else"
                                         choice.isDecoy -> "The song belongs to nobody here"
                                         selected -> "Selected"

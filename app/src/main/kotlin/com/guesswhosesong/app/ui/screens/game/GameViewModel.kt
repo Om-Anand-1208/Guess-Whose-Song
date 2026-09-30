@@ -19,6 +19,7 @@ data class GameUiState(
     val albumArtUrl: String = "",
     val previewUrl: String = "",
     val players: List<Player> = emptyList(),
+    val eligibleOwnerIds: List<String> = emptyList(),
     val selfPlayerId: String = "",
     val votedPlayerId: String? = null,
     val votedCount: Int = 0,
@@ -73,8 +74,9 @@ class GameViewModel @Inject constructor(
                 albumArtUrl = cachedPreview?.albumArtUrl ?: "",
                 previewUrl = cachedPreview?.previewUrl ?: "",
                 players = cachedVoting?.players ?: cachedRoom?.players ?: emptyList(),
+                eligibleOwnerIds = cachedVoting?.eligibleOwnerIds ?: emptyList(),
                 votingDeadlineEpochMs = cachedVoting?.votingDeadlineEpochMillis ?: 0L,
-                totalVoters = cachedVoting?.players?.size ?: 0,
+                totalVoters = cachedVoting?.players?.count { it.connected } ?: 0,
                 revealData = cachedReveal,
                 isSelfSong = isSelfSong
             )
@@ -116,8 +118,9 @@ class GameViewModel @Inject constructor(
                         it.copy(
                             roundPhase = RoundPhase.VOTING,
                             players = message.players,
+                            eligibleOwnerIds = message.eligibleOwnerIds,
                             votingDeadlineEpochMs = message.votingDeadlineEpochMillis,
-                            totalVoters = message.players.size
+                            totalVoters = message.players.count { it.connected }
                         )
                     }
 

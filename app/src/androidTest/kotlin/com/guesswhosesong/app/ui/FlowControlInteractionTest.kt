@@ -23,6 +23,7 @@ import com.guesswhosesong.app.ui.screens.submission.SpotifyConnectCard
 import com.guesswhosesong.app.ui.screens.submission.TrackListItem
 import com.guesswhosesong.shared.models.AvatarCustomization
 import com.guesswhosesong.shared.models.ChatMessage
+import com.guesswhosesong.shared.models.GameMode
 import com.guesswhosesong.shared.models.Player
 import com.guesswhosesong.shared.models.RoomSettings
 import com.guesswhosesong.shared.models.SongEntry
@@ -74,6 +75,7 @@ class FlowControlInteractionTest {
         listOf("10s", "15s", "20s", "30s").forEach { choice ->
             composeRule.onNodeWithText(choice).performClick()
         }
+        composeRule.onNodeWithText("Recently Played").performClick()
         composeRule.onNodeWithText("Save changes").performClick()
 
         composeRule.runOnIdle {
@@ -83,6 +85,7 @@ class FlowControlInteractionTest {
             assertEquals("lime", fake.savedAvatar?.shapeId)
             assertEquals(11, fake.savedSettings?.roundCount)
             assertEquals(30, fake.savedSettings?.votingTimerSeconds)
+            assertEquals(GameMode.SPOTIFY_RECENT, fake.savedSettings?.gameMode)
         }
     }
 
@@ -216,6 +219,34 @@ class FlowControlInteractionTest {
             assertEquals(0, fake.selectedTracks)
             assertEquals(null, fake.vote)
         }
+    }
+
+    @Test
+    fun recentlyPlayedVotingShowsOnlyEligibleOwnersAndAllowsSelfVote() {
+        val fake = FakeFlowActions()
+        composeRule.setContent {
+            MaterialTheme {
+                VotingSection(
+                    players = listOf(Player(id = "p1", displayName = "Alice"), Player(id = "p2", displayName = "Bob")),
+                    eligibleOwnerIds = listOf("p1"),
+                    selfPlayerId = "p1",
+                    votedPlayerId = null,
+                    votedCount = 0,
+                    totalCount = 2,
+                    deadlineMs = System.currentTimeMillis() + 30_000L,
+                    allowSelfVote = true,
+                    onConfirmVote = { fake.vote = it }
+                )
+            }
+        }
+
+        composeRule.onNodeWithText("0/2 voted", substring = true).assertExists()
+        composeRule.onNodeWithText("Bob").assertDoesNotExist()
+        composeRule.onNodeWithText("Nobody / Decoy").assertDoesNotExist()
+        composeRule.onNodeWithText("Alice").performClick()
+        composeRule.onNodeWithText("Vote for Alice").performClick()
+
+        composeRule.runOnIdle { assertEquals("p1", fake.vote) }
     }
 
     @Test

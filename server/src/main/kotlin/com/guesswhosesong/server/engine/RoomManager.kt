@@ -4,6 +4,7 @@ import com.guesswhosesong.server.redis.RedisClient
 import com.guesswhosesong.server.redis.RoomRepository
 import com.guesswhosesong.server.music.MusicService
 import com.guesswhosesong.shared.models.*
+import com.guesswhosesong.server.spotify.SpotifyClient
 import org.slf4j.LoggerFactory
 import java.security.SecureRandom
 import java.util.concurrent.ConcurrentHashMap
@@ -14,7 +15,8 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class RoomManager(
     val redisClient: RedisClient,
-    val musicService: MusicService = MusicService()
+    val musicService: MusicService = MusicService(),
+    private val spotifyClient: SpotifyClient = SpotifyClient()
 ) {
 
     private val logger = LoggerFactory.getLogger(RoomManager::class.java)
@@ -53,7 +55,7 @@ class RoomManager(
                 )
             )
         )
-        val session = RoomSession(room, redisClient, ::deleteRoom, musicService)
+        val session = RoomSession(room, redisClient, ::deleteRoom, musicService, spotifyClient)
         sessions[joinCode] = session
         repository.save(room)
         logger.info("Room created: $joinCode")
@@ -79,7 +81,7 @@ class RoomManager(
 
     private fun rehydrateFromRedis(joinCode: String): RoomSession? {
         val room = repository.load(joinCode) ?: return null
-        val session = RoomSession(room, redisClient, ::deleteRoom, musicService)
+        val session = RoomSession(room, redisClient, ::deleteRoom, musicService, spotifyClient)
         val active = sessions.putIfAbsent(joinCode, session) ?: session
         if (active === session) active.resumeAfterRestart()
         logger.info("Rehydrated room from Redis: $joinCode")

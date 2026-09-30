@@ -18,7 +18,8 @@ object ScoreEngine {
     fun computeRoundResults(
         songEntry: SongEntry,
         votes: Map<String, String>,
-        players: List<Player>
+        players: List<Player>,
+        allowSubmitterSelfGuess: Boolean = false
     ): Pair<List<VoteResult>, List<ScoreDelta>> {
         val playerById = players.associateBy { it.id }
         val isDecoySong = songEntry.submitterId == DECOY_ID
@@ -32,12 +33,9 @@ object ScoreEngine {
             }
 
             val isSubmitter = (voter.id == songEntry.submitterId)
-            // Submitter can never score by voting on their own song
-            val isCorrect = if (isSubmitter) {
-                false
-            } else {
-                guessedId == songEntry.submitterId
-            }
+            // Self-guessing is correct only in Recently Played mode.
+            val isCorrect = guessedId == songEntry.submitterId &&
+                (!isSubmitter || allowSubmitterSelfGuess)
 
             VoteResult(
                 voterId = voter.id,
@@ -50,7 +48,7 @@ object ScoreEngine {
 
         val scoreDeltas = mutableListOf<ScoreDelta>()
 
-        // 2. Award 1 point to each correct guesser (who isn't the submitter)
+        // 2. Award 1 point to each correct guesser, including an allowed self-guess.
         voteResults
             .filter { it.correct }
             .forEach { result ->
@@ -65,13 +63,15 @@ object ScoreEngine {
                 )
             }
 
-        // 3. Submitter bonus: 1 point if it's a real player's song and NO ONE else guessed them!
+        // 3. Submitter bonus: 1 point if it's a real player's song and no other player guessed them.
         if (!isDecoySong) {
             val submitterPlayer = playerById[songEntry.submitterId]
             if (submitterPlayer != null) {
                 val otherPlayers = players.filter { it.id != songEntry.submitterId }
                 val othersGuessedSubmitter = otherPlayers.count { votes[it.id] == songEntry.submitterId }
-                if (othersGuessedSubmitter == 0) {
+                val submitterAlreadyEarnedSelfGuessPoint = allowSubmitterSelfGuess &&
+                    voteResults.any { it.voterId == songEntry.submitterId && it.correct }
+                if (othersGuessedSubmitter == 0 && !submitterAlreadyEarnedSelfGuessPoint) {
                     val existingDelta = scoreDeltas.find { it.playerId == submitterPlayer.id }
                     if (existingDelta != null) {
                         scoreDeltas.remove(existingDelta)

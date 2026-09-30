@@ -15,6 +15,7 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
+import kotlinx.coroutines.CancellationException
 
 private val spotifyJson = Json { ignoreUnknownKeys = true; isLenient = true }
 
@@ -45,6 +46,7 @@ private data class SpotifyPlaylistTrackItem(
 
 @Serializable
 private data class SpotifyTrackItem(
+    val id: String? = null,
     val name: String = "",
     val artists: List<SpotifyArtistItem> = emptyList(),
     val album: SpotifyAlbumItem = SpotifyAlbumItem()
@@ -65,7 +67,8 @@ private fun SpotifyTrackItem.toSuggestion(category: SpotifyCategory) = SpotifySu
     title = name,
     artist = artists.firstOrNull()?.name ?: "",
     albumArtUrl = album.images.firstOrNull()?.url ?: "",
-    category = category
+    category = category,
+    spotifyTrackId = id
 )
 
 /**
@@ -105,6 +108,8 @@ class SpotifyClient {
         } catch (e: ClientRequestException) {
             if (e.response.status == HttpStatusCode.Unauthorized) throw UnauthorizedException()
             emptyList()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) { emptyList() }
     }
 

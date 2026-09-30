@@ -47,6 +47,7 @@ import com.guesswhosesong.app.ui.theme.GwsPalette
 import com.guesswhosesong.shared.dto.RoundRevealed
 import com.guesswhosesong.shared.models.ChatMessage
 import com.guesswhosesong.shared.models.GameConstants
+import com.guesswhosesong.shared.models.GameMode
 import com.guesswhosesong.shared.models.Player
 import com.guesswhosesong.shared.models.RoundPhase
 
@@ -169,12 +170,14 @@ fun GameScreen(
                 )
                 VotingSection(
                     players = uiState.players,
+                    eligibleOwnerIds = uiState.eligibleOwnerIds,
                     selfPlayerId = uiState.selfPlayerId,
                     votedPlayerId = uiState.votedPlayerId,
                     votedCount = uiState.votedCount,
                     totalCount = uiState.totalVoters,
                     deadlineMs = uiState.votingDeadlineEpochMs,
-                    isSelfSong = uiState.isSelfSong,
+                    isSelfSong = uiState.isSelfSong && uiState.room?.settings?.gameMode != GameMode.SPOTIFY_RECENT,
+                    allowSelfVote = uiState.room?.settings?.gameMode == GameMode.SPOTIFY_RECENT,
                     onConfirmVote = viewModel::castVote,
                     modifier = Modifier.weight(1f)
                 )
@@ -489,12 +492,14 @@ fun VotingHeader(votedCount: Int, totalCount: Int, deadlineMs: Long) {
 @Composable
 fun VotingSection(
     players: List<Player>,
+    eligibleOwnerIds: List<String> = emptyList(),
     selfPlayerId: String,
     votedPlayerId: String?,
     votedCount: Int,
     totalCount: Int,
     deadlineMs: Long,
     isSelfSong: Boolean = false,
+    allowSelfVote: Boolean = false,
     onConfirmVote: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -524,9 +529,13 @@ fun VotingSection(
         }
         VoteGrid(
             players = players,
+            eligibleOwnerIds = eligibleOwnerIds,
+            filterEligibleOwners = allowSelfVote,
             selfPlayerId = selfPlayerId,
             selectedPlayerId = targetPlayerId,
             enabled = !hasVoted,
+            allowSelfVote = allowSelfVote,
+            showDecoy = !allowSelfVote,
             onSelect = { candidateId -> if (!hasVoted) selectedCandidateId = candidateId },
             modifier = Modifier.weight(1f)
         )
@@ -564,39 +573,55 @@ fun VotingSection(
 @Composable
 fun VoteGrid(
     players: List<Player>,
+    eligibleOwnerIds: List<String> = emptyList(),
+    filterEligibleOwners: Boolean = false,
     selfPlayerId: String,
     selectedPlayerId: String?,
     enabled: Boolean,
     onSelect: (String) -> Unit,
+    allowSelfVote: Boolean = false,
+    showDecoy: Boolean = true,
     modifier: Modifier = Modifier
 ) {
+    val choices = if (filterEligibleOwners) players.filter { it.id in eligibleOwnerIds }
+    else if (eligibleOwnerIds.isEmpty()) players else players.filter { it.id in eligibleOwnerIds }
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         modifier = modifier.padding(horizontal = 14.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(9.dp),
         verticalArrangement = Arrangement.spacedBy(9.dp)
     ) {
-        items(players) { player ->
+        items(choices) { player ->
             PlayerVoteCard(
                 player = player,
                 isSelf = player.id == selfPlayerId,
                 isSelected = player.id == selectedPlayerId,
                 enabled = enabled,
+                allowSelfVote = allowSelfVote,
                 onClick = { onSelect(player.id) }
             )
         }
-        item {
-            DecoyVoteCard(
-                isSelected = selectedPlayerId == GameConstants.DECOY_ID,
-                enabled = enabled,
-                onClick = { onSelect(GameConstants.DECOY_ID) }
-            )
+        if (showDecoy) {
+            item {
+                DecoyVoteCard(
+                    isSelected = selectedPlayerId == GameConstants.DECOY_ID,
+                    enabled = enabled,
+                    onClick = { onSelect(GameConstants.DECOY_ID) }
+                )
+            }
         }
     }
 }
 
 @Composable
-fun PlayerVoteCard(player: Player, isSelf: Boolean, isSelected: Boolean, enabled: Boolean, onClick: () -> Unit) {
+fun PlayerVoteCard(
+    player: Player,
+    isSelf: Boolean,
+    isSelected: Boolean,
+    enabled: Boolean,
+    allowSelfVote: Boolean = false,
+    onClick: () -> Unit
+) {
     val borderColor = if (isSelected) GwsPalette.LavenderDeep else GwsPalette.Ink.copy(alpha = 0.09f)
     val background = when {
         isSelected -> GwsPalette.Lavender.copy(alpha = 0.3f)
@@ -609,7 +634,7 @@ fun PlayerVoteCard(player: Player, isSelf: Boolean, isSelected: Boolean, enabled
             .height(112.dp)
             .border(if (isSelected) 2.dp else 1.dp, borderColor, RoundedCornerShape(18.dp))
             .clip(RoundedCornerShape(18.dp))
-            .clickable(enabled = enabled && !isSelf, onClick = onClick),
+            .clickable(enabled = enabled && (!isSelf || allowSelfVote), onClick = onClick),
         color = background,
         shape = RoundedCornerShape(18.dp)
     ) {

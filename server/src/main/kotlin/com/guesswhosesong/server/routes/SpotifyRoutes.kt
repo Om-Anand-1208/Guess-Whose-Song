@@ -25,18 +25,17 @@ private const val OAUTH_TTL_SECONDS = 600L
 private const val ANDROID_CLIENT = "android"
 private const val WEB_CLIENT = "web"
 private val spotifyOAuth = SpotifyOAuth()
-private val spotifyClient = SpotifyClient()
 private val secureRandom = SecureRandom()
 
 fun closeSpotifyResources() {
-    spotifyClient.close()
     spotifyOAuth.close()
 }
 
 fun Route.spotifyRoutes(
     redis: RedisClient,
     tokenVerifier: FirebaseTokenVerifier,
-    musicService: MusicService
+    musicService: MusicService,
+    spotifyClient: SpotifyClient
 ) {
     val rateLimiter = RateLimiter(redis)
 
