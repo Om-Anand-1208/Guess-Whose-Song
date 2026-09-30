@@ -43,7 +43,6 @@ import androidx.media3.common.Player as Media3Player
 import androidx.media3.exoplayer.ExoPlayer
 import coil.compose.AsyncImage
 import com.guesswhosesong.app.ui.components.EmptyAvatarBadge
-import com.guesswhosesong.app.ui.components.GuessWhoseSongWordmark
 import com.guesswhosesong.app.ui.theme.GwsPalette
 import com.guesswhosesong.shared.dto.RoundRevealed
 import com.guesswhosesong.shared.models.ChatMessage
@@ -161,7 +160,6 @@ fun GameScreen(
                 modifier = Modifier.weight(1f)
             )
             RoundPhase.VOTING -> Column(modifier = Modifier.weight(1f)) {
-                GuessWhoseSongWordmark(Modifier.padding(start = 20.dp, top = 5.dp, bottom = 2.dp))
                 CompactTrackBar(
                     title = uiState.title,
                     artist = uiState.artist,
@@ -233,25 +231,45 @@ fun HeroPreviewScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                GuessWhoseSongWordmark(modifier = Modifier.weight(1f))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(20.dp)) {
                 Text(
                     "ROUND ${roundIndex + 1} OF ${if (totalRounds > 0) totalRounds else "?"}",
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                     style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 0.9.sp,
-                    color = GwsPalette.Ink
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             }
-            Spacer(Modifier.height(10.dp))
-            RoundProgressDots(roundIndex = roundIndex, totalRounds = totalRounds)
+            Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(20.dp)) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(if (isPlaying) GwsPalette.Mint else GwsPalette.Ink.copy(alpha = 0.28f))
+                    )
+                    Spacer(Modifier.width(6.dp))
+                    Text(
+                        if (title.isBlank()) "GET READY" else if (isPlaying) "PREVIEW" else "PAUSED",
+                        style = MaterialTheme.typography.labelSmall,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+            }
         }
 
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .aspectRatio(1f)
+                .size(230.dp)
                 .clip(RoundedCornerShape(24.dp))
                 .background(
                     Brush.linearGradient(
@@ -263,10 +281,13 @@ fun HeroPreviewScreen(
                 AsyncImage(
                     model = albumArtUrl,
                     contentDescription = "Album art",
-                    modifier = Modifier.fillMaxSize()
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
                 )
             } else {
-                AbstractCoverArtwork()
+                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    Text("🎵", fontSize = 64.sp)
+                }
             }
         }
 
@@ -311,23 +332,9 @@ fun HeroPreviewScreen(
                 "Listen closely. Voting starts when this preview ends.",
                 modifier = Modifier.fillMaxWidth(),
                 style = MaterialTheme.typography.bodySmall,
-                color = GwsPalette.Ink.copy(alpha = 0.67f),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center
             )
-        }
-    }
-}
-
-@Composable
-private fun RoundProgressDots(roundIndex: Int, totalRounds: Int) {
-    val dotCount = totalRounds.coerceIn(1, 12)
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-        repeat(dotCount) { index ->
-            Surface(
-                modifier = Modifier.size(if (index == roundIndex) 10.dp else 8.dp),
-                shape = CircleShape,
-                color = if (index == roundIndex) GwsPalette.LavenderDeep else GwsPalette.Ink.copy(alpha = 0.12f)
-            ) { }
         }
     }
 }
@@ -365,29 +372,36 @@ private fun AbstractCoverArtwork() {
 
 @Composable
 fun AudioVisualizerBars(isPlaying: Boolean, modifier: Modifier = Modifier) {
-    val transition = rememberInfiniteTransition(label = "audio_wave")
-    val heights = listOf(0.34f, 0.68f, 0.47f, 0.95f, 0.55f, 0.78f, 0.39f, 0.82f, 0.52f, 0.7f, 0.34f, 0.6f, 0.9f, 0.44f, 0.72f, 0.36f, 0.8f)
+    val transition = rememberInfiniteTransition(label = "audio_bars")
+    val heights = listOf(0.25f, 0.8f, 0.3f, 0.9f, 0.4f)
     Row(
-        modifier = modifier.height(38.dp),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-        verticalAlignment = Alignment.CenterVertically
+        modifier = modifier.height(28.dp),
+        horizontalArrangement = Arrangement.spacedBy(5.dp),
+        verticalAlignment = Alignment.Bottom
     ) {
         heights.forEachIndexed { index, staticHeight ->
             val movingHeight by transition.animateFloat(
-                initialValue = staticHeight * 0.55f,
-                targetValue = staticHeight,
+                initialValue = staticHeight,
+                targetValue = when (index) {
+                    0 -> 1f
+                    1 -> 0.2f
+                    2 -> 0.95f
+                    3 -> 0.35f
+                    else -> 0.85f
+                },
                 animationSpec = infiniteRepeatable(
-                    animation = tween(340 + (index % 5) * 80, easing = FastOutSlowInEasing),
+                    animation = tween(360 + index * 35, easing = FastOutSlowInEasing),
                     repeatMode = RepeatMode.Reverse
                 ),
-                label = "wave_$index"
+                label = "bar_$index"
             )
+            val height = (if (isPlaying) movingHeight else 0.2f).coerceIn(0.15f, 1f)
             Box(
                 modifier = Modifier
-                    .width(4.dp)
-                    .fillMaxHeight(if (isPlaying) movingHeight else 0.16f)
-                    .clip(RoundedCornerShape(50))
-                    .background(GwsPalette.LavenderDeep.copy(alpha = if (isPlaying) 0.88f else 0.35f))
+                    .width(5.dp)
+                    .fillMaxHeight(height)
+                    .clip(RoundedCornerShape(3.dp))
+                    .background(MaterialTheme.colorScheme.primary.copy(alpha = if (isPlaying) 1f else 0.45f))
             )
         }
     }
@@ -689,8 +703,14 @@ fun RevealPanel(
             contentPadding = PaddingValues(horizontal = 19.dp, vertical = 15.dp),
             verticalArrangement = Arrangement.spacedBy(11.dp)
         ) {
-            item(key = "game-wordmark") {
-                GuessWhoseSongWordmark()
+            item(key = "round-number") {
+                Text(
+                    "Round ${currentRoundIndex + 1} of ${totalRounds.coerceAtLeast(1)}",
+                    modifier = Modifier.fillMaxWidth(),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = GwsPalette.Ink.copy(alpha = 0.62f),
+                    textAlign = TextAlign.Center
+                )
             }
             item {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {

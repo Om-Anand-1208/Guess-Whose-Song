@@ -84,15 +84,18 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.ComposeViewport
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
+import coil3.compose.AsyncImage
 import com.guesswhosesong.shared.models.Player
 import com.guesswhosesong.shared.models.RoomSettings
-import com.guesswhosesong.shared.models.AvatarCatalog
 import com.guesswhosesong.shared.models.AvatarCustomization
 import com.guesswhosesong.shared.models.AvatarCustomizationCatalog
 import com.guesswhosesong.shared.models.GameConstants
+import com.guesswhosesong.shared.models.RoundCountRules
 import com.guesswhosesong.web.generated.resources.Res
-import com.guesswhosesong.web.generated.resources.save_player_hero
-import com.guesswhosesong.web.generated.resources.welcome_hero
+import com.guesswhosesong.web.generated.resources.google_g_logo
+import com.guesswhosesong.web.generated.resources.spotify_official_icon
+import com.guesswhosesong.web.generated.resources.welcome_hero_desktop
+import com.guesswhosesong.web.generated.resources.welcome_hero_mobile
 import com.guesswhosesong.web.generated.resources.comfortaa_bold
 import org.jetbrains.compose.resources.Font
 import org.jetbrains.compose.resources.painterResource
@@ -280,26 +283,18 @@ private fun PostJoinFrame(
                     .align(Alignment.CenterHorizontally)
             ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 22.dp, bottom = 26.dp),
+                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Surface(
-                        color = MaterialTheme.colorScheme.primary,
-                        shape = RoundedCornerShape(50),
-                        modifier = Modifier.width(12.dp).height(12.dp)
-                    ) {}
-                    Spacer(Modifier.width(10.dp))
-                    Text(
-                        "GUESS WHOSE SONG",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 1.1.sp
-                    )
-                    Spacer(Modifier.weight(1f))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        Text(kicker.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, letterSpacing = 0.7.sp)
+                        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                        if (description.isNotBlank()) Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                     state.room?.joinCode?.let { code ->
                         Surface(
                             color = MaterialTheme.colorScheme.surface,
-                            shape = RoundedCornerShape(50),
+                            shape = RoundedCornerShape(8.dp),
                             border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                         ) {
                             Row(
@@ -321,9 +316,6 @@ private fun PostJoinFrame(
                         }
                     }
                 }
-                Text(kicker.uppercase(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black, letterSpacing = 1.4.sp)
-                Text(title, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black)
-                Text(description, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp, bottom = 20.dp))
                 state.notice?.let { MessageBanner(it, isError = false) }
                 state.error?.let { MessageBanner(it, isError = true) }
                 content(wide)
@@ -358,15 +350,12 @@ private fun GamePanel(
 ) {
     Card(
         modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(26.dp),
+        shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            }
+        Column(modifier = Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
             content()
         }
     }
@@ -377,24 +366,12 @@ private fun FrontPageFrame(
     state: WebUiState,
     isSavePlayer: Boolean,
     onHeaderAction: () -> Unit,
-    content: @Composable (compact: Boolean) -> Unit
+    wrapContent: Boolean = true,
+    content: @Composable (compact: Boolean, wide: Boolean) -> Unit
 ) {
-    val background = if (isSavePlayer) {
-        Modifier.fillMaxSize()
-    } else {
-        Modifier.fillMaxSize().background(
-            Brush.verticalGradient(
-                colorStops = arrayOf(
-                    0f to Color(0xFFFFFBF2),
-                    0.42f to Color(0xFFFFFBF2),
-                    0.74f to Color(0xFFDDF49B),
-                    1f to Color(0xFFB8E86F)
-                )
-            )
-        )
-    }
-    BoxWithConstraints(background) {
+    BoxWithConstraints(Modifier.fillMaxSize()) {
         // Use the same side-by-side hero composition on landscape tablets and desktop.
+        val availableHeight = maxHeight
         val wide = maxWidth >= 960.dp
         val compactHeader = maxWidth < 380.dp
         val horizontalPadding = when {
@@ -402,71 +379,95 @@ private fun FrontPageFrame(
             maxWidth < 360.dp -> 14.dp
             else -> 18.dp
         }
-        val headline = if (isSavePlayer) {
-            "Make your player.\nMake it yours."
-        } else {
-            "Your friends picked the songs.\nCan you guess who?"
+        if (!isSavePlayer) {
+            Image(
+                painter = painterResource(if (wide) Res.drawable.welcome_hero_desktop else Res.drawable.welcome_hero_mobile),
+                contentDescription = null,
+                contentScale = ContentScale.FillBounds,
+                modifier = Modifier.fillMaxSize()
+            )
         }
-        val headlineSize = when {
-            maxWidth < 360.dp -> 16
-            !wide -> 22
-            maxWidth >= 1320.dp -> 48
-            else -> 40
-        }
-        val artwork = if (isSavePlayer) Res.drawable.save_player_hero else Res.drawable.welcome_hero
-        Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-            Column(
-                modifier = Modifier.fillMaxWidth()
-                    .widthIn(max = 1320.dp)
-                    .padding(horizontal = horizontalPadding, vertical = if (compactHeader) 10.dp else 18.dp)
-                    .align(Alignment.CenterHorizontally),
-                verticalArrangement = Arrangement.spacedBy(if (compactHeader) 12.dp else 18.dp)
-            ) {
-                if (wide) {
-                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                        FrontPageWordmark(wide = true)
-                        Spacer(Modifier.weight(1f))
-                        FrontPageHeaderAction(isSavePlayer, onHeaderAction)
-                    }
-                } else {
+
+        if (!wide && !isSavePlayer) {
+            Box(Modifier.fillMaxSize()) {
+                Column(
+                    modifier = Modifier.align(Alignment.TopCenter)
+                        .fillMaxWidth()
+                        .heightIn(max = (availableHeight * 0.36f).coerceAtLeast(200.dp))
+                        .verticalScroll(rememberScrollState())
+                        .padding(horizontal = horizontalPadding, vertical = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(if (compactHeader) 10.dp else 14.dp)
+                ) {
                     Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         FrontPageWordmark(wide = false, compact = compactHeader)
                         Spacer(Modifier.weight(1f))
+                        FrontPageHeaderAction(isSavePlayer = false, onClick = onHeaderAction)
+                    }
+                    FrontPageTagline(compact = compactHeader, wide = false)
+                    state.notice?.let { MessageBanner(it, isError = false) }
+                    state.error?.let { MessageBanner(it, isError = true) }
+                }
+
+                FrontPageCard(
+                    modifier = Modifier.align(Alignment.BottomCenter)
+                        .fillMaxWidth()
+                        .padding(horizontal = horizontalPadding, vertical = 12.dp),
+                    contentPadding = 16.dp
+                ) {
+                    content(compactHeader, wide)
+                }
+            }
+        } else {
+            Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                Column(
+                    modifier = Modifier.fillMaxWidth()
+                        .widthIn(max = 1320.dp)
+                        .padding(horizontal = horizontalPadding, vertical = if (compactHeader) 10.dp else 18.dp)
+                        .align(Alignment.CenterHorizontally),
+                    verticalArrangement = Arrangement.spacedBy(if (compactHeader) 12.dp else 18.dp)
+                ) {
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        FrontPageWordmark(wide = wide, compact = compactHeader)
+                        Spacer(Modifier.weight(1f))
                         FrontPageHeaderAction(isSavePlayer, onHeaderAction)
                     }
-                }
-                state.notice?.let { notice ->
-                    Box(Modifier.fillMaxWidth()) {
-                        MessageBanner(notice, isError = false)
-                    }
-                }
-                state.error?.let { error ->
-                    Box(Modifier.fillMaxWidth()) {
-                        MessageBanner(error, isError = true)
-                    }
-                }
-                if (wide) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(26.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column(Modifier.weight(1.2f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                            FrontPageCopy(headline, wide = true, headlineSize = headlineSize)
-                            FrontPageArtwork(artwork, isSavePlayer)
+                    if (!isSavePlayer) FrontPageTagline(compact = compactHeader, wide = wide)
+                    state.notice?.let { MessageBanner(it, isError = false) }
+                    state.error?.let { MessageBanner(it, isError = true) }
+                    if (wide) {
+                        if (isSavePlayer) {
+                            if (wrapContent) {
+                                FrontPageCard(
+                                    Modifier.fillMaxWidth().widthIn(max = 960.dp)
+                                        .align(Alignment.CenterHorizontally)
+                                ) { content(compactHeader, wide) }
+                            } else {
+                                content(compactHeader, wide)
+                            }
+                        } else {
+                            Row(
+                                modifier = Modifier.fillMaxWidth()
+                                    .heightIn(min = (availableHeight - 150.dp).coerceAtLeast(420.dp)),
+                                horizontalArrangement = Arrangement.spacedBy(26.dp),
+                                verticalAlignment = Alignment.Top
+                            ) {
+                                Spacer(Modifier.weight(1.2f))
+                                FrontPageCard(
+                                    Modifier.weight(0.8f).align(Alignment.CenterVertically)
+                                ) { content(compactHeader, wide) }
+                            }
                         }
-                        FrontPageCard(Modifier.weight(0.8f)) { content(false) }
-                    }
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(if (compactHeader) 12.dp else 16.dp)) {
-                        Box(Modifier.fillMaxWidth()) {
-                            FrontPageCopy(headline, wide = false, headlineSize = headlineSize)
+                    } else {
+                        if (isSavePlayer && !wrapContent) {
+                            content(compactHeader, wide)
+                        } else {
+                            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                                FrontPageCard(Modifier.fillMaxWidth()) { content(compactHeader, wide) }
+                            }
                         }
-                        FrontPageArtwork(artwork, isSavePlayer)
-                        FrontPageCard(Modifier.fillMaxWidth()) { content(compactHeader) }
                     }
+                    Spacer(Modifier.height(20.dp))
                 }
-                Spacer(Modifier.height(20.dp))
             }
         }
     }
@@ -485,8 +486,8 @@ private fun FrontPageWordmark(wide: Boolean, compact: Boolean = false) {
         else -> 30.sp
     }
     val logoFont = FontFamily(Font(Res.font.comfortaa_bold, FontWeight.Bold))
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compact) 0.dp else 5.dp)) {
-        if (!compact) FrontPageConfetti(left = true, compact = !wide)
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(if (compact) 1.dp else 5.dp)) {
+        FrontPageConfetti(left = true, compact = compact || !wide)
         FrontPageDisplayText(
             "Guess Whose Song",
             fontSize = logoSize,
@@ -497,8 +498,30 @@ private fun FrontPageWordmark(wide: Boolean, compact: Boolean = false) {
             maxLines = 1,
             textAlign = TextAlign.Start
         )
-        if (!compact) FrontPageConfetti(left = false, compact = !wide)
+        FrontPageConfetti(left = false, compact = compact || !wide)
     }
+}
+
+@Composable
+private fun FrontPageTagline(compact: Boolean, wide: Boolean) {
+    val fontSize = when {
+        wide -> 40.sp
+        compact -> 18.sp
+        else -> 24.sp
+    }
+    val lineHeight = when {
+        wide -> 48.sp
+        compact -> 23.sp
+        else -> 30.sp
+    }
+    FrontPageDisplayText(
+        "Your friends picked the songs.\nCan you guess who?",
+        fontSize = fontSize,
+        lineHeight = lineHeight,
+        strokeWidth = if (compact) 0.9.dp else 1.2.dp,
+        maxLines = 2,
+        modifier = Modifier.fillMaxWidth()
+    )
 }
 
 @Composable
@@ -562,42 +585,18 @@ private fun FrontPageHeaderAction(isSavePlayer: Boolean, onClick: () -> Unit, mo
 }
 
 @Composable
-private fun FrontPageCopy(headline: String, wide: Boolean, headlineSize: Int) {
-    FrontPageDisplayText(
-        headline,
-        fontSize = headlineSize.sp,
-        lineHeight = if (wide) (headlineSize + 8).sp else (headlineSize + 5).sp,
-        letterSpacing = (-1.1).sp,
-        modifier = Modifier.fillMaxWidth()
-    )
-}
-
-@Composable
-private fun FrontPageArtwork(artwork: org.jetbrains.compose.resources.DrawableResource, isSavePlayer: Boolean) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().aspectRatio(1.5f),
-        shape = RoundedCornerShape(28.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-        color = Color.Transparent
-    ) {
-        Image(
-            painter = painterResource(artwork),
-            contentDescription = if (isSavePlayer) "Colorful music characters playing together" else "Friends enjoying music together outdoors",
-            contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize()
-        )
-    }
-}
-
-@Composable
-private fun FrontPageCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+private fun FrontPageCard(
+    modifier: Modifier = Modifier,
+    contentPadding: Dp = 22.dp,
+    content: @Composable () -> Unit
+) {
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(28.dp),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
         colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
     ) {
-        Column(modifier = Modifier.fillMaxWidth().padding(22.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(modifier = Modifier.fillMaxWidth().padding(contentPadding), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             content()
         }
     }
@@ -609,7 +608,7 @@ private fun JoinPage(
     state: WebUiState,
     onSettings: () -> Unit
 ) {
-    FrontPageFrame(state, isSavePlayer = false, onHeaderAction = onSettings) { compact ->
+    FrontPageFrame(state, isSavePlayer = false, onHeaderAction = onSettings) { compact, _ ->
         Column(verticalArrangement = Arrangement.spacedBy(if (compact) 8.dp else 14.dp)) {
             Button(
                 onClick = store::createRoom,
@@ -655,292 +654,421 @@ private fun PlayerSettingsPage(
     onBackToGame: () -> Unit
 ) {
     var draftName by remember(state.displayName) { mutableStateOf(state.displayName) }
-    var draftAvatar by remember(state.avatarCustomization) { mutableStateOf(state.avatarCustomization) }
     var nameError by remember { mutableStateOf<String?>(null) }
-    var avatarEditorOpen by remember { mutableStateOf(true) }
+    var characterEditorOpen by remember { mutableStateOf(false) }
     val isGoogleLinked = user?.isAnonymous == false
     val isHost = state.room?.hostId == state.selfPlayerId
 
-    FrontPageFrame(state, isSavePlayer = true, onHeaderAction = onBackToGame) { compact ->
-        Column(verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 14.dp)) {
-            GamePanel("Your player", "Your name and character show up for friends throughout the game.") {
-                OutlinedTextField(
-                    value = draftName,
-                    onValueChange = { draftName = it.take(24); nameError = null },
-                    label = { Text("Display name") },
-                    placeholder = { Text("dashingbuilder") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                nameError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                WebAvatarPicker(
-                    selectedId = draftAvatar.shapeId,
-                    selectedCustomization = draftAvatar,
-                    onSelected = { draftAvatar = AvatarCustomization.defaultsFor(it) }
-                )
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    WebAvatarCharacter(draftAvatar, Modifier.size(58.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text("Character preview", fontWeight = FontWeight.Bold)
-                        Text("Choose a shape, then tune its details.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (characterEditorOpen) {
+        CharacterEditorPage(
+            state = state,
+            status = status,
+            user = user,
+            onLinkGoogle = store::linkGoogle,
+            onBackToSettings = { characterEditorOpen = false },
+            onSaveCharacter = { customization ->
+                store.savePlayerProfile(state.displayName, customization)
+                characterEditorOpen = false
+            }
+        )
+    } else {
+        FrontPageFrame(
+            state,
+            isSavePlayer = true,
+            onHeaderAction = onBackToGame,
+            wrapContent = false
+        ) { compact, wide ->
+            Column(verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 14.dp)) {
+                if (wide) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(18.dp),
+                        verticalAlignment = Alignment.Top
+                    ) {
+                        Box(Modifier.weight(1f)) {
+                            PlayerIdentityPanel(
+                                state = state,
+                                draftName = draftName,
+                                nameError = nameError,
+                                onNameChange = { draftName = it.take(24); nameError = null },
+                                onEditCharacter = { characterEditorOpen = true }
+                            )
+                        }
+                        Box(Modifier.weight(1f)) {
+                            PlayerConnectionsPanel(
+                                status = status,
+                                isGoogleLinked = isGoogleLinked,
+                                spotifyConnected = state.spotifyConnected,
+                                onLinkGoogle = store::linkGoogle,
+                                onRecoverGoogle = store::recoverGoogle,
+                                onConnectSpotify = store::connectSpotify,
+                                onDisconnectSpotify = store::disconnectSpotify,
+                                onRefreshSpotify = store::refreshSpotify
+                            )
+                        }
                     }
-                    TextButton(onClick = { avatarEditorOpen = !avatarEditorOpen }) {
-                        Text(if (avatarEditorOpen) "Hide editor" else "Customize")
-                    }
-                }
-                if (avatarEditorOpen) {
-                    WebAvatarEditor(
-                        customization = draftAvatar,
-                        onChange = { draftAvatar = it },
-                        onRandomize = { draftAvatar = randomAvatarCustomization(draftAvatar.shapeId) },
-                        onReset = { draftAvatar = AvatarCustomization.defaultsFor(draftAvatar.shapeId) },
-                        onCancel = { draftAvatar = state.avatarCustomization; avatarEditorOpen = false },
-                        onSave = { avatarEditorOpen = false }
+                } else {
+                    PlayerIdentityPanel(
+                        state = state,
+                        draftName = draftName,
+                        nameError = nameError,
+                        onNameChange = { draftName = it.take(24); nameError = null },
+                        onEditCharacter = { characterEditorOpen = true }
+                    )
+                    PlayerConnectionsPanel(
+                        status = status,
+                        isGoogleLinked = isGoogleLinked,
+                        spotifyConnected = state.spotifyConnected,
+                        onLinkGoogle = store::linkGoogle,
+                        onRecoverGoogle = store::recoverGoogle,
+                        onConnectSpotify = store::connectSpotify,
+                        onDisconnectSpotify = store::disconnectSpotify,
+                        onRefreshSpotify = store::refreshSpotify
                     )
                 }
-            }
 
-            GamePanel("Connections", "Google and Spotify are optional. Guest play works without linking an account.") {
-                when (status) {
-                    AuthStatus.LOADING -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        CircularProgressIndicator(modifier = Modifier.width(20.dp).height(20.dp), strokeWidth = 2.dp)
-                        Text("Checking Google account…", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    AuthStatus.ERROR -> Text("Google account linking is unavailable. Check Firebase web configuration.", color = MaterialTheme.colorScheme.error)
-                    AuthStatus.READY -> {
-                        OutlinedButton(
-                            onClick = if (isGoogleLinked) ({}) else store::linkGoogle,
-                            enabled = !isGoogleLinked,
-                            modifier = Modifier.fillMaxWidth().height(52.dp)
-                        ) {
-                            GoogleGMark()
-                            Spacer(Modifier.width(10.dp))
-                            Text(if (isGoogleLinked) "Google account linked" else "Link Google account")
-                        }
-                        if (!isGoogleLinked) TextButton(onClick = store::recoverGoogle, modifier = Modifier.fillMaxWidth()) {
-                            Text("Recover an existing Google player")
-                        }
+                if (isHost) {
+                    GamePanel("Room settings") {
+                        LobbySettings(store, state.room.settings, state.room.players.size)
                     }
                 }
-                OutlinedButton(
-                    onClick = if (state.spotifyConnected) store::disconnectSpotify else store::connectSpotify,
-                    modifier = Modifier.fillMaxWidth().height(52.dp),
-                    border = BorderStroke(1.dp, Color(0xFF1DB954))
-                ) {
-                    SpotifyMark()
-                    Spacer(Modifier.width(10.dp))
-                    Text(if (state.spotifyConnected) "Spotify connected · Disconnect" else "Connect Spotify")
-                }
-                TextButton(onClick = store::refreshSpotify, modifier = Modifier.align(Alignment.End)) { Text("Refresh Spotify status") }
-            }
 
-            if (isHost) {
-                GamePanel("Room settings", "Only the host can change these rules.") {
-                    LobbySettings(store, state.room.settings)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(onClick = onBackToGame, modifier = Modifier.weight(1f).height(52.dp)) { Text("Cancel") }
+                    Button(
+                        onClick = {
+                            val cleanName = draftName.trim()
+                            if (cleanName.isBlank() || cleanName.length > 24 || cleanName.any(Char::isISOControl)) {
+                                nameError = "Enter a name with 1 to 24 characters"
+                            } else {
+                                store.savePlayerProfile(cleanName, state.avatarCustomization)
+                                onBackToGame()
+                            }
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF983D), contentColor = Color(0xFF17161A)),
+                        modifier = Modifier.weight(1f).height(52.dp)
+                    ) { Text("Save settings", fontWeight = FontWeight.Black) }
                 }
-            }
-
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                OutlinedButton(onClick = onBackToGame, modifier = Modifier.weight(1f).height(52.dp)) { Text("Cancel") }
-                Button(
-                    onClick = {
-                        val cleanName = draftName.trim()
-                        if (cleanName.isBlank() || cleanName.length > 24 || cleanName.any(Char::isISOControl)) {
-                            nameError = "Enter a name with 1 to 24 characters"
-                        } else {
-                            store.savePlayerProfile(cleanName, draftAvatar)
-                            onBackToGame()
-                        }
-                    },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF983D), contentColor = Color(0xFF17161A)),
-                    modifier = Modifier.weight(1f).height(52.dp)
-                ) { Text("Save settings", fontWeight = FontWeight.Black) }
             }
         }
     }
 }
 
-private fun randomAvatarCustomization(shapeId: String): AvatarCustomization {
-    val defaults = AvatarCustomization.defaultsFor(shapeId)
-    return defaults.copy(
-        colorId = AvatarCustomizationCatalog.colorIds.random(),
-        eyesId = AvatarCustomizationCatalog.eyesIds.random(),
-        mouthId = AvatarCustomizationCatalog.mouthIds.random(),
-        accessoryId = AvatarCustomizationCatalog.accessoryIds.random()
-    )
+@Composable
+private fun PlayerIdentityPanel(
+    state: WebUiState,
+    draftName: String,
+    nameError: String?,
+    onNameChange: (String) -> Unit,
+    onEditCharacter: () -> Unit
+) {
+    GamePanel("Your player") {
+        OutlinedTextField(
+            value = draftName,
+            onValueChange = onNameChange,
+            label = { Text("Display name") },
+            placeholder = { Text("dashingbuilder") },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth()
+        )
+        nameError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            Surface(
+                modifier = Modifier.size(78.dp),
+                shape = RoundedCornerShape(20.dp),
+                color = Color(0xFFFFF8EC),
+                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    WebAvatarCharacter(state.avatarCustomization, Modifier.fillMaxSize().padding(6.dp))
+                }
+            }
+            OutlinedButton(onClick = onEditCharacter, modifier = Modifier.weight(1f).height(52.dp)) {
+                Text("Edit character")
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlayerConnectionsPanel(
+    status: AuthStatus,
+    isGoogleLinked: Boolean,
+    spotifyConnected: Boolean,
+    onLinkGoogle: () -> Unit,
+    onRecoverGoogle: () -> Unit,
+    onConnectSpotify: () -> Unit,
+    onDisconnectSpotify: () -> Unit,
+    onRefreshSpotify: () -> Unit
+) {
+    GamePanel("Connections") {
+        when (status) {
+            AuthStatus.LOADING -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                CircularProgressIndicator(modifier = Modifier.width(20.dp).height(20.dp), strokeWidth = 2.dp)
+                Text("Checking Google account…", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            AuthStatus.ERROR -> Text("Google account linking is unavailable. Check Firebase web configuration.", color = MaterialTheme.colorScheme.error)
+            AuthStatus.READY -> {
+                OutlinedButton(
+                    onClick = if (isGoogleLinked) ({}) else onLinkGoogle,
+                    enabled = !isGoogleLinked,
+                    colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White),
+                    modifier = Modifier.fillMaxWidth().height(52.dp)
+                ) {
+                    GoogleGMark()
+                    Spacer(Modifier.width(10.dp))
+                    Text(if (isGoogleLinked) "Google account linked" else "Link Google account")
+                }
+                if (!isGoogleLinked) TextButton(onClick = onRecoverGoogle, modifier = Modifier.fillMaxWidth()) {
+                    Text("Recover an existing Google player")
+                }
+            }
+        }
+        OutlinedButton(
+            onClick = if (spotifyConnected) onDisconnectSpotify else onConnectSpotify,
+            modifier = Modifier.fillMaxWidth().height(52.dp),
+            border = BorderStroke(1.dp, Color(0xFF1DB954))
+        ) {
+            SpotifyMark()
+            Spacer(Modifier.width(12.dp))
+            Text(if (spotifyConnected) "Spotify connected · Disconnect" else "Connect Spotify")
+        }
+        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.CenterEnd) {
+            TextButton(onClick = onRefreshSpotify) { Text("Refresh Spotify status") }
+        }
+    }
 }
 
 @Composable
 private fun GoogleGMark() {
-    Canvas(modifier = Modifier.size(24.dp).semantics { contentDescription = "Google" }) {
-        val strokeWidth = 3.5.dp.toPx()
-        val diameter = size.minDimension - strokeWidth
-        val topLeft = Offset((size.width - diameter) / 2f, (size.height - diameter) / 2f)
-        val arcSize = Size(diameter, diameter)
-        val ringStroke = Stroke(width = strokeWidth, cap = StrokeCap.Butt)
-        drawArc(
-            color = Color(0xFF4285F4), startAngle = -43f, sweepAngle = 86f, useCenter = false,
-            topLeft = topLeft, size = arcSize, style = ringStroke
-        )
-        drawArc(
-            color = Color(0xFF34A853), startAngle = 47f, sweepAngle = 86f, useCenter = false,
-            topLeft = topLeft, size = arcSize, style = ringStroke
-        )
-        drawArc(
-            color = Color(0xFFFBBC05), startAngle = 137f, sweepAngle = 86f, useCenter = false,
-            topLeft = topLeft, size = arcSize, style = ringStroke
-        )
-        drawArc(
-            color = Color(0xFFEA4335), startAngle = 227f, sweepAngle = 86f, useCenter = false,
-            topLeft = topLeft, size = arcSize, style = ringStroke
-        )
-        drawLine(
-            color = Color(0xFF4285F4),
-            start = Offset(size.width / 2f, size.height / 2f),
-            end = Offset(size.width - strokeWidth / 2f, size.height / 2f),
-            strokeWidth = strokeWidth,
-            cap = StrokeCap.Butt
-        )
-    }
+    Image(
+        painter = painterResource(Res.drawable.google_g_logo),
+        contentDescription = null,
+        contentScale = ContentScale.Fit,
+        modifier = Modifier.size(20.dp)
+    )
 }
 
 @Composable
 private fun SpotifyMark() {
-    Canvas(modifier = Modifier.size(24.dp).semantics { contentDescription = "Spotify" }) {
-        val diameter = size.minDimension
-        val center = Offset(size.width / 2f, size.height / 2f)
-        drawCircle(Color(0xFF1DB954), radius = diameter / 2f, center = center)
-        val stroke = diameter * 0.075f
-        listOf(
-            Triple(0.27f, 0.39f, 0.74f),
-            Triple(0.31f, 0.51f, 0.68f),
-            Triple(0.36f, 0.63f, 0.58f)
-        ).forEach { (left, y, right) ->
-            val wave = Path().apply {
-                moveTo(size.width * left, size.height * y)
-                quadraticTo(size.width * 0.52f, size.height * (y - 0.10f), size.width * right, size.height * y)
-            }
-            drawPath(wave, Color(0xFF101010), style = Stroke(width = stroke, cap = StrokeCap.Round))
-        }
-    }
+    Image(
+        painter = painterResource(Res.drawable.spotify_official_icon),
+        contentDescription = null,
+        contentScale = ContentScale.Fit,
+        modifier = Modifier.size(24.dp)
+    )
+}
+
+private enum class AvatarEditorPart(val title: String) {
+    SHAPE("Shape"), COLOR("Color"), EYES("Eyes"), MOUTH("Mouth"), ACCESSORY("Accessory")
 }
 
 @Composable
-private fun WebAvatarPicker(
-    selectedId: String,
-    selectedCustomization: AvatarCustomization,
-    onSelected: (String) -> Unit
+private fun CharacterEditorPage(
+    state: WebUiState,
+    status: AuthStatus,
+    user: WebUser?,
+    onLinkGoogle: () -> Unit,
+    onBackToSettings: () -> Unit,
+    onSaveCharacter: (AvatarCustomization) -> Unit
 ) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        AvatarCatalog.ids.chunked(4).forEach { rowIds ->
-            Row(modifier = Modifier.fillMaxWidth()) {
-                rowIds.forEach { id ->
-                    val isSelected = id == selectedId
-                    Column(
-                        modifier = Modifier.weight(1f).height(62.dp)
-                            .clickable { onSelected(id) }
-                            .semantics {
-                                contentDescription = "${id.avatarShapeLabel()} character${if (isSelected) ", selected" else ""}"
-                                role = Role.RadioButton
-                                selected = isSelected
-                            },
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(1.dp)
-                    ) {
-                        Box(
-                            modifier = Modifier.size(42.dp)
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(Color(0xFFFFF8EC))
-                                .border(if (isSelected) 2.dp else 1.dp, if (isSelected) Color(0xFF17161A) else Color(0xFFCFC6B9), RoundedCornerShape(14.dp)),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            WebAvatarCharacter(
-                                if (isSelected) selectedCustomization else AvatarCustomization.defaultsFor(id),
-                                modifier = Modifier.fillMaxSize().padding(2.dp)
-                            )
-                        }
-                        Text(id.avatarShapeLabel(), fontSize = 9.sp, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium, maxLines = 1)
+    var customization by remember(state.avatarCustomization) { mutableStateOf(state.avatarCustomization) }
+    var selectedPart by remember { mutableStateOf(AvatarEditorPart.SHAPE) }
+    val isGoogleLinked = user?.isAnonymous == false
+
+    FrontPageFrame(state, isSavePlayer = true, onHeaderAction = onBackToSettings) { _, _ ->
+        if (isGoogleLinked) {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("Character editor", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+                Surface(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 142.dp, max = 190.dp),
+                    color = Color.White,
+                    shape = RoundedCornerShape(22.dp),
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        WebAvatarCharacter(customization, Modifier.size(142.dp).padding(8.dp))
                     }
                 }
-                repeat(4 - rowIds.size) {
-                    Spacer(modifier = Modifier.weight(1f).height(62.dp))
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun WebAvatarEditor(
-    customization: AvatarCustomization,
-    onChange: (AvatarCustomization) -> Unit,
-    onRandomize: () -> Unit,
-    onReset: () -> Unit,
-    onCancel: () -> Unit,
-    onSave: () -> Unit
-) {
-    Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = Color(0xFFFFF8EC),
-        shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-    ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(11.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                WebAvatarCharacter(customization, Modifier.size(68.dp))
-                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                    Text("Your character", fontWeight = FontWeight.Black)
-                    Text("Mix a shape, color, expression, and accessory.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                TextButton(onClick = onRandomize) { Text("Randomize") }
-            }
-            CustomizationOptionRow("Color", AvatarCustomizationCatalog.colorIds, customization.colorId) {
-                onChange(customization.copy(colorId = it))
-            }
-            CustomizationOptionRow("Eyes", AvatarCustomizationCatalog.eyesIds, customization.eyesId) {
-                onChange(customization.copy(eyesId = it))
-            }
-            CustomizationOptionRow("Mouth", AvatarCustomizationCatalog.mouthIds, customization.mouthId) {
-                onChange(customization.copy(mouthId = it))
-            }
-            CustomizationOptionRow("Accessory", AvatarCustomizationCatalog.accessoryIds, customization.accessoryId) {
-                onChange(customization.copy(accessoryId = it))
-            }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onReset, modifier = Modifier.weight(1f)) { Text("Reset") }
-                OutlinedButton(onClick = onCancel, modifier = Modifier.weight(1f)) { Text("Cancel") }
-                Button(onClick = onSave, modifier = Modifier.weight(1f)) { Text("Save") }
-            }
-        }
-    }
-}
-
-@Composable
-private fun CustomizationOptionRow(
-    title: String,
-    options: List<String>,
-    selectedId: String,
-    onSelected: (String) -> Unit
-) {
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        Text(title, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
-        Row(
-            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            options.forEach { id ->
-                val selected = selectedId == id
-                OutlinedButton(
-                    onClick = { onSelected(id) },
-                    modifier = Modifier.height(36.dp).semantics {
-                        contentDescription = "$title ${id.optionLabel(title)}${if (selected) ", selected" else ""}"
-                        this.selected = selected
-                    },
-                    shape = RoundedCornerShape(50),
-                    border = BorderStroke(if (selected) 2.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant)
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Text(id.optionLabel(title), fontSize = 12.sp, fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium)
+                    AvatarEditorPart.values().forEach { part ->
+                        AvatarEditorPartButton(
+                            part = part,
+                            selected = part == selectedPart,
+                            customization = customization,
+                            onClick = { selectedPart = part }
+                        )
+                    }
                 }
+                Text(selectedPart.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                AvatarOptionsGrid(
+                    part = selectedPart,
+                    customization = customization,
+                    onSelected = { customization = it }
+                )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    OutlinedButton(onClick = onBackToSettings, modifier = Modifier.weight(1f).height(52.dp)) {
+                        Text("Cancel")
+                    }
+                    Button(
+                        onClick = { onSaveCharacter(customization) },
+                        modifier = Modifier.weight(1f).height(52.dp)
+                    ) { Text("Save character", fontWeight = FontWeight.Bold) }
+                }
+            }
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                Text("Character editor", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
+                when (status) {
+                    AuthStatus.LOADING -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                    }
+                    AuthStatus.ERROR -> Text("Google sign-in is unavailable.", color = MaterialTheme.colorScheme.error)
+                    AuthStatus.READY -> OutlinedButton(
+                        onClick = onLinkGoogle,
+                        colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White),
+                        modifier = Modifier.fillMaxWidth().height(54.dp)
+                    ) {
+                        GoogleGMark()
+                        Spacer(Modifier.width(10.dp))
+                        Text("Sign in with Google")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AvatarEditorPartButton(
+    part: AvatarEditorPart,
+    selected: Boolean,
+    customization: AvatarCustomization,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier.size(52.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color(0xFFFFF8EC))
+            .border(
+                width = if (selected) 2.dp else 1.dp,
+                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                shape = RoundedCornerShape(16.dp)
+            )
+            .clickable(onClick = onClick)
+            .semantics {
+                contentDescription = "${part.title} options${if (selected) ", selected" else ""}"
+                role = Role.RadioButton
+                this.selected = selected
+            },
+        contentAlignment = Alignment.Center
+    ) {
+        if (part == AvatarEditorPart.SHAPE) {
+            WebAvatarCharacter(customization, Modifier.size(32.dp))
+        } else {
+            Canvas(Modifier.size(25.dp)) {
+                val ink = Color(0xFF17161A)
+                val strokeWidth = 2.2.dp.toPx()
+                when (part) {
+                    AvatarEditorPart.SHAPE -> Unit
+                    AvatarEditorPart.COLOR -> {
+                        val radius = size.minDimension * 0.19f
+                        listOf(
+                            Color(0xFFFFAA3D), Color(0xFFB8F45D),
+                            Color(0xFF9B8CFF), Color(0xFF8FD8F2)
+                        ).forEachIndexed { index, color ->
+                            val x = if (index % 2 == 0) 0.34f else 0.66f
+                            val y = if (index < 2) 0.34f else 0.66f
+                            drawCircle(color, radius, Offset(size.width * x, size.height * y))
+                        }
+                    }
+                    AvatarEditorPart.EYES -> {
+                        drawCircle(ink, size.minDimension * 0.105f, Offset(size.width * 0.34f, size.height * 0.45f))
+                        drawCircle(ink, size.minDimension * 0.105f, Offset(size.width * 0.66f, size.height * 0.45f))
+                    }
+                    AvatarEditorPart.MOUTH -> {
+                        val path = Path().apply {
+                            moveTo(size.width * 0.22f, size.height * 0.45f)
+                            quadraticTo(size.width * 0.5f, size.height * 0.78f, size.width * 0.78f, size.height * 0.45f)
+                        }
+                        drawPath(path, ink, style = Stroke(width = strokeWidth, cap = StrokeCap.Round))
+                    }
+                    AvatarEditorPart.ACCESSORY -> {
+                        val path = Path().apply {
+                            moveTo(size.width * 0.18f, size.height * 0.62f)
+                            cubicTo(size.width * 0.2f, size.height * 0.15f, size.width * 0.8f, size.height * 0.15f, size.width * 0.82f, size.height * 0.62f)
+                        }
+                        drawPath(path, ink, style = Stroke(width = strokeWidth, cap = StrokeCap.Round))
+                        drawRoundRect(ink, Offset(size.width * 0.1f, size.height * 0.5f), Size(size.width * 0.18f, size.height * 0.34f), CornerRadius(strokeWidth))
+                        drawRoundRect(ink, Offset(size.width * 0.72f, size.height * 0.5f), Size(size.width * 0.18f, size.height * 0.34f), CornerRadius(strokeWidth))
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AvatarOptionsGrid(
+    part: AvatarEditorPart,
+    customization: AvatarCustomization,
+    onSelected: (AvatarCustomization) -> Unit
+) {
+    val options = when (part) {
+        AvatarEditorPart.SHAPE -> AvatarCustomizationCatalog.shapeIds
+        AvatarEditorPart.COLOR -> AvatarCustomizationCatalog.colorIds
+        AvatarEditorPart.EYES -> AvatarCustomizationCatalog.eyesIds
+        AvatarEditorPart.MOUTH -> AvatarCustomizationCatalog.mouthIds
+        AvatarEditorPart.ACCESSORY -> AvatarCustomizationCatalog.accessoryIds
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.chunked(4).forEach { rowOptions ->
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                rowOptions.forEach { option ->
+                    val selected = when (part) {
+                        AvatarEditorPart.SHAPE -> customization.shapeId == option
+                        AvatarEditorPart.COLOR -> customization.colorId == option
+                        AvatarEditorPart.EYES -> customization.eyesId == option
+                        AvatarEditorPart.MOUTH -> customization.mouthId == option
+                        AvatarEditorPart.ACCESSORY -> customization.accessoryId == option
+                    }
+                    val appearance = when (part) {
+                        AvatarEditorPart.SHAPE -> if (selected) customization else AvatarCustomization.defaultsFor(option)
+                        AvatarEditorPart.COLOR -> customization.copy(colorId = option)
+                        AvatarEditorPart.EYES -> customization.copy(eyesId = option)
+                        AvatarEditorPart.MOUTH -> customization.copy(mouthId = option)
+                        AvatarEditorPart.ACCESSORY -> customization.copy(accessoryId = option)
+                    }
+                    val accessibleName = when (part) {
+                        AvatarEditorPart.SHAPE -> option.avatarShapeLabel()
+                        AvatarEditorPart.COLOR -> option.optionLabel("Color")
+                        else -> option.avatarLabel()
+                    }
+                    Box(
+                        modifier = Modifier.weight(1f).aspectRatio(1f)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(Color(0xFFFFF8EC))
+                            .border(
+                                width = if (selected) 2.5.dp else 1.dp,
+                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                                shape = RoundedCornerShape(18.dp)
+                            )
+                            .clickable { onSelected(appearance) }
+                            .semantics {
+                                contentDescription = "$accessibleName${if (selected) ", selected" else ""}"
+                                role = Role.RadioButton
+                                this.selected = selected
+                            }
+                            .padding(5.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        WebAvatarCharacter(appearance, Modifier.fillMaxSize())
+                    }
+                }
+                repeat(4 - rowOptions.size) { Spacer(Modifier.weight(1f)) }
             }
         }
     }
@@ -1010,11 +1138,15 @@ private fun LobbyPage(store: WebGameStore, state: WebUiState, onSettings: () -> 
                     }
                 }
                 if (isHost) {
+                    val enoughRounds = RoundCountRules.isValid(room.settings.roundCount, room.players.size)
                     GamePanel("Ready to start?", "Song selection opens for everyone when the host starts the game.") {
-                        Button(onClick = store::startGame, enabled = room.players.size >= 2, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+                        Button(onClick = store::startGame, enabled = room.players.size >= 2 && enoughRounds, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                             Text("Start game", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         }
-                        if (room.players.size < 2) Text("Invite one more player to unlock song selection.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        when {
+                            !enoughRounds -> Text("Set at least ${room.players.size} rounds in settings before starting.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            room.players.size < 2 -> Text("Invite one more player to unlock song selection.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 } else {
                     GamePanel("You're all set", "The host will start song selection when everyone's ready.") {
@@ -1044,21 +1176,37 @@ private fun LobbyPage(store: WebGameStore, state: WebUiState, onSettings: () -> 
 }
 
 @Composable
-private fun LobbySettings(store: WebGameStore, settings: RoomSettings) {
+private fun LobbySettings(store: WebGameStore, settings: RoomSettings, playerCount: Int) {
+    val minimumRounds = RoundCountRules.minimumForPlayerCount(playerCount)
+    var selectedRounds by remember(settings.roundCount) { mutableStateOf(settings.roundCount) }
+    val effectiveSettings = settings.copy(roundCount = selectedRounds)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SettingChoices(
-            title = "Songs per player",
-            choices = com.guesswhosesong.shared.models.RoundLengthPreset.entries.map { it.songsPerPlayer.toString() },
-            selectedValue = settings.roundLengthPreset.songsPerPlayer.toString()
-        ) { selected ->
-            val preset = com.guesswhosesong.shared.models.RoundLengthPreset.entries.first { it.songsPerPlayer.toString() == selected }
-            store.updateSettings(settings.copy(roundLengthPreset = preset))
+        Text("Total rounds", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            TextButton(
+                onClick = {
+                    selectedRounds = (selectedRounds - 1).coerceAtLeast(minimumRounds)
+                    store.updateSettings(settings.copy(roundCount = selectedRounds))
+                },
+                enabled = selectedRounds > minimumRounds,
+                modifier = Modifier.semantics { contentDescription = "Decrease rounds" }
+            ) { Text("−", fontSize = 20.sp, fontWeight = FontWeight.Black) }
+            Text("$selectedRounds rounds", modifier = Modifier.weight(1f), textAlign = TextAlign.Center, fontWeight = FontWeight.Bold)
+            TextButton(
+                onClick = {
+                    selectedRounds = (selectedRounds + 1).coerceAtMost(RoundCountRules.MAX_ROUNDS)
+                    store.updateSettings(settings.copy(roundCount = selectedRounds))
+                },
+                enabled = selectedRounds < RoundCountRules.MAX_ROUNDS,
+                modifier = Modifier.semantics { contentDescription = "Increase rounds" }
+            ) { Text("+", fontSize = 20.sp, fontWeight = FontWeight.Black) }
         }
-        SettingChoices("Player limit", listOf("2", "4", "6", "10", "20"), settings.playerLimit.toString()) { selected ->
-            store.updateSettings(settings.copy(playerLimit = selected.toInt()))
+        Text("Choose from $minimumRounds to ${RoundCountRules.MAX_ROUNDS}. Everyone contributes at least one song.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        SettingChoices("Player limit", listOf("2", "4", "6", "10", "20"), effectiveSettings.playerLimit.toString()) { selected ->
+            store.updateSettings(effectiveSettings.copy(playerLimit = selected.toInt()))
         }
-        SettingChoices("Voting time", listOf("10s", "15s", "20s", "30s"), "${settings.votingTimerSeconds}s") { selected ->
-            store.updateSettings(settings.copy(votingTimerSeconds = selected.dropLast(1).toInt()))
+        SettingChoices("Voting time", listOf("10s", "15s", "20s", "30s"), "${effectiveSettings.votingTimerSeconds}s") { selected ->
+            store.updateSettings(effectiveSettings.copy(votingTimerSeconds = selected.dropLast(1).toInt()))
         }
     }
 }
@@ -1418,7 +1566,8 @@ private fun SpotifyControls(store: WebGameStore, state: WebUiState) {
 @Composable
 private fun SubmissionPage(store: WebGameStore, state: WebUiState) {
     val now = rememberClockNow()
-    val maxSongs = state.room?.settings?.roundLengthPreset?.songsPerPlayer ?: 1
+    val room = state.room
+    val maxSongs = room?.let { RoundCountRules.maxSongsPerPlayer(it.settings.roundCount, it.players.size) } ?: 1
     val selfPlayer = state.room?.players?.firstOrNull { it.id == state.selfPlayerId }
     val locked = selfPlayer?.songLocked == true
     val totalPlayers = state.room?.players?.size ?: 0
@@ -1426,7 +1575,7 @@ private fun SubmissionPage(store: WebGameStore, state: WebUiState) {
     PostJoinFrame(
         title = "Pick your songs",
         kicker = "YOUR TASTE, YOUR TURN",
-        description = "Add up to $maxSongs songs your friends will have to recognize.",
+        description = "Choose at least one song. Add up to $maxSongs per player toward a ${room?.settings?.roundCount ?: RoundCountRules.DEFAULT_ROUNDS}-round game.",
         state = state
     ) { wide ->
         val songColumn: @Composable () -> Unit = {
@@ -1654,7 +1803,7 @@ private fun ListenStage(preview: com.guesswhosesong.shared.dto.RoundPreviewStart
         Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(20.dp)) {
             Text("ROUND ${preview.roundIndex + 1} OF ${preview.totalRounds}", modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp), fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onPrimaryContainer, letterSpacing = 0.8.sp)
         }
-        AbstractCoverPlaceholder()
+        AlbumArt(preview.albumArtUrl)
         Text(preview.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Black)
         Text(preview.artist, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         androidx.compose.material3.LinearProgressIndicator(progress = { progress }, modifier = Modifier.fillMaxWidth())
@@ -1667,7 +1816,8 @@ private fun ListenStage(preview: com.guesswhosesong.shared.dto.RoundPreviewStart
 }
 
 @Composable
-private fun AbstractCoverPlaceholder(
+private fun AlbumArt(
+    albumArtUrl: String,
     maxSize: androidx.compose.ui.unit.Dp = 300.dp,
     modifier: Modifier = Modifier.fillMaxWidth()
 ) {
@@ -1697,6 +1847,14 @@ private fun AbstractCoverPlaceholder(
                 modifier = Modifier.align(Alignment.Center).size(side * 0.50f)
                     .border(2.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape(24.dp))
             )
+            if (albumArtUrl.isNotBlank()) {
+                AsyncImage(
+                    model = albumArtUrl,
+                    contentDescription = "Album cover",
+                    modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(30.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            }
         }
     }
 }
@@ -1813,7 +1971,7 @@ private fun VoteStage(
 private fun VoteTrackSummary(preview: com.guesswhosesong.shared.dto.RoundPreviewStarted, wide: Boolean) {
     if (wide) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            AbstractCoverPlaceholder(maxSize = 180.dp, modifier = Modifier.width(180.dp))
+            AlbumArt(preview.albumArtUrl, maxSize = 180.dp, modifier = Modifier.width(180.dp))
             Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
                 Text("Now guessing", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
                 Text(preview.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
@@ -1821,7 +1979,7 @@ private fun VoteTrackSummary(preview: com.guesswhosesong.shared.dto.RoundPreview
             }
         }
     } else {
-        AbstractCoverPlaceholder(maxSize = 220.dp)
+        AlbumArt(preview.albumArtUrl, maxSize = 220.dp)
         Text("Now guessing", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
         Text(preview.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
         Text(preview.artist, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1856,6 +2014,7 @@ private fun RevealStage(reveal: com.guesswhosesong.shared.dto.RoundRevealed, sta
                 Text("Picked by ${reveal.submitterName}", modifier = Modifier.padding(top = 5.dp), fontWeight = FontWeight.Bold)
             }
         }
+        AlbumArt(reveal.songEntry.albumArtUrl, maxSize = 240.dp)
         Text("Round scores", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
         reveal.scoreDeltas.forEach { score ->
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1904,60 +2063,39 @@ private fun ResultsPage(store: WebGameStore, state: WebUiState) {
         kicker = "THAT'S THE GAME",
         description = players.firstOrNull()?.let { "${it.displayName} takes the top spot. How well did you know your friends' taste?" } ?: "The final standings will show here.",
         state = state
-    ) { wide ->
-        val scoreColumn: @Composable () -> Unit = {
+    ) { _ ->
+        GamePanel("Final standings", "Players are ranked by total score.") {
             if (players.isEmpty()) {
-                GamePanel("Counting up the scores", "The final standings will be ready in a moment.") {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     CircularProgressIndicator(modifier = Modifier.width(24.dp).height(24.dp), strokeWidth = 2.dp)
+                    Text("The final standings are loading.")
                 }
             } else {
-                if (wide) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.Top) {
-                        players.take(3).forEachIndexed { index, player ->
-                            ResultPodiumCard(index, player, state.selfPlayerId, Modifier.weight(1f))
-                        }
-                    }
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                        players.take(3).forEachIndexed { index, player ->
-                            ResultPodiumCard(index, player, state.selfPlayerId, Modifier.fillMaxWidth())
-                        }
-                    }
-                }
-                if (players.size > 3) {
-                    GamePanel("Full standings", "Every player, in final order.") {
-                        players.drop(3).forEachIndexed { offset, player ->
-                            Row(modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("${(offset + 4).toString().padStart(2, '0')}", modifier = Modifier.width(40.dp), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
-                                WebAvatarSwatch(player.avatarId, customization = player.avatarCustomization)
-                                Spacer(Modifier.width(12.dp))
-                                Text(player.displayName + if (player.id == state.selfPlayerId) " (you)" else "", modifier = Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
-                                Text("${player.score} pts", fontWeight = FontWeight.Bold)
-                            }
-                        }
+                players.forEachIndexed { index, player ->
+                    if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 5.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text("${index + 1}.", modifier = Modifier.width(34.dp), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        WebAvatarSwatch(player.avatarId, customization = player.avatarCustomization)
+                        Spacer(Modifier.width(10.dp))
+                        Text(
+                            player.displayName + if (player.id == state.selfPlayerId) " (you)" else "",
+                            modifier = Modifier.weight(1f),
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text("${player.score} pts", fontWeight = FontWeight.Bold)
                     }
                 }
             }
         }
-        val actionColumn: @Composable () -> Unit = {
-            GamePanel("One more round?", if (isHost) "Start another game with this room." else "The host can start another game whenever you're ready.") {
-                if (isHost) {
-                    Button(onClick = store::playAgain, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("Play again", fontWeight = FontWeight.Bold) }
-                    OutlinedButton(onClick = store::endRoom, modifier = Modifier.fillMaxWidth()) { Text("End room") }
-                }
-                OutlinedButton(onClick = store::leaveRoom, modifier = Modifier.fillMaxWidth()) { Text("Leave room") }
+        GamePanel("Continue", if (isHost) "Start another game or close the room." else "Wait for the host to continue.") {
+            if (isHost) {
+                Button(onClick = store::playAgain, modifier = Modifier.fillMaxWidth().height(50.dp)) { Text("Play Again", fontWeight = FontWeight.Bold) }
+                OutlinedButton(onClick = store::endRoom, modifier = Modifier.fillMaxWidth()) { Text("End Game") }
             }
-        }
-        if (wide) {
-            Row(horizontalArrangement = Arrangement.spacedBy(22.dp), verticalAlignment = Alignment.Top, modifier = Modifier.padding(top = 8.dp)) {
-                Column(Modifier.weight(1.45f), verticalArrangement = Arrangement.spacedBy(16.dp)) { scoreColumn() }
-                Column(Modifier.weight(0.78f), verticalArrangement = Arrangement.spacedBy(16.dp)) { actionColumn() }
-            }
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(top = 8.dp)) {
-                scoreColumn()
-                actionColumn()
-            }
+            OutlinedButton(onClick = store::leaveRoom, modifier = Modifier.fillMaxWidth()) { Text("Leave Room") }
         }
     }
 }

@@ -162,7 +162,7 @@ fun JoinScreen(
 }
 
 @Composable
-private fun WelcomePage(
+internal fun WelcomePage(
     joinCode: String,
     isLoading: Boolean,
     error: String?,
@@ -410,7 +410,7 @@ private fun WelcomeSceneryBackground(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SavePlayerPage(
+internal fun SavePlayerPage(
     displayName: String,
     avatarCustomization: AvatarCustomization,
     isSpotifyConnected: Boolean,

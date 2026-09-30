@@ -62,7 +62,9 @@ class SubmissionViewModel @Inject constructor(
         val cachedRoom = gameRepository.currentRoom.value
         val selfId = gameRepository.selfPlayerId.value
         val isSpotify = cachedRoom?.players?.find { it.id == selfId }?.spotifyConnected == true
-        val maxPicks = cachedRoom?.settings?.roundLengthPreset?.songsPerPlayer ?: 3
+        val maxPicks = cachedRoom?.let {
+            RoundCountRules.maxSongsPerPlayer(it.settings.roundCount, it.players.size)
+        } ?: 1
         val existingSongs = gameRepository.pendingSongs.value
 
         _uiState.update {
@@ -92,7 +94,10 @@ class SubmissionViewModel @Inject constructor(
                     is RoomJoined -> {
                         val selfId = message.selfPlayerId
                         val isSpotify = message.room.players.find { it.id == selfId }?.spotifyConnected == true
-                        val maxPicks = message.room.settings.roundLengthPreset.songsPerPlayer
+                        val maxPicks = RoundCountRules.maxSongsPerPlayer(
+                            message.room.settings.roundCount,
+                            message.room.players.size
+                        )
                         _uiState.update {
                             it.copy(
                                 room = message.room,
@@ -108,7 +113,7 @@ class SubmissionViewModel @Inject constructor(
                         val room = message.room
                         val selfId = _uiState.value.selfPlayerId.ifBlank { gameRepository.selfPlayerId.value }
                         val isSpotify = room.players.find { it.id == selfId }?.spotifyConnected == true
-                        val maxPicks = room.settings.roundLengthPreset.songsPerPlayer
+                        val maxPicks = RoundCountRules.maxSongsPerPlayer(room.settings.roundCount, room.players.size)
                         _uiState.update {
                             it.copy(
                                 room = room,
@@ -131,6 +136,7 @@ class SubmissionViewModel @Inject constructor(
                     is SubmissionProgress -> _uiState.update {
                         it.copy(lockedCount = message.lockedCount, totalCount = message.totalCount)
                     }
+                    is ErrorMessage -> _uiState.update { it.copy(error = message.message) }
                     else -> {}
                 }
             }
@@ -252,9 +258,7 @@ class SubmissionViewModel @Inject constructor(
             submitterId = selfId
         )
 
-        val updated = if (max == 1) {
-            listOf(entry)
-        } else if (current.size < max) {
+        val updated = if (current.size < max) {
             current + entry
         } else {
             _uiState.update { it.copy(error = "All $max song slots filled. Remove a song to pick another.") }
@@ -285,8 +289,12 @@ class SubmissionViewModel @Inject constructor(
         }
 
         val selfId = _uiState.value.selfPlayerId.ifBlank { gameRepository.selfPlayerId.value }
+        val safeSongId = "spotify-${suggestion.title}-${suggestion.artist}"
+            .lowercase()
+            .replace(Regex("[^a-z0-9:_-]"), "-")
+            .take(200)
         val entry = SongEntry(
-            songId = "${suggestion.title}_${suggestion.artist}",
+            songId = safeSongId,
             title = suggestion.title,
             artist = suggestion.artist,
             albumArtUrl = suggestion.albumArtUrl,
@@ -294,9 +302,7 @@ class SubmissionViewModel @Inject constructor(
             submitterId = selfId
         )
 
-        val updated = if (max == 1) {
-            listOf(entry)
-        } else if (current.size < max) {
+        val updated = if (current.size < max) {
             current + entry
         } else {
             _uiState.update { it.copy(error = "All $max song slots filled. Remove a song to pick another.") }

@@ -35,6 +35,7 @@ import com.guesswhosesong.shared.models.AvatarCatalog
 import com.guesswhosesong.shared.models.AvatarCustomization
 import com.guesswhosesong.shared.models.AvatarCustomizationCatalog
 import com.guesswhosesong.shared.models.PlayerIdentityDefaults
+import com.guesswhosesong.shared.models.RoundCountRules
 import com.guesswhosesong.shared.dto.GWSJson
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -82,26 +83,32 @@ data class WebUiState(
     val notice: String? = null
 )
 
-class WebGameStore {
+class WebGameStore internal constructor(
+    initialState: WebUiState = WebUiState(),
+    private val testMessageSink: ((ClientMessage) -> Unit)? = null,
+    startServices: Boolean = true
+) {
     val auth = WebAuthManager()
     private val api = WebApiClient(auth)
     private val socket = WebSocketGameClient(api)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
-    private val _state = MutableStateFlow(WebUiState())
+    private val _state = MutableStateFlow(initialState)
     val state: StateFlow<WebUiState> = _state.asStateFlow()
     val connectionState: StateFlow<ConnectionState> = socket.state
 
     init {
         persistPlayerProfile(state.value.displayName, state.value.avatarCustomization)
-        scope.launch { socket.messages.collect(::applyMessage) }
-        scope.launch {
-            socket.lastError.collect { message ->
-                if (!message.isNullOrBlank()) fail(connectionError(message))
+        if (startServices) {
+            scope.launch { socket.messages.collect(::applyMessage) }
+            scope.launch {
+                socket.lastError.collect { message ->
+                    if (!message.isNullOrBlank()) fail(connectionError(message))
+                }
             }
-        }
-        scope.launch {
-            auth.start()
-            if (auth.status.value == AuthStatus.READY) refreshSpotify()
+            scope.launch {
+                auth.start()
+                if (auth.status.value == AuthStatus.READY) refreshSpotify()
+            }
         }
     }
 
@@ -223,7 +230,9 @@ class WebGameStore {
             fail("That song is already selected")
             return
         }
-        val maxSongs = state.value.room?.settings?.roundLengthPreset?.songsPerPlayer ?: 1
+        val maxSongs = state.value.room?.let {
+            RoundCountRules.maxSongsPerPlayer(it.settings.roundCount, it.players.size)
+        } ?: 1
         if (current.size >= maxSongs) return fail("You can select at most $maxSongs songs")
         _state.update {
             it.copy(
@@ -244,7 +253,9 @@ class WebGameStore {
 
     fun selectSpotifySuggestion(suggestion: SpotifySuggestion) {
         val current = state.value.pendingSongs
-        val maxSongs = state.value.room?.settings?.roundLengthPreset?.songsPerPlayer ?: 1
+        val maxSongs = state.value.room?.let {
+            RoundCountRules.maxSongsPerPlayer(it.settings.roundCount, it.players.size)
+        } ?: 1
         if (current.size >= maxSongs) return fail("You can select at most $maxSongs songs")
         if (current.any { it.title.equals(suggestion.title, true) && it.artist.equals(suggestion.artist, true) }) {
             return fail("That song is already selected")
@@ -333,15 +344,15 @@ class WebGameStore {
     }
 
     fun linkGoogle() {
-        scope.launch {
-            auth.linkGoogle().onSuccess { _state.update { it.copy(notice = "Google account linked for recovery", error = null) } }
+        auth.linkGoogle { result ->
+            result.onSuccess { _state.update { it.copy(notice = "Google account linked for recovery", error = null) } }
                 .onFailure { fail(it.message ?: "Google linking failed") }
         }
     }
 
     fun recoverGoogle() {
-        scope.launch {
-            auth.recoverGoogle().onSuccess {
+        auth.recoverGoogle { result ->
+            result.onSuccess {
                 _state.update { state -> state.copy(notice = "Recovered your linked Google identity", error = null) }
             }.onFailure { fail(it.message ?: "Google recovery failed") }
         }
@@ -363,6 +374,10 @@ class WebGameStore {
     }
 
     private fun send(message: ClientMessage) {
+        testMessageSink?.let { sink ->
+            sink(message)
+            return
+        }
         scope.launch {
             try {
                 socket.send(message)

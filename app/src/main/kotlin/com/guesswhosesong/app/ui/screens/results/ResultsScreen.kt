@@ -1,7 +1,6 @@
 package com.guesswhosesong.app.ui.screens.results
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -11,19 +10,20 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -38,10 +38,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.guesswhosesong.app.ui.components.EmptyAvatarBadge
-import com.guesswhosesong.app.ui.components.GuessWhoseSongWordmark
 import com.guesswhosesong.app.ui.theme.GwsPalette
 import com.guesswhosesong.shared.models.Player
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ResultsScreen(
     viewModel: ResultsViewModel = hiltViewModel(),
@@ -59,286 +59,99 @@ fun ResultsScreen(
         }
     }
 
-    val winner = uiState.players.firstOrNull()
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(GwsPalette.Paper)
-            .statusBarsPadding()
-            .navigationBarsPadding()
-            .padding(horizontal = 20.dp, vertical = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        GuessWhoseSongWordmark(Modifier.fillMaxWidth().padding(bottom = 8.dp))
-        Surface(
-            modifier = Modifier.fillMaxWidth(),
-            color = GwsPalette.Lavender.copy(alpha = 0.36f),
-            shape = RoundedCornerShape(24.dp),
-            border = BorderStroke(1.dp, GwsPalette.LavenderDeep.copy(alpha = 0.16f))
-        ) {
-            Column(modifier = Modifier.padding(horizontal = 17.dp, vertical = 15.dp)) {
-                Text(
-                    "ROUND COMPLETE",
-                    color = GwsPalette.LavenderDeep,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 1.2.sp
-                )
-                Text(
-                    "That’s a wrap!",
-                    modifier = Modifier.padding(top = 3.dp),
-                    color = GwsPalette.Ink,
-                    fontSize = 27.sp,
-                    lineHeight = 31.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = (-0.7).sp
-                )
-                Text(
-                    "The room’s music detectives ranked up.",
-                    color = GwsPalette.Ink.copy(alpha = 0.66f),
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            }
+    Scaffold(
+        containerColor = GwsPalette.Paper,
+        topBar = {
+            TopAppBar(
+                title = { Text("Final Scores 🏆") },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = GwsPalette.Paper)
+            )
         }
-
-        if (winner != null) {
-            WinnerCard(winner = winner)
-        }
-
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 17.dp, bottom = 9.dp),
-            verticalAlignment = Alignment.CenterVertically
+    ) { padding ->
+        Column(
+            modifier = Modifier.fillMaxSize().padding(padding).navigationBarsPadding().padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Column(modifier = Modifier.weight(1f), horizontalAlignment = Alignment.Start) {
-                Text("Final scores", color = GwsPalette.Ink, style = MaterialTheme.typography.titleLarge)
-                Text(
-                    "A little music, a lot of bragging rights",
-                    color = GwsPalette.Ink.copy(alpha = 0.6f),
-                    style = MaterialTheme.typography.bodySmall
-                )
-            }
-            Surface(color = GwsPalette.Lime.copy(alpha = 0.38f), shape = CircleShape) {
-                Text(
-                    "${uiState.players.size} PLAYERS",
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-                    color = GwsPalette.Ink,
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 0.4.sp
-                )
-            }
-        }
-
-        LazyColumn(
-            modifier = Modifier.weight(1f).fillMaxWidth(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = 6.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            if (uiState.players.isEmpty()) {
-                item {
-                    Surface(
-                        modifier = Modifier.fillMaxWidth(),
-                        color = Color.White.copy(alpha = 0.82f),
-                        shape = RoundedCornerShape(17.dp),
-                        border = BorderStroke(1.dp, GwsPalette.Ink.copy(alpha = 0.08f))
-                    ) {
+            LazyColumn(
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                if (uiState.players.isEmpty()) {
+                    item {
                         Text(
                             "Final standings will appear here.",
-                            modifier = Modifier.padding(16.dp),
-                            color = GwsPalette.Ink.copy(alpha = 0.64f),
-                            style = MaterialTheme.typography.bodyMedium
+                            modifier = Modifier.fillMaxWidth().padding(16.dp),
+                            color = GwsPalette.Ink.copy(alpha = 0.66f),
+                            textAlign = TextAlign.Center
                         )
                     }
                 }
-            }
-            itemsIndexed(uiState.players, key = { _, player -> player.id }) { index, player ->
-                ScoreboardItem(rank = index + 1, player = player, isSelf = player.id == uiState.selfPlayerId)
-            }
-        }
-
-        Spacer(Modifier.height(11.dp))
-        if (uiState.isHost) {
-            Button(
-                onClick = viewModel::playAgain,
-                shape = RoundedCornerShape(17.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = GwsPalette.Tangerine,
-                    contentColor = GwsPalette.Ink
-                ),
-                modifier = Modifier.fillMaxWidth().height(54.dp)
-            ) {
-                Text("Play another round", fontSize = 16.sp, fontWeight = FontWeight.Black)
-            }
-            Spacer(Modifier.height(8.dp))
-            Button(
-                onClick = viewModel::endRoom,
-                shape = RoundedCornerShape(17.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = GwsPalette.Lavender.copy(alpha = 0.5f),
-                    contentColor = GwsPalette.Ink
-                ),
-                modifier = Modifier.fillMaxWidth().height(48.dp)
-            ) {
-                Text("End game", fontWeight = FontWeight.ExtraBold)
-            }
-        } else {
-            Surface(
-                color = GwsPalette.Lavender.copy(alpha = 0.34f),
-                shape = RoundedCornerShape(16.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Text("That was a good round", color = GwsPalette.Ink, fontWeight = FontWeight.ExtraBold)
-                    Text(
-                        "Waiting for the host to continue…",
-                        color = GwsPalette.Ink.copy(alpha = 0.64f),
-                        style = MaterialTheme.typography.bodySmall
-                    )
+                itemsIndexed(uiState.players, key = { _, player -> player.id }) { index, player ->
+                    ScoreboardItem(rank = index + 1, player = player, isSelf = player.id == uiState.selfPlayerId)
                 }
             }
+            Spacer(Modifier.height(16.dp))
+            ResultsActions(
+                isHost = uiState.isHost,
+                onPlayAgain = viewModel::playAgain,
+                onEndGame = viewModel::endRoom
+            )
         }
     }
 }
 
 @Composable
-private fun WinnerCard(winner: Player) {
-    Surface(
-        modifier = Modifier.fillMaxWidth().padding(top = 11.dp),
-        color = GwsPalette.Butter.copy(alpha = 0.78f),
-        shape = RoundedCornerShape(22.dp),
-        border = BorderStroke(1.dp, Color(0xFFE5B84C).copy(alpha = 0.5f))
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 13.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            EmptyAvatarBadge(winner.avatarId, size = 56.dp, selected = true, customization = winner.avatarCustomization)
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Surface(color = Color.White.copy(alpha = 0.68f), shape = CircleShape) {
-                    Text(
-                        "ROOM CHAMPION",
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                        color = GwsPalette.Ink.copy(alpha = 0.72f),
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Black,
-                        letterSpacing = 0.5.sp
-                    )
-                }
-                Text(
-                    winner.displayName,
-                    modifier = Modifier.padding(top = 4.dp),
-                    color = GwsPalette.Ink,
-                    fontSize = 19.sp,
-                    lineHeight = 22.sp,
-                    fontWeight = FontWeight.Black,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text("Top listener", color = GwsPalette.Ink.copy(alpha = 0.64f), style = MaterialTheme.typography.bodySmall)
-            }
-            Spacer(Modifier.width(8.dp))
-            Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    "${winner.score}",
-                    color = GwsPalette.Ink,
-                    fontSize = 23.sp,
-                    lineHeight = 25.sp,
-                    fontWeight = FontWeight.Black
-                )
-                Text(
-                    "POINTS",
-                    color = GwsPalette.Ink.copy(alpha = 0.62f),
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 0.6.sp
-                )
-            }
+fun ResultsActions(isHost: Boolean, onPlayAgain: () -> Unit, onEndGame: () -> Unit) {
+    if (isHost) {
+        Button(
+            onClick = onPlayAgain,
+            colors = ButtonDefaults.buttonColors(containerColor = GwsPalette.Tangerine, contentColor = GwsPalette.Ink),
+            modifier = Modifier.fillMaxWidth().height(52.dp)
+        ) { Text("Play Again 🎵", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        Spacer(Modifier.height(8.dp))
+        OutlinedButton(onClick = onEndGame, modifier = Modifier.fillMaxWidth().height(52.dp)) {
+            Text("End Game")
         }
+    } else {
+        Text(
+            "Waiting for host to continue…",
+            color = GwsPalette.Ink.copy(alpha = 0.65f),
+            style = MaterialTheme.typography.bodyMedium
+        )
     }
 }
 
 @Composable
 fun ScoreboardItem(rank: Int, player: Player, isSelf: Boolean) {
-    val baseColor = when (rank) {
-        1 -> GwsPalette.Butter.copy(alpha = 0.66f)
-        2 -> GwsPalette.Lavender.copy(alpha = 0.29f)
-        3 -> GwsPalette.Lime.copy(alpha = 0.31f)
-        else -> Color.White.copy(alpha = 0.84f)
-    }
-    val rankColor = when (rank) {
-        1 -> GwsPalette.Tangerine
-        2 -> GwsPalette.Lavender
-        3 -> GwsPalette.Lime
-        else -> GwsPalette.Paper
-    }
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = if (isSelf) GwsPalette.Lavender.copy(alpha = 0.4f) else baseColor,
-        shape = RoundedCornerShape(17.dp),
-        border = BorderStroke(
-            if (isSelf) 1.5.dp else 1.dp,
-            if (isSelf) GwsPalette.LavenderDeep.copy(alpha = 0.54f) else GwsPalette.Ink.copy(alpha = 0.08f)
-        )
+        color = if (isSelf) GwsPalette.Lavender.copy(alpha = 0.3f) else Color.White,
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(1.dp, GwsPalette.Ink.copy(alpha = 0.08f))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Surface(color = rankColor.copy(alpha = 0.78f), shape = CircleShape) {
-                Text(
-                    "$rank",
-                    modifier = Modifier.size(31.dp).padding(top = 6.dp),
-                    color = GwsPalette.Ink,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Black,
-                    textAlign = TextAlign.Center
-                )
-            }
-            Spacer(Modifier.width(10.dp))
-            EmptyAvatarBadge(player.avatarId, size = 42.dp, selected = isSelf, customization = player.avatarCustomization)
+            Text(
+                if (rank <= 3) listOf("🥇", "🥈", "🥉")[rank - 1] else "#$rank",
+                modifier = Modifier.width(40.dp),
+                fontSize = 20.sp
+            )
+            EmptyAvatarBadge(player.avatarId, size = 38.dp, selected = isSelf, customization = player.avatarCustomization)
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        player.displayName,
-                        color = GwsPalette.Ink,
-                        fontWeight = FontWeight.ExtraBold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    Text(player.displayName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (isSelf) {
                         Spacer(Modifier.width(5.dp))
-                        Text("YOU", color = GwsPalette.LavenderDeep, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                        Text("(you)", color = GwsPalette.LavenderDeep, fontSize = 10.sp)
                     }
                 }
-                Text(
-                    when (rank) {
-                        1 -> "Room champion"
-                        2 -> "Runner-up"
-                        else -> "Great ears"
-                    },
-                    color = GwsPalette.Ink.copy(alpha = 0.58f),
-                    style = MaterialTheme.typography.bodySmall
-                )
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    "${player.score}",
-                    color = GwsPalette.Ink,
-                    fontWeight = FontWeight.Black,
-                    fontSize = 17.sp
-                )
-                Text(
-                    "PTS",
-                    color = GwsPalette.Ink.copy(alpha = 0.55f),
-                    fontSize = 8.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = 0.5.sp
-                )
+                Text("${player.score}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("pts", color = GwsPalette.Ink.copy(alpha = 0.6f), fontSize = 10.sp)
             }
         }
     }

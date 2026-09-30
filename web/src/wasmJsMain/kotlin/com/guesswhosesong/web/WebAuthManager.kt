@@ -43,25 +43,40 @@ class WebAuthManager {
         return firebaseIdToken(forceRefresh).also { check(it.isNotBlank()) }
     }
 
-    suspend fun linkGoogle(): Result<WebUser> = runCatching {
-        val linked = GWSJson.decodeFromString<WebUser>(firebaseLinkGoogle())
-        _user.value = linked
-        linked
-    }.recoverCatching { throwable ->
-        val message = throwable.message.orEmpty()
-        if (message.contains("credential-already-in-use") ||
-            message.contains("email-already-in-use") ||
-            message.contains("provider-already-linked")
-        ) {
-            throw IllegalStateException("That Google account is already linked to another player")
-        }
-        throw throwable
+    fun linkGoogle(onComplete: (Result<WebUser>) -> Unit) {
+        firebaseLinkGoogle(
+            resolve = { encoded ->
+                val result = runCatching { GWSJson.decodeFromString<WebUser>(encoded) }
+                result.onSuccess { _user.value = it }
+                onComplete(result)
+            },
+            reject = { message ->
+                val error = if (
+                    message.contains("credential-already-in-use") ||
+                    message.contains("email-already-in-use") ||
+                    message.contains("provider-already-linked")
+                ) {
+                    IllegalStateException("That Google account is already linked to another player")
+                } else {
+                    IllegalStateException(message)
+                }
+                onComplete(Result.failure(error))
+            }
+        )
     }
 
-    suspend fun recoverGoogle(): Result<WebUser> = runCatching {
-        val recovered = GWSJson.decodeFromString<WebUser>(firebaseRecoverGoogle())
-        _user.value = recovered
-        _status.value = AuthStatus.READY
-        recovered
+    fun recoverGoogle(onComplete: (Result<WebUser>) -> Unit) {
+        firebaseRecoverGoogle(
+            resolve = { encoded ->
+                val result = runCatching { GWSJson.decodeFromString<WebUser>(encoded) }
+                result.onSuccess {
+                    _user.value = it
+                    _status.value = AuthStatus.READY
+                    _error.value = null
+                }
+                onComplete(result)
+            },
+            reject = { message -> onComplete(Result.failure(IllegalStateException(message))) }
+        )
     }
 }

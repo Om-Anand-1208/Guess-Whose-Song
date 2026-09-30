@@ -4,8 +4,29 @@ import com.guesswhosesong.shared.dto.*
 import com.guesswhosesong.shared.models.*
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
+import kotlinx.serialization.decodeFromString
 
 class SerializationTest {
+
+    @Test
+    fun `round count defaults old saved settings to ten`() {
+        val decoded = GWSJson.decodeFromString<RoomSettings>("""{"roundLengthPreset":"STANDARD"}""")
+        assertEquals(10, decoded.roundCount)
+        assertEquals(10, RoomSettings().roundCount)
+    }
+
+    @Test
+    fun `round count rules bound settings and song submissions`() {
+        assertTrue(RoundCountRules.isValid(2, 2))
+        assertTrue(RoundCountRules.isValid(20, 20))
+        assertFalse(RoundCountRules.isValid(1, 2))
+        assertFalse(RoundCountRules.isValid(21, 2))
+        assertFalse(RoundCountRules.isValid(4, 5))
+        assertEquals(4, RoundCountRules.maxSongsPerPlayer(10, 3))
+        assertEquals(1, RoundCountRules.maxSongsPerPlayer(10, 20))
+    }
 
     @Test
     fun testRoundTripRoomJoined() {
@@ -37,6 +58,7 @@ class SerializationTest {
             title = "Blinding Lights",
             artist = "The Weeknd",
             deezerPreviewUrl = "https://example.com/preview.mp3",
+            previewUrl = "https://example.com/preview.mp3",
             submitterId = "player1"
         )
         val msg: ServerMessage = RoundRevealed(

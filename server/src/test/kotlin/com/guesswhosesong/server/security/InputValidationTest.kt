@@ -19,6 +19,8 @@ class InputValidationTest {
     fun `settings accept only supported values`() {
         assertTrue(InputValidation.settings(RoomSettings(playerLimit = 20, votingTimerSeconds = 30)))
         assertFalse(InputValidation.settings(RoomSettings(playerLimit = 1, votingTimerSeconds = 5)))
+        assertFalse(InputValidation.settings(RoomSettings(roundCount = 1)))
+        assertFalse(InputValidation.settings(RoomSettings(roundCount = 21)))
     }
 
     @Test

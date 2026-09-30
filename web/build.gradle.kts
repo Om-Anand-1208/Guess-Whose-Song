@@ -32,6 +32,9 @@ kotlin {
                 implementation(compose.uiUtil)
                 implementation(compose.components.resources)
                 implementation(libs.kotlinx.coroutines.core)
+                implementation(libs.coil3.compose)
+                implementation(libs.coil3.network.ktor3)
+                implementation(libs.ktor.client.js)
             }
         }
         val wasmJsTest by getting {

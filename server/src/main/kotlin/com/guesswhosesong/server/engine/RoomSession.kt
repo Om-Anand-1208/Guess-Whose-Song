@@ -276,6 +276,12 @@ class RoomSession(
                 room.players.count { it.connected } < MIN_PLAYERS_TO_START -> {
                     error = ErrorMessage("NOT_ENOUGH_PLAYERS", "Need at least $MIN_PLAYERS_TO_START players to start")
                 }
+                !RoundCountRules.isValid(room.settings.roundCount, room.players.size) -> {
+                    error = ErrorMessage(
+                        "INVALID_SETTINGS",
+                        "Choose at least ${room.players.size} rounds for the current room roster"
+                    )
+                }
                 gameJob?.isActive == true -> Unit
                 else -> {
                     room = room.copy(state = RoomState.SUBMISSION)
@@ -295,7 +301,14 @@ class RoomSession(
             return
         }
         if (!InputValidation.settings(settings)) {
-            sendToPlayer(playerId, ErrorMessage("INVALID_SETTINGS", "Invalid player limit or voting timer"))
+            sendToPlayer(playerId, ErrorMessage("INVALID_SETTINGS", "Invalid round count, player limit, or voting timer"))
+            return
+        }
+        if (!RoundCountRules.isValid(settings.roundCount, room.players.size)) {
+            sendToPlayer(
+                playerId,
+                ErrorMessage("INVALID_SETTINGS", "Choose at least ${room.players.size} rounds for the current room roster")
+            )
             return
         }
 
@@ -375,7 +388,11 @@ class RoomSession(
             return
         }
         val entry = song.copy(submitterId = playerId)
-        val maxSongs = room.settings.roundLengthPreset.songsPerPlayer
+        val maxSongs = RoundCountRules.maxSongsPerPlayer(room.settings.roundCount, room.players.size)
+        if (player.pendingSongs.size >= maxSongs) {
+            sendToPlayer(playerId, ErrorMessage("TOO_MANY_SONGS", "You can submit up to $maxSongs songs"))
+            return
+        }
 
         mutex.withLock {
             room = room.copy(players = room.players.map { p ->
@@ -385,7 +402,7 @@ class RoomSession(
                     } else if (p.pendingSongs.size < maxSongs) {
                         p.pendingSongs + entry
                     } else {
-                        listOf(entry)
+                        p.pendingSongs
                     }
                     p.copy(pendingSong = entry, pendingSongs = updatedSongs)
                 }
@@ -405,18 +422,12 @@ class RoomSession(
             sendToPlayer(playerId, ErrorMessage("SONG_LOCKED", "Song is already locked"))
             return
         }
-        val maxSongs = room.settings.roundLengthPreset.songsPerPlayer
-        val unique = songs.filter { InputValidation.song(it) }
-            .distinctBy { "${it.songId.trim().lowercase()}|${it.title.trim().lowercase()}|${it.artist.trim().lowercase()}" }
-        val duplicateIds = songs.size != songs.distinctBy { it.songId.trim().lowercase() }.size
-        val duplicateNames = songs.size != songs.distinctBy {
-            "${it.title.trim().lowercase()}|${it.artist.trim().lowercase()}"
-        }.size
-        if (unique.isEmpty() || unique.size != songs.size || unique.size > maxSongs || duplicateIds || duplicateNames) {
+        val maxSongs = RoundCountRules.maxSongsPerPlayer(room.settings.roundCount, room.players.size)
+        if (!SubmissionRules.isValid(songs, room.settings.roundCount, room.players.size)) {
             sendToPlayer(playerId, ErrorMessage("INVALID_SONGS", "Submission must contain unique valid songs"))
             return
         }
-        val limited = unique.take(maxSongs).map { it.copy(submitterId = playerId) }
+        val limited = songs.take(maxSongs).map { it.copy(submitterId = playerId) }
 
         mutex.withLock {
             room = room.copy(players = room.players.map { p ->
@@ -576,20 +587,37 @@ class RoomSession(
 
     private suspend fun runSubmissionPhase() {
         submissionCompleteSignal = CompletableDeferred()
-        val songsPerPlayer = room.settings.roundLengthPreset.songsPerPlayer
-        val deadlineMs = System.currentTimeMillis() + SUBMISSION_TIMEOUT_MS
-        persistRuntime(RoomRuntime("SUBMISSION", 0, deadlineMs, UUID.randomUUID().toString()))
-
         mutex.withLock {
             room = room.copy(state = RoomState.SUBMISSION)
             persist()
         }
         broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
-        broadcastAll(SubmissionStarted(deadlineEpochMillis = deadlineMs))
 
-        // Wait for all players to lock OR timer to expire
-        withTimeoutOrNull(SUBMISSION_TIMEOUT_MS) {
-            submissionCompleteSignal.await()
+        while (true) {
+            val currentSubmissionSignal = submissionCompleteSignal
+            val deadlineMs = System.currentTimeMillis() + SUBMISSION_TIMEOUT_MS
+            persistRuntime(RoomRuntime("SUBMISSION", 0, deadlineMs, UUID.randomUUID().toString()))
+            broadcastAll(SubmissionStarted(deadlineEpochMillis = deadlineMs))
+
+            // Wait for all players to lock OR timer to expire.
+            withTimeoutOrNull(SUBMISSION_TIMEOUT_MS) {
+                currentSubmissionSignal.await()
+            }
+
+            val missingPlayerIds = mutex.withLock { SubmissionRules.playersMissingSongs(room.players) }
+            if (missingPlayerIds.isEmpty()) break
+
+            // Keep the room in song selection until every player has contributed at
+            // least one choice. Already locked players keep their picks while the
+            // missing players receive another submission window.
+            submissionCompleteSignal = CompletableDeferred()
+            broadcastAll(
+                ErrorMessage(
+                    "SONG_REQUIRED",
+                    "Every player needs at least one song. Waiting for ${missingPlayerIds.size} player(s) to choose."
+                )
+            )
+            logger.info("[${room.joinCode}] Extending song selection for ${missingPlayerIds.size} player(s)")
         }
 
         // Auto-lock any players who haven't locked in
@@ -613,7 +641,7 @@ class RoomSession(
             }
             songsToResolve.forEach { pending ->
                 val resolved = musicService.resolveEntry(pending)
-                if (resolved != null) {
+                if (resolved != null && resolved.previewUrl.isNotBlank()) {
                     resolvedEntries.add(resolved.copy(submitterId = player.id))
                 } else {
                     logger.warn("[${room.joinCode}] A submitted song could not be resolved")
@@ -622,13 +650,7 @@ class RoomSession(
             }
         }
 
-        if (resolvedEntries.isEmpty()) {
-            logger.error("[${room.joinCode}] No songs resolved. Ending room.")
-            endRoom()
-            return
-        }
-
-        // Add 1-2 Decoy tracks into the pool to keep deduction guessing balanced
+        // Add up to two decoy tracks; the pool builder applies the selected round cap.
         try {
             val numDecoys = if (resolvedEntries.size <= 4) 1 else 2
             val topTracks = musicService.getTopTracks().filterNot { top ->
@@ -655,11 +677,21 @@ class RoomSession(
             logger.warn("[${room.joinCode}] Could not inject decoy tracks")
         }
 
-        val shuffled = resolvedEntries.shuffled()
+        val pool = RoundPoolBuilder.build(
+            playerSongs = resolvedEntries,
+            decoySongs = resolvedEntries.filter { it.submitterId == GameConstants.DECOY_ID },
+            playerIds = room.players.map { it.id },
+            roundCount = room.settings.roundCount
+        )
+        if (pool.isEmpty()) {
+            logger.error("[${room.joinCode}] No playable songs resolved. Ending room.")
+            endRoom()
+            return
+        }
         mutex.withLock {
             room = room.copy(
                 state = RoomState.PLAYING,
-                songPool = shuffled,
+                songPool = pool,
                 currentRoundIndex = 0
             )
             persist()

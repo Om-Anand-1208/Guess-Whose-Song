@@ -165,33 +165,31 @@ private fun firebaseGoogleOperation(
     reject: (String) -> Unit
 ) {
     js("""
+        const errorMessage = error => {
+            const code = error && error.code ? String(error.code) : '';
+            const message = error && error.message ? String(error.message) : String(error);
+            return code && !message.includes(code) ? code + ': ' + message : message;
+        };
         try {
             const auth = window.firebase.auth();
             const provider = new window.firebase.auth.GoogleAuthProvider();
+            if (link && !auth.currentUser) throw new Error('Firebase user is not available');
             const operation = link ? auth.currentUser.linkWithPopup(provider) : auth.signInWithPopup(provider);
             operation.then(result => {
                 const user = result.user || result;
                 resolve(JSON.stringify({ uid: user.uid, isAnonymous: user.isAnonymous, email: user.email || '' }));
-            }).catch(error => reject(String(error.code || error.message || error)));
+            }).catch(error => reject(errorMessage(error)));
         } catch (error) {
-            reject(String(error && error.message ? error.message : error));
+            reject(errorMessage(error));
         }
     """)
 }
 
-internal suspend fun firebaseLinkGoogle(): String = suspendCancellableCoroutine { continuation ->
-    firebaseGoogleOperation(true,
-        resolve = { continuation.resume(it) },
-        reject = { continuation.resumeWithException(IllegalStateException(it)) }
-    )
-}
+internal fun firebaseLinkGoogle(resolve: (String) -> Unit, reject: (String) -> Unit) =
+    firebaseGoogleOperation(true, resolve, reject)
 
-internal suspend fun firebaseRecoverGoogle(): String = suspendCancellableCoroutine { continuation ->
-    firebaseGoogleOperation(false,
-        resolve = { continuation.resume(it) },
-        reject = { continuation.resumeWithException(IllegalStateException(it)) }
-    )
-}
+internal fun firebaseRecoverGoogle(resolve: (String) -> Unit, reject: (String) -> Unit) =
+    firebaseGoogleOperation(false, resolve, reject)
 
 private fun openSocket(
     url: String,

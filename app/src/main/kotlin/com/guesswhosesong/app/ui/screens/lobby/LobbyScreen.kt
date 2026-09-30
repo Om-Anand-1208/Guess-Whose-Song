@@ -59,6 +59,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.ImeAction
@@ -71,12 +73,12 @@ import com.guesswhosesong.app.ui.components.AvatarOptions
 import com.guesswhosesong.app.ui.components.AvatarPicker
 import com.guesswhosesong.app.ui.components.EmptyAvatarBadge
 import com.guesswhosesong.app.ui.components.GoogleGMark
-import com.guesswhosesong.app.ui.components.GuessWhoseSongWordmark
 import com.guesswhosesong.app.ui.components.SpotifyMark
 import com.guesswhosesong.app.ui.theme.GwsPalette
 import com.guesswhosesong.shared.models.AvatarCustomization
 import com.guesswhosesong.shared.models.Player
 import com.guesswhosesong.shared.models.RoomSettings
+import com.guesswhosesong.shared.models.RoundCountRules
 
 @Composable
 fun LobbyScreen(
@@ -114,6 +116,8 @@ fun LobbyScreen(
     val self = players.find { it.id == selfId }
     val isHost = self?.isHost == true
     val playerLimit = room?.settings?.playerLimit ?: 10
+    val roundCount = room?.settings?.roundCount ?: RoundCountRules.DEFAULT_ROUNDS
+    val enoughRounds = RoundCountRules.isValid(roundCount, players.size)
     val connectedCount = players.count { it.connected }
     val remainingSlots = (playerLimit - players.size).coerceAtLeast(0)
 
@@ -129,17 +133,13 @@ fun LobbyScreen(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                GuessWhoseSongWordmark()
-                Text(
-                    "THE HANGOUT",
-                    color = GwsPalette.Ink,
-                    fontSize = 25.sp,
-                    lineHeight = 29.sp,
-                    fontWeight = FontWeight.Black,
-                    letterSpacing = (-0.6).sp
-                )
-            }
+            Text(
+                "Room: ${room?.joinCode ?: joinCode}",
+                modifier = Modifier.weight(1f),
+                color = GwsPalette.Ink,
+                style = MaterialTheme.typography.titleLarge,
+                fontWeight = FontWeight.SemiBold
+            )
             ConnectionPill(connected = uiState.isConnected)
             IconButton(onClick = { showSettings = true }) {
                 Icon(
@@ -183,17 +183,15 @@ fun LobbyScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(modifier = Modifier.weight(1f)) {
-                Text("Players", color = GwsPalette.Ink, style = MaterialTheme.typography.titleLarge)
+                Text("Players (${players.size}/$playerLimit)", color = GwsPalette.Ink, style = MaterialTheme.typography.titleMedium)
                 Text(
-                    "$connectedCount of $playerLimit ready",
+                    "$connectedCount connected",
                     color = GwsPalette.Ink.copy(alpha = 0.62f),
                     style = MaterialTheme.typography.bodySmall
                 )
             }
-            CapacityPill(occupied = players.size, capacity = playerLimit)
         }
 
-        CapacityBar(occupied = players.size, capacity = playerLimit)
         Spacer(Modifier.height(9.dp))
 
         LazyColumn(
@@ -251,7 +249,7 @@ fun LobbyScreen(
             isHost -> {
                 Button(
                     onClick = viewModel::startGame,
-                    enabled = connectedCount >= 2,
+                    enabled = connectedCount >= 2 && enoughRounds,
                     shape = RoundedCornerShape(17.dp),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = GwsPalette.Tangerine,
@@ -261,7 +259,23 @@ fun LobbyScreen(
                     ),
                     modifier = Modifier.fillMaxWidth().height(56.dp)
                 ) {
-                    Text("Start the mystery", fontWeight = FontWeight.Black, fontSize = 16.sp)
+                    Text("Start Game", fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                }
+                when {
+                    !enoughRounds -> Text(
+                        "Choose at least ${players.size} rounds in settings before starting.",
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        textAlign = TextAlign.Center,
+                        color = GwsPalette.Ink.copy(alpha = 0.72f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
+                    connectedCount < 2 -> Text(
+                        "Invite one more player to unlock song selection.",
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+                        textAlign = TextAlign.Center,
+                        color = GwsPalette.Ink.copy(alpha = 0.72f),
+                        style = MaterialTheme.typography.bodySmall
+                    )
                 }
             }
             else -> {
@@ -301,6 +315,7 @@ fun LobbyScreen(
             accountStatus = uiState.accountStatus,
             accountStatusIsError = uiState.accountStatusIsError,
             roomSettings = room.settings,
+            currentPlayerCount = players.size,
             isHost = isHost,
             profileError = uiState.error,
             onConnectSpotify = viewModel::connectSpotify,
@@ -598,7 +613,7 @@ fun PlayerListItem(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LobbySettingsSheet(
+internal fun LobbySettingsSheet(
     displayName: String,
     avatarCustomization: AvatarCustomization,
     isSpotifyConnected: Boolean,
@@ -606,6 +621,7 @@ private fun LobbySettingsSheet(
     accountStatus: String?,
     accountStatusIsError: Boolean,
     roomSettings: RoomSettings,
+    currentPlayerCount: Int,
     isHost: Boolean,
     profileError: String?,
     onConnectSpotify: () -> Unit,
@@ -683,16 +699,17 @@ private fun LobbySettingsSheet(
                 Text("Room settings", style = MaterialTheme.typography.titleMedium, color = GwsPalette.Ink, fontWeight = FontWeight.Black)
                 Text("Make the round feel like your group.", style = MaterialTheme.typography.bodySmall, color = GwsPalette.Ink.copy(alpha = 0.66f))
 
-                Text("Round length", style = MaterialTheme.typography.labelLarge, color = GwsPalette.Ink)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    com.guesswhosesong.shared.models.RoundLengthPreset.entries.forEach { preset ->
-                        FilterChip(
-                            selected = settings.roundLengthPreset == preset,
-                            onClick = { settings = settings.copy(roundLengthPreset = preset) },
-                            label = { Text(preset.name.lowercase().replaceFirstChar { it.uppercaseChar() }) }
-                        )
-                    }
-                }
+                Text("Total rounds", style = MaterialTheme.typography.labelLarge, color = GwsPalette.Ink)
+                RoundCountControl(
+                    roundCount = settings.roundCount,
+                    currentPlayerCount = currentPlayerCount,
+                    onRoundCountChange = { settings = settings.copy(roundCount = it) }
+                )
+                Text(
+                    "Choose from ${RoundCountRules.minimumForPlayerCount(currentPlayerCount)} to ${RoundCountRules.MAX_ROUNDS}. Everyone contributes at least one song.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GwsPalette.Ink.copy(alpha = 0.66f)
+                )
 
                 Text("Voting time", style = MaterialTheme.typography.labelLarge, color = GwsPalette.Ink)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -726,5 +743,37 @@ private fun LobbySettingsSheet(
             }
             Spacer(Modifier.height(12.dp))
         }
+    }
+}
+
+@Composable
+fun RoundCountControl(
+    roundCount: Int,
+    currentPlayerCount: Int,
+    onRoundCountChange: (Int) -> Unit
+) {
+    val minimumRounds = RoundCountRules.minimumForPlayerCount(currentPlayerCount)
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        OutlinedButton(
+            onClick = { onRoundCountChange((roundCount - 1).coerceAtLeast(minimumRounds)) },
+            enabled = roundCount > minimumRounds,
+            modifier = Modifier.semantics { contentDescription = "Decrease rounds" }
+        ) { Text("−") }
+        Text(
+            "$roundCount rounds",
+            modifier = Modifier.weight(1f),
+            textAlign = TextAlign.Center,
+            color = GwsPalette.Ink,
+            fontWeight = FontWeight.Bold
+        )
+        OutlinedButton(
+            onClick = { onRoundCountChange((roundCount + 1).coerceAtMost(RoundCountRules.MAX_ROUNDS)) },
+            enabled = roundCount < RoundCountRules.MAX_ROUNDS,
+            modifier = Modifier.semantics { contentDescription = "Increase rounds" }
+        ) { Text("+") }
     }
 }

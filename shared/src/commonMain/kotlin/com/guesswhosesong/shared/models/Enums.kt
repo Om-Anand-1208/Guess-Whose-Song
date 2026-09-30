@@ -19,13 +19,6 @@ enum class RoundPhase {
 }
 
 @Serializable
-enum class RoundLengthPreset(val songsPerPlayer: Int) {
-    QUICK(1),
-    STANDARD(3),
-    EXTENDED(20)
-}
-
-@Serializable
 enum class VotingTimerOption(val seconds: Int) {
     TEN(10),
     FIFTEEN(15),

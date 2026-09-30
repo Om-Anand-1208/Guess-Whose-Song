@@ -26,8 +26,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import coil.compose.AsyncImage
-import com.guesswhosesong.app.ui.components.GuessWhoseSongWordmark
 import com.guesswhosesong.app.ui.theme.GwsPalette
+import com.guesswhosesong.shared.models.RoundCountRules
 import com.guesswhosesong.shared.models.SongEntry
 import com.guesswhosesong.shared.models.TrackSearchResult
 
@@ -40,6 +40,7 @@ fun SubmissionScreen(
     val uiState by viewModel.uiState.collectAsState()
     val songs = if (uiState.pendingSongs.isNotEmpty()) uiState.pendingSongs
     else listOfNotNull(uiState.pendingSong)
+    val targetRounds = uiState.room?.settings?.roundCount ?: RoundCountRules.DEFAULT_ROUNDS
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -53,48 +54,10 @@ fun SubmissionScreen(
         modifier = Modifier.imePadding(),
         containerColor = GwsPalette.Paper,
         topBar = {
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .statusBarsPadding()
-                    .padding(start = 22.dp, end = 22.dp, top = 14.dp, bottom = 10.dp)
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    GuessWhoseSongWordmark()
-                    Spacer(Modifier.weight(1f))
-                    Surface(
-                        color = GwsPalette.Lavender.copy(alpha = 0.42f),
-                        shape = RoundedCornerShape(50)
-                    ) {
-                        Text(
-                            "${songs.size}/${uiState.maxSongs}",
-                            fontWeight = FontWeight.Bold,
-                            color = GwsPalette.Ink,
-                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp)
-                        )
-                    }
-                }
-                Spacer(Modifier.height(4.dp))
-                Text("Choose your songs", style = MaterialTheme.typography.headlineSmall)
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    "${uiState.lockedCount}/${uiState.totalCount} players ready",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = GwsPalette.Ink.copy(alpha = 0.66f)
-                )
-                LinearProgressIndicator(
-                    progress = {
-                        if (uiState.totalCount > 0) uiState.lockedCount.toFloat() / uiState.totalCount else 0f
-                    },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(top = 8.dp)
-                        .height(5.dp)
-                        .clip(RoundedCornerShape(50)),
-                    color = GwsPalette.LavenderDeep,
-                    trackColor = GwsPalette.Lavender.copy(alpha = 0.25f)
-                )
-            }
+            TopAppBar(
+                title = { Text("Pick Your Songs (${songs.size}/${uiState.maxSongs})") },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = GwsPalette.Paper)
+            )
         },
         bottomBar = {
             if (!uiState.songLocked) {
@@ -140,6 +103,29 @@ fun SubmissionScreen(
             contentPadding = PaddingValues(start = 18.dp, end = 18.dp, bottom = 18.dp),
             verticalArrangement = Arrangement.spacedBy(5.dp)
         ) {
+            item(key = "submission-progress") {
+                Column(modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)) {
+                    Text(
+                        "${uiState.lockedCount}/${uiState.totalCount} players ready",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = GwsPalette.Ink.copy(alpha = 0.66f)
+                    )
+                    LinearProgressIndicator(
+                        progress = {
+                            if (uiState.totalCount > 0) uiState.lockedCount.toFloat() / uiState.totalCount else 0f
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(top = 6.dp).height(4.dp),
+                        color = GwsPalette.LavenderDeep,
+                        trackColor = GwsPalette.Lavender.copy(alpha = 0.25f)
+                    )
+                    Text(
+                        "Choose at least one song, with up to ${uiState.maxSongs} picks per player for a $targetRounds-round game.",
+                        modifier = Modifier.padding(top = 8.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = GwsPalette.Ink.copy(alpha = 0.7f)
+                    )
+                }
+            }
             if (songs.isNotEmpty()) {
                 item(key = "selected-songs") {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -364,7 +350,7 @@ private fun AddSongCard(slotNumber: Int) {
 }
 
 @Composable
-private fun SpotifyConnectCard(onClick: () -> Unit) {
+internal fun SpotifyConnectCard(onClick: () -> Unit) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
@@ -391,7 +377,7 @@ private fun SpotifyConnectCard(onClick: () -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun SearchSongsField(
+internal fun SearchSongsField(
     query: String,
     songCount: Int,
     onQueryChange: (String) -> Unit,

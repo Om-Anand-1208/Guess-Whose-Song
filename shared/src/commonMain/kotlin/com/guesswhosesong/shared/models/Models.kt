@@ -116,10 +116,29 @@ object AvatarCustomizationCatalog {
 
 @Serializable
 data class RoomSettings(
-    val roundLengthPreset: RoundLengthPreset = RoundLengthPreset.STANDARD,
+    val roundCount: Int = RoundCountRules.DEFAULT_ROUNDS,
     val playerLimit: Int = 10,
     val votingTimerSeconds: Int = 20
 )
+
+/** Shared round-count and per-player submission rules used by every client and the server. */
+object RoundCountRules {
+    const val MIN_ROUNDS = 2
+    const val MAX_ROUNDS = 20
+    const val DEFAULT_ROUNDS = 10
+
+    fun minimumForPlayerCount(playerCount: Int): Int =
+        maxOf(MIN_ROUNDS, playerCount.coerceAtLeast(0))
+
+    fun isValid(roundCount: Int, playerCount: Int): Boolean =
+        roundCount in MIN_ROUNDS..MAX_ROUNDS && roundCount >= minimumForPlayerCount(playerCount)
+
+    fun maxSongsPerPlayer(roundCount: Int, playerCount: Int): Int {
+        val players = playerCount.coerceAtLeast(1)
+        val rounds = roundCount.coerceIn(MIN_ROUNDS, MAX_ROUNDS)
+        return (rounds + players - 1) / players
+    }
+}
 
 @Serializable
 data class SongEntry(

@@ -1,6 +1,7 @@
 package com.guesswhosesong.server.security
 
 import com.guesswhosesong.shared.models.RoomSettings
+import com.guesswhosesong.shared.models.RoundCountRules
 import com.guesswhosesong.shared.models.SongEntry
 
 object InputValidation {
@@ -16,7 +17,8 @@ object InputValidation {
         value.trim().isNotEmpty() && value.length <= 200 && value.none { it.isISOControl() }
 
     fun settings(value: RoomSettings): Boolean =
-        value.playerLimit in 2..20 && value.votingTimerSeconds in setOf(10, 15, 20, 30)
+        value.roundCount in RoundCountRules.MIN_ROUNDS..RoundCountRules.MAX_ROUNDS &&
+            value.playerLimit in 2..20 && value.votingTimerSeconds in setOf(10, 15, 20, 30)
 
     fun playlistId(value: String): Boolean = Regex("[A-Za-z0-9]{22}").matches(value)
 

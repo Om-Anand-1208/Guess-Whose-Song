@@ -104,6 +104,7 @@ class LobbyViewModel @Inject constructor(
                         }
                     }
                     is Kicked -> _events.emit(LobbyEvent.Kicked)
+                    is ErrorMessage -> _uiState.update { it.copy(error = message.message) }
                     else -> {}
                 }
             }
