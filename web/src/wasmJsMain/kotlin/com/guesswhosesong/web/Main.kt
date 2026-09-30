@@ -730,7 +730,12 @@ private fun PlayerSettingsPage(
 
                 if (isHost) {
                     GamePanel("Room settings") {
-                        LobbySettings(store, state.room.settings, state.room.players.size)
+                        LobbySettings(
+                            store,
+                            state.room.settings,
+                            state.room.players.size,
+                            state.room.players.any { it.isComputer }
+                        )
                     }
                 }
 
@@ -1146,6 +1151,15 @@ private fun LobbyPage(store: WebGameStore, state: WebUiState, onSettings: () -> 
                         "Song selection opens for everyone when the host starts the game."
                     }
                     GamePanel("Ready to start?", startDescription) {
+                        if (room.settings.gameMode == GameMode.MANUAL) {
+                            if (room.players.any { it.isComputer }) {
+                                Text("🤖 The computer will pick songs and vote automatically.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            } else if (room.players.size < room.settings.playerLimit) {
+                                OutlinedButton(onClick = store::addComputerPlayer, modifier = Modifier.fillMaxWidth()) {
+                                    Text("Add Computer Player")
+                                }
+                            }
+                        }
                         Button(onClick = store::startGame, enabled = room.players.size >= 2 && enoughRounds, modifier = Modifier.fillMaxWidth().height(52.dp)) {
                             Text("Start game", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                         }
@@ -1182,14 +1196,14 @@ private fun LobbyPage(store: WebGameStore, state: WebUiState, onSettings: () -> 
 }
 
 @Composable
-private fun LobbySettings(store: WebGameStore, settings: RoomSettings, playerCount: Int) {
+private fun LobbySettings(store: WebGameStore, settings: RoomSettings, playerCount: Int, hasComputerPlayer: Boolean) {
     val minimumRounds = RoundCountRules.minimumForPlayerCount(playerCount)
     var selectedRounds by remember(settings.roundCount) { mutableStateOf(settings.roundCount) }
     val effectiveSettings = settings.copy(roundCount = selectedRounds)
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         SettingChoices(
             title = "Game mode",
-            choices = listOf("Manual picks", "Recently Played"),
+            choices = if (hasComputerPlayer) listOf("Manual picks") else listOf("Manual picks", "Recently Played"),
             selectedValue = if (settings.gameMode == GameMode.SPOTIFY_RECENT) "Recently Played" else "Manual picks"
         ) { selected ->
             store.updateSettings(
@@ -1197,6 +1211,9 @@ private fun LobbySettings(store: WebGameStore, settings: RoomSettings, playerCou
                     gameMode = if (selected == "Recently Played") GameMode.SPOTIFY_RECENT else GameMode.MANUAL
                 )
             )
+        }
+        if (hasComputerPlayer) {
+            Text("Remove the computer player before switching to Recently Played.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Text(
             if (settings.gameMode == GameMode.SPOTIFY_RECENT) {
@@ -1277,12 +1294,22 @@ private fun PlayerRow(player: Player, isSelf: Boolean, canKick: Boolean, onKick:
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(player.displayName + if (isSelf) " (you)" else "", fontWeight = if (isSelf) FontWeight.Bold else FontWeight.Medium)
+                Text(
+                    player.displayName + if (isSelf) " (you)" else "",
+                    fontWeight = if (isSelf) FontWeight.Bold else FontWeight.Medium
+                )
                 if (player.isHost) Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(50)) {
                     Text("HOST", modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black)
                 }
+                if (player.isComputer) Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(50)) {
+                    Text("🤖 COMPUTER", modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black)
+                }
             }
-            Text(if (player.connected) "Connected" else "Reconnecting…", style = MaterialTheme.typography.bodySmall, color = if (player.connected) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error)
+            Text(
+                if (player.isComputer) "Picks songs and votes automatically" else if (player.connected) "Connected" else "Reconnecting…",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (player.connected) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error
+            )
         }
         if (canKick) TextButton(onClick = onKick) { Text("Remove", color = MaterialTheme.colorScheme.error) }
     }
@@ -1620,37 +1647,30 @@ private fun SubmissionPage(store: WebGameStore, state: WebUiState) {
     val totalPlayers = state.room?.players?.size ?: 0
     val lockedPlayers = state.room?.players?.count { it.songLocked } ?: 0
     PostJoinFrame(
-        title = "Pick your songs",
+        title = "Add songs",
         kicker = "YOUR TASTE, YOUR TURN",
-        description = "Choose at least one song. Add up to $maxSongs per player toward a ${room?.settings?.roundCount ?: RoundCountRules.DEFAULT_ROUNDS}-round game.",
+        description = "Add the songs you want the group to hear. You can delete picks before locking them in.",
         state = state
     ) { wide ->
         val songColumn: @Composable () -> Unit = {
-            GamePanel("Your song picks", "${state.pendingSongs.size} of $maxSongs selected") {
-                repeat(maxSongs) { index ->
-                    val song = state.pendingSongs.getOrNull(index)
+            val countLabel = "${state.pendingSongs.size} song${if (state.pendingSongs.size == 1) "" else "s"} added"
+            GamePanel("Your songs", countLabel) {
+                if (state.pendingSongs.isEmpty()) {
+                    Text("No songs added yet. Search below to add one.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                state.pendingSongs.forEach { song ->
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        color = if (song == null) MaterialTheme.colorScheme.background else MaterialTheme.colorScheme.surface,
+                        color = MaterialTheme.colorScheme.surface,
                         shape = RoundedCornerShape(16.dp),
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                     ) {
-                        if (song == null) {
-                            Row(modifier = Modifier.fillMaxWidth().padding(15.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("${index + 1}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
-                                Spacer(Modifier.width(12.dp))
-                                Text(if (!locked && index == state.pendingSongs.size) "Choose a song for this spot" else "Empty song slot", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(song.title, fontWeight = FontWeight.Bold)
+                                Text(song.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                        } else {
-                            Row(Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text("${index + 1}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
-                                Spacer(Modifier.width(12.dp))
-                                Column(Modifier.weight(1f)) {
-                                    Text(song.title, fontWeight = FontWeight.Bold)
-                                    Text(song.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                }
-                                if (!locked) TextButton(onClick = { store.removeSong(song.songId) }) { Text("Remove") }
-                            }
+                            if (!locked) TextButton(onClick = { store.removeSong(song.songId) }) { Text("Delete") }
                         }
                     }
                 }
@@ -1692,12 +1712,12 @@ private fun SubmissionPage(store: WebGameStore, state: WebUiState) {
 
 @Composable
 private fun SongSearchPanel(store: WebGameStore, state: WebUiState, maxSongs: Int, wide: Boolean) {
-    GamePanel("Find a song", "Search the catalog or load a pick from Spotify.") {
+    GamePanel("Add songs", "Search the catalog or choose a Spotify suggestion.") {
         val field = @Composable {
             OutlinedTextField(
                 value = state.searchQuery,
                 onValueChange = store::setSearchQuery,
-                label = { Text("Song for slot ${state.pendingSongs.size + 1}") },
+                label = { Text("Search songs to add") },
                 placeholder = { Text("Song title or artist") },
                 singleLine = true,
                 modifier = Modifier.fillMaxWidth()

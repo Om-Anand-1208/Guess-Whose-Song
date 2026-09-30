@@ -250,6 +250,7 @@ class RoomSession(
 
         when (message) {
             is StartGame -> handleStartGame(playerId)
+            is AddComputerPlayer -> handleAddComputerPlayer(playerId)
             is UpdateSettings -> handleUpdateSettings(playerId, message.settings)
             is UpdatePlayerProfile -> handleUpdatePlayerProfile(playerId, message.displayName, message.avatarCustomization)
             is KickPlayer -> handleKickPlayer(playerId, message.targetPlayerId)
@@ -266,6 +267,38 @@ class RoomSession(
     }
 
     // ─── Host-only actions ────────────────────────────────────────────────────
+
+    private suspend fun handleAddComputerPlayer(playerId: String) {
+        var error: ErrorMessage? = null
+        var added = false
+        mutex.withLock {
+            val host = room.players.find { it.id == playerId }
+            when {
+                host == null -> error = ErrorMessage("UNKNOWN_PLAYER", "Player not found in room")
+                !host.isHost -> error = ErrorMessage("NOT_HOST", "Only the host can add a computer player")
+                room.state != RoomState.LOBBY -> error = ErrorMessage("WRONG_STATE", "Computer players can only join from the lobby")
+                room.settings.gameMode != GameMode.MANUAL -> {
+                    error = ErrorMessage("COMPUTER_UNAVAILABLE", "Computer players are only available in Manual picks mode")
+                }
+                room.players.any { it.isComputer } -> error = ErrorMessage("COMPUTER_ALREADY_ADDED", "A computer player is already in the room")
+                room.players.size >= room.settings.playerLimit -> error = ErrorMessage("ROOM_FULL", "There are no open player spots")
+                else -> {
+                    val computer = Player(
+                        id = "computer-${UUID.randomUUID()}",
+                        displayName = "Computer",
+                        connected = true,
+                        isComputer = true,
+                        joinedAt = System.currentTimeMillis()
+                    )
+                    room = room.copy(players = room.players + computer)
+                    persist()
+                    added = true
+                }
+            }
+        }
+        error?.let { sendToPlayer(playerId, it) }
+        if (added) broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
+    }
 
     private suspend fun handleStartGame(playerId: String) {
         var error: ErrorMessage? = null
@@ -304,6 +337,13 @@ class RoomSession(
         }
         if (!InputValidation.settings(settings)) {
             sendToPlayer(playerId, ErrorMessage("INVALID_SETTINGS", "Invalid round count, player limit, or voting timer"))
+            return
+        }
+        if (settings.gameMode == GameMode.SPOTIFY_RECENT && room.players.any { it.isComputer }) {
+            sendToPlayer(playerId, ErrorMessage(
+                "COMPUTER_UNAVAILABLE",
+                "Remove the computer player before switching to Recently Played"
+            ))
             return
         }
         if (!RoundCountRules.isValid(settings.roundCount, room.players.size)) {
@@ -590,6 +630,47 @@ class RoomSession(
 
     private var submissionCompleteSignal = CompletableDeferred<Unit>()
 
+    private suspend fun prepareComputerSongs() {
+        val computers = room.players.filter { it.isComputer }
+        if (computers.isEmpty()) return
+
+        val maxSongs = RoundCountRules.maxSongsPerPlayer(room.settings.roundCount, room.players.size)
+        val tracks = try {
+            musicService.getTopTracks()
+                .filter { it.previewUrl.isNotBlank() }
+                .distinctBy { it.id }
+                .take(maxSongs)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (e: Exception) {
+            logger.warn("[${room.joinCode}] Could not load songs for the computer player: ${e.message}")
+            emptyList()
+        }
+
+        mutex.withLock {
+            room = room.copy(players = room.players.map { player ->
+                if (!player.isComputer) player else {
+                    val songs = tracks.map { track ->
+                        SongEntry(
+                            songId = track.id,
+                            title = track.title,
+                            artist = track.artist,
+                            albumArtUrl = track.albumArtUrl,
+                            previewUrl = track.previewUrl,
+                            submitterId = player.id
+                        )
+                    }
+                    player.copy(
+                        pendingSong = songs.firstOrNull(),
+                        pendingSongs = songs,
+                        songLocked = true
+                    )
+                }
+            })
+            persist()
+        }
+    }
+
     private suspend fun runSubmissionPhase() {
         if (room.settings.gameMode == GameMode.SPOTIFY_RECENT) {
             runRecentlyPlayedPhase()
@@ -601,6 +682,7 @@ class RoomSession(
             room = room.copy(state = RoomState.SUBMISSION)
             persist()
         }
+        prepareComputerSongs()
         broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
 
         while (true) {
@@ -650,7 +732,11 @@ class RoomSession(
                 listOfNotNull(player.pendingSong)
             }
             songsToResolve.forEach { pending ->
-                val resolved = musicService.resolveEntry(pending)
+                val resolved = if (player.isComputer) {
+                    pending.takeIf { it.previewUrl.isNotBlank() }
+                } else {
+                    musicService.resolveEntry(pending)
+                }
                 if (resolved != null && resolved.previewUrl.isNotBlank()) {
                     resolvedEntries.add(resolved.copy(submitterId = player.id))
                 } else {
@@ -891,6 +977,22 @@ class RoomSession(
                 }
             )
         )
+
+        val computerPlayers = room.players.filter { it.isComputer }
+        if (computerPlayers.isNotEmpty()) {
+            val choices = if (room.settings.gameMode == GameMode.SPOTIFY_RECENT) {
+                room.songPool.map { it.submitterId }.distinct()
+            } else {
+                room.players.map { it.id } + GameConstants.DECOY_ID
+            }
+            computerPlayers.forEach { computer ->
+                currentVotes[computer.id] = choices.randomOrNull() ?: ""
+            }
+            persistRuntime(runtime.copy(votes = currentVotes.toMap()))
+            val totalVotes = room.players.count { it.connected }
+            broadcastAll(VoteCountUpdated(votedCount = currentVotes.size, totalCount = totalVotes))
+            if (currentVotes.size >= totalVotes) allVotedSignal.complete(Unit)
+        }
 
         // Wait for all votes OR timer
         withTimeoutOrNull(room.settings.votingTimerSeconds * 1000L) {

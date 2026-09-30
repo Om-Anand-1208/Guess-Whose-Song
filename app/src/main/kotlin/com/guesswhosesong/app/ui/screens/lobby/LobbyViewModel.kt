@@ -190,6 +190,10 @@ class LobbyViewModel @Inject constructor(
         viewModelScope.launch { gameRepository.startGame() }
     }
 
+    fun addComputerPlayer() {
+        viewModelScope.launch { gameRepository.addComputerPlayer() }
+    }
+
     fun updateSettings(settings: RoomSettings) {
         viewModelScope.launch { gameRepository.updateSettings(settings) }
     }

@@ -133,6 +133,7 @@ class GameRepository(private val wsManager: WebSocketManager) {
     }
 
     suspend fun startGame() = wsManager.send(StartGame())
+    suspend fun addComputerPlayer() = wsManager.send(AddComputerPlayer())
     suspend fun submitSong(song: SongEntry) {
         _mySubmittedSongs.value = listOf(song)
         wsManager.send(UpdatePendingSong(song = song))

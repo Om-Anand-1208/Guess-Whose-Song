@@ -311,7 +311,7 @@ class SubmissionViewModel @Inject constructor(
         val updated = if (current.size < max) {
             current + entry
         } else {
-            _uiState.update { it.copy(error = "All $max song slots filled. Remove a song to pick another.") }
+            _uiState.update { it.copy(error = "You have reached the $max song limit. Delete a song to add another.") }
             return
         }
 
@@ -355,7 +355,7 @@ class SubmissionViewModel @Inject constructor(
         val updated = if (current.size < max) {
             current + entry
         } else {
-            _uiState.update { it.copy(error = "All $max song slots filled. Remove a song to pick another.") }
+            _uiState.update { it.copy(error = "You have reached the $max song limit. Delete a song to add another.") }
             return
         }
 
@@ -397,19 +397,17 @@ class SubmissionViewModel @Inject constructor(
         viewModelScope.launch { gameRepository.lockSong() }
     }
 
-    /**
-     * Surprise Me: fills empty pick slots using personal Spotify top tracks if connected,
-     * or popular top tracks from the server if not. If already full, replaces all with a fresh set.
-     */
+    /** Adds suggested songs into the remaining spaces without replacing selected songs. */
     fun surpriseMe() {
         viewModelScope.launch {
             _uiState.update { it.copy(isSearching = true, error = null) }
             try {
                 val max = _uiState.value.maxSongs
                 val current = _uiState.value.pendingSongs.toMutableList()
-                val slotsNeeded = if (current.size >= max) max else (max - current.size)
-                if (current.size >= max) {
-                    current.clear()
+                val slotsNeeded = (max - current.size).coerceAtLeast(0)
+                if (slotsNeeded == 0) {
+                    _uiState.update { it.copy(error = "Song limit reached. Delete a song to add another.") }
+                    return@launch
                 }
 
                 val spotifyList = _uiState.value.spotifySuggestions

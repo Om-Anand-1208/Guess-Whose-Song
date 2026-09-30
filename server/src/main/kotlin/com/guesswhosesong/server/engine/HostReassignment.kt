@@ -15,7 +15,7 @@ object HostReassignment {
      */
     fun findNextHost(players: List<Player>, currentHostId: String): Player? {
         return players
-            .filter { it.id != currentHostId && it.connected }
+            .filter { it.id != currentHostId && it.connected && !it.isComputer }
             .minByOrNull { it.joinedAt }
     }
 

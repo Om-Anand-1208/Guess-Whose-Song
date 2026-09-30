@@ -231,6 +231,18 @@ fun LobbyScreen(
             }
         }
 
+        if (isHost && room?.settings?.gameMode == GameMode.MANUAL &&
+            players.none { it.isComputer } && remainingSlots > 0
+        ) {
+            OutlinedButton(
+                onClick = viewModel::addComputerPlayer,
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                Text("Add Computer Player")
+            }
+        }
+
         when {
             room == null -> {
                 Surface(
@@ -325,6 +337,7 @@ fun LobbyScreen(
                 val activity = context as? Activity
                 if (activity != null) googleLauncher.launch(viewModel.googleSignInIntent(activity))
             },
+            hasComputerPlayer = players.any { it.isComputer },
             onDismiss = { showSettings = false },
             onSave = { name, avatar, settings ->
                 if (viewModel.updatePlayerProfile(name, avatar)) {
@@ -596,9 +609,13 @@ fun PlayerListItem(
                         Spacer(Modifier.width(6.dp))
                         Text("HOST", color = Color(0xFFB46A0B), fontSize = 9.sp, fontWeight = FontWeight.Black)
                     }
+                    if (player.isComputer) {
+                        Spacer(Modifier.width(6.dp))
+                        Text("🤖 COMPUTER", color = GwsPalette.LavenderDeep, fontSize = 9.sp, fontWeight = FontWeight.Black)
+                    }
                 }
                 Text(
-                    if (player.connected) "In the room" else "Reconnecting…",
+                    if (player.isComputer) "Picks songs and votes automatically" else if (player.connected) "In the room" else "Reconnecting…",
                     color = if (player.connected) GwsPalette.Ink.copy(alpha = 0.58f) else Color(0xFF9D2922),
                     style = MaterialTheme.typography.bodySmall
                 )
@@ -623,6 +640,7 @@ internal fun LobbySettingsSheet(
     accountStatusIsError: Boolean,
     roomSettings: RoomSettings,
     currentPlayerCount: Int,
+    hasComputerPlayer: Boolean,
     isHost: Boolean,
     profileError: String?,
     onConnectSpotify: () -> Unit,
@@ -710,11 +728,14 @@ internal fun LobbySettingsSheet(
                     FilterChip(
                         selected = settings.gameMode == GameMode.SPOTIFY_RECENT,
                         onClick = { settings = settings.copy(gameMode = GameMode.SPOTIFY_RECENT) },
+                        enabled = !hasComputerPlayer,
                         label = { Text("Recently Played") }
                     )
                 }
                 Text(
-                    if (settings.gameMode == GameMode.SPOTIFY_RECENT) {
+                    if (hasComputerPlayer) {
+                        "Remove the computer player before switching to Recently Played."
+                    } else if (settings.gameMode == GameMode.SPOTIFY_RECENT) {
                         "Use unique playable tracks from players’ recent Spotify history."
                     } else {
                         "Everyone chooses songs before the game starts."

@@ -1,6 +1,7 @@
 package com.guesswhosesong.web
 
 import com.guesswhosesong.shared.dto.CastVote
+import com.guesswhosesong.shared.dto.AddComputerPlayer
 import com.guesswhosesong.shared.dto.ChatReceived
 import com.guesswhosesong.shared.dto.ClientMessage
 import com.guesswhosesong.shared.dto.EndRoom
@@ -212,6 +213,8 @@ class WebGameStore internal constructor(
     }
 
     fun startGame() = send(StartGame())
+
+    fun addComputerPlayer() = send(AddComputerPlayer())
 
     fun updateSettings(settings: RoomSettings) = send(UpdateSettings(settings))
 

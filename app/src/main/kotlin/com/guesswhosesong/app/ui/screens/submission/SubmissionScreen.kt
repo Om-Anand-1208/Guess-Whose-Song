@@ -113,7 +113,7 @@ fun SubmissionScreen(
         containerColor = GwsPalette.Paper,
         topBar = {
             TopAppBar(
-                title = { Text("Pick Your Songs (${songs.size}/${uiState.maxSongs})") },
+                title = { Text("Add songs") },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = GwsPalette.Paper)
             )
         },
@@ -133,12 +133,13 @@ fun SubmissionScreen(
                     ) {
                         OutlinedButton(
                             onClick = viewModel::surpriseMe,
+                            enabled = songs.size < uiState.maxSongs,
                             modifier = Modifier.weight(1f).height(52.dp),
                             shape = RoundedCornerShape(16.dp),
                             border = BorderStroke(1.dp, GwsPalette.LavenderDeep.copy(alpha = 0.55f)),
                             colors = ButtonDefaults.outlinedButtonColors(contentColor = GwsPalette.LavenderDeep)
                         ) {
-                            Text("Surprise me", fontWeight = FontWeight.Bold)
+                            Text("Add suggestions", fontWeight = FontWeight.Bold)
                         }
                         Button(
                             onClick = viewModel::lockSong,
@@ -147,7 +148,7 @@ fun SubmissionScreen(
                             shape = RoundedCornerShape(16.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = GwsPalette.Tangerine, contentColor = GwsPalette.Ink)
                         ) {
-                            Text("Lock in (${songs.size}/${uiState.maxSongs})", fontWeight = FontWeight.Black)
+                            Text("Lock in picks", fontWeight = FontWeight.Black)
                         }
                     }
                 }
@@ -177,7 +178,7 @@ fun SubmissionScreen(
                         trackColor = GwsPalette.Lavender.copy(alpha = 0.25f)
                     )
                     Text(
-                        "Choose at least one song, with up to ${uiState.maxSongs} picks per player for a $targetRounds-round game.",
+                        "Choose at least one song. Add up to ${uiState.maxSongs} songs for this $targetRounds-round game.",
                         modifier = Modifier.padding(top = 8.dp),
                         style = MaterialTheme.typography.bodySmall,
                         color = GwsPalette.Ink.copy(alpha = 0.7f)
@@ -187,9 +188,9 @@ fun SubmissionScreen(
             if (songs.isNotEmpty()) {
                 item(key = "selected-songs") {
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        songs.forEachIndexed { index, song ->
+                        Text("Your songs", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        songs.forEach { song ->
                             SelectedSongCard(
-                                index = index + 1,
                                 song = song,
                                 locked = uiState.songLocked,
                                 onRemove = { viewModel.removeSong(song.songId) }
@@ -200,7 +201,9 @@ fun SubmissionScreen(
             }
 
             if (!uiState.songLocked && songs.size < uiState.maxSongs) {
-                item(key = "add-song") { AddSongCard(slotNumber = songs.size + 1) }
+                item(key = "add-song-heading") {
+                    Text("Add songs", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                }
             }
 
             if (!uiState.songLocked && !uiState.spotifyConnected) {
@@ -291,7 +294,6 @@ fun SubmissionScreen(
                 item(key = "song-search") {
                     SearchSongsField(
                         query = uiState.searchQuery,
-                        songCount = songs.size,
                         onQueryChange = viewModel::onSearchQueryChanged,
                         onSearch = viewModel::searchSong
                     )
@@ -380,34 +382,6 @@ fun SubmissionScreen(
 }
 
 @Composable
-private fun AddSongCard(slotNumber: Int) {
-    Surface(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 8.dp, bottom = 5.dp),
-        color = GwsPalette.Lavender.copy(alpha = 0.13f),
-        shape = RoundedCornerShape(18.dp),
-        border = BorderStroke(1.dp, GwsPalette.LavenderDeep.copy(alpha = 0.45f))
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(
-                modifier = Modifier.size(42.dp),
-                color = GwsPalette.Lavender.copy(alpha = 0.34f),
-                shape = RoundedCornerShape(13.dp)
-            ) { }
-            Spacer(Modifier.width(11.dp))
-            Column {
-                Text("Add a song · slot $slotNumber", fontWeight = FontWeight.Bold)
-                Text("Search for a song or pick a suggestion", style = MaterialTheme.typography.bodySmall, color = GwsPalette.Ink.copy(alpha = 0.62f))
-            }
-        }
-    }
-}
-
-@Composable
 internal fun SpotifyConnectCard(onClick: () -> Unit) {
     Surface(
         modifier = Modifier
@@ -437,7 +411,6 @@ internal fun SpotifyConnectCard(onClick: () -> Unit) {
 @Composable
 internal fun SearchSongsField(
     query: String,
-    songCount: Int,
     onQueryChange: (String) -> Unit,
     onSearch: () -> Unit
 ) {
@@ -470,7 +443,7 @@ internal fun SearchSongsField(
 }
 
 @Composable
-fun SelectedSongCard(index: Int, song: SongEntry, locked: Boolean, onRemove: () -> Unit) {
+fun SelectedSongCard(song: SongEntry, locked: Boolean, onRemove: () -> Unit) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
         color = Color.White,
@@ -492,8 +465,8 @@ fun SelectedSongCard(index: Int, song: SongEntry, locked: Boolean, onRemove: () 
                 Text(song.artist, style = MaterialTheme.typography.bodySmall, color = GwsPalette.Ink.copy(alpha = 0.63f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             if (!locked) {
-                IconButton(onClick = onRemove, modifier = Modifier.size(38.dp)) {
-                    Icon(Icons.Default.Close, contentDescription = "Remove song", tint = GwsPalette.Ink.copy(alpha = 0.65f))
+                TextButton(onClick = onRemove, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)) {
+                    Text("Delete", color = Color(0xFF9D2922), fontWeight = FontWeight.Bold)
                 }
             } else {
                 Text("READY", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = GwsPalette.LavenderDeep)

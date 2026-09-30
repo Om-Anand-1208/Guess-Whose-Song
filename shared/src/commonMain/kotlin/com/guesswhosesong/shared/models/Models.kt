@@ -167,7 +167,8 @@ data class Player(
     val pendingSongs: List<SongEntry> = emptyList(),
     val songLocked: Boolean = false,
     val joinedAt: Long = 0L, // epoch millis, used for host reassignment ordering
-    val avatarCustomization: AvatarCustomization? = null
+    val avatarCustomization: AvatarCustomization? = null,
+    val isComputer: Boolean = false
 )
 
 @Serializable

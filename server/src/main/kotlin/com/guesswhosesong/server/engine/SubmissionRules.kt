@@ -8,6 +8,7 @@ import com.guesswhosesong.shared.models.SongEntry
 /** Server-side validation for a player's bounded song submission. */
 object SubmissionRules {
     fun playersMissingSongs(players: List<Player>): List<String> = players
+        .filterNot { it.isComputer }
         .filter { it.pendingSongs.isEmpty() && it.pendingSong == null }
         .map { it.id }
 

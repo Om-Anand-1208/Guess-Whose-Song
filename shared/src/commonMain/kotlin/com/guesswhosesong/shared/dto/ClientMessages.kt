@@ -28,6 +28,13 @@ class StartGame : ClientMessage() {
     override fun hashCode(): Int = 1
 }
 
+@Serializable
+@SerialName("ADD_COMPUTER_PLAYER")
+class AddComputerPlayer : ClientMessage() {
+    override fun equals(other: Any?): Boolean = other is AddComputerPlayer
+    override fun hashCode(): Int = 1
+}
+
 /**
  * Sent whenever the user rerolls in Surprise Me mode.
  * The pendingSong field in Player is updated server-side.
