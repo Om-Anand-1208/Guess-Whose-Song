@@ -1,6 +1,7 @@
 package com.guesswhosesong.server.deezer
 
 import com.guesswhosesong.shared.models.TrackSearchResult
+import com.guesswhosesong.server.music.MusicCatalogClient
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.request.*
@@ -37,10 +38,13 @@ private data class DeezerArtist(
 
 @Serializable
 private data class DeezerAlbum(
-    @SerialName("cover_medium") val coverMedium: String? = null
+    @SerialName("cover_small") val coverSmall: String? = null,
+    @SerialName("cover_medium") val coverMedium: String? = null,
+    @SerialName("cover_big") val coverBig: String? = null,
+    @SerialName("cover_xl") val coverXl: String? = null
 )
 
-class DeezerClient {
+class DeezerClient : MusicCatalogClient {
     private val logger = LoggerFactory.getLogger(DeezerClient::class.java)
 
     private val httpClient = HttpClient(CIO) {
@@ -53,7 +57,7 @@ class DeezerClient {
      * Search Deezer for tracks matching [query].
      * Returns an empty list if the search fails or network is unavailable.
      */
-    suspend fun search(query: String, limit: Int = 10): List<TrackSearchResult> {
+    override suspend fun search(query: String, limit: Int): List<TrackSearchResult> {
         return try {
             val responseText: String = httpClient.get("https://api.deezer.com/search") {
                 parameter("q", query)
@@ -69,7 +73,12 @@ class DeezerClient {
                         id = (raw.id ?: 0L).toString(),
                         title = raw.title ?: "",
                         artist = raw.artist?.name ?: "Unknown Artist",
-                        albumArtUrl = raw.album?.coverMedium ?: "",
+                        albumArtUrl = listOfNotNull(
+                            raw.album?.coverXl,
+                            raw.album?.coverBig,
+                            raw.album?.coverMedium,
+                            raw.album?.coverSmall
+                        ).firstOrNull { it.isNotBlank() } ?: "",
                         previewUrl = raw.previewUrl ?: ""
                     )
                 }
@@ -79,5 +88,5 @@ class DeezerClient {
         }
     }
 
-    fun close() = httpClient.close()
+    override fun close() = httpClient.close()
 }

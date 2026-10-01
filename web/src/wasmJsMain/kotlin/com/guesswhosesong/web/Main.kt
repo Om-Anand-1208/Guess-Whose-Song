@@ -42,6 +42,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.Shapes
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -78,6 +79,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
@@ -85,6 +87,7 @@ import androidx.compose.ui.window.ComposeViewport
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Settings
 import coil3.compose.AsyncImage
+import coil3.compose.AsyncImagePainter
 import com.guesswhosesong.shared.models.Player
 import com.guesswhosesong.shared.models.RoomSettings
 import com.guesswhosesong.shared.models.AvatarCustomization
@@ -153,6 +156,37 @@ private val PostJoinColorScheme = lightColorScheme(
     outlineVariant = Color(0xFFCFC6B9)
 )
 
+private val PostJoinDarkColorScheme = darkColorScheme(
+    primary = Color(0xFF8B69FF),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFF30284F),
+    onPrimaryContainer = Color(0xFFE8E1FF),
+    secondary = Color(0xFFFFD456),
+    onSecondary = Color(0xFF171717),
+    secondaryContainer = Color(0xFF55491F),
+    onSecondaryContainer = Color(0xFFFFEAA8),
+    tertiary = Color(0xFF9BEA61),
+    onTertiary = Color(0xFF162100),
+    background = Color(0xFF17191F),
+    onBackground = Color(0xFFF6F5F8),
+    surface = Color(0xFF202229),
+    onSurface = Color(0xFFF6F5F8),
+    surfaceVariant = Color(0xFF2A2D36),
+    onSurfaceVariant = Color(0xFFB7B9C7),
+    error = Color(0xFFFFB4AB),
+    onError = Color(0xFF690005),
+    outline = Color(0xFF555966),
+    outlineVariant = Color(0xFF383B45)
+)
+
+private enum class WebAppearanceMode(val label: String) {
+    SYSTEM("System"), LIGHT("Light"), DARK("Dark");
+
+    companion object {
+        fun parse(value: String?): WebAppearanceMode = entries.firstOrNull { it.name == value } ?: SYSTEM
+    }
+}
+
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
     (document.getElementById("loader-container") as? HTMLElement)?.remove()
@@ -166,8 +200,19 @@ private fun WebApp() {
     val authStatus by store.auth.status.collectAsState()
     val user by store.auth.user.collectAsState()
     var settingsPageOpen by remember { mutableStateOf(false) }
+    var appearanceMode by remember { mutableStateOf(WebAppearanceMode.parse(localGet("gws_post_join_appearance"))) }
+    val updateAppearance: (WebAppearanceMode) -> Unit = { mode ->
+        localSet("gws_post_join_appearance", mode.name)
+        appearanceMode = mode
+    }
+    val appearanceDark = when (appearanceMode) {
+        WebAppearanceMode.SYSTEM -> systemPrefersDark()
+        WebAppearanceMode.LIGHT -> false
+        WebAppearanceMode.DARK -> true
+    }
+    val usePostJoinDark = state.page in setOf(WebPage.LOBBY, WebPage.SUBMISSION, WebPage.GAME) && appearanceDark
     LaunchedEffect(state.page) {
-        if (state.page != WebPage.JOIN && state.page != WebPage.LOBBY) settingsPageOpen = false
+        if (state.page !in setOf(WebPage.JOIN, WebPage.LOBBY, WebPage.SUBMISSION, WebPage.GAME)) settingsPageOpen = false
     }
     DisposableEffect(Unit) { onDispose { store.close() } }
 
@@ -196,7 +241,9 @@ private fun WebApp() {
                                 state = state,
                                 status = authStatus,
                                 user = user,
-                                onBackToGame = { settingsPageOpen = false }
+                                onBackToGame = { settingsPageOpen = false },
+                                appearanceMode = appearanceMode,
+                                onAppearanceChange = updateAppearance
                             )
                         } else {
                             JoinPage(store, state, onSettings = { settingsPageOpen = true })
@@ -205,7 +252,7 @@ private fun WebApp() {
                 }
             } else {
                 MaterialTheme(
-                    colorScheme = PostJoinColorScheme,
+                    colorScheme = if (usePostJoinDark) PostJoinDarkColorScheme else PostJoinColorScheme,
                     shapes = Shapes(
                         small = RoundedCornerShape(12.dp),
                         medium = RoundedCornerShape(20.dp),
@@ -216,12 +263,25 @@ private fun WebApp() {
                         when (state.page) {
                             WebPage.JOIN -> Unit
                             WebPage.LOBBY -> if (settingsPageOpen) {
-                                PlayerSettingsPage(store, state, authStatus, user, onBackToGame = { settingsPageOpen = false })
+                                PlayerSettingsPage(
+                                    store, state, authStatus, user,
+                                    onBackToGame = { settingsPageOpen = false },
+                                    appearanceMode = appearanceMode,
+                                    onAppearanceChange = updateAppearance
+                                )
                             } else {
                                 LobbyPage(store, state, onSettings = { settingsPageOpen = true })
                             }
-                            WebPage.SUBMISSION -> SubmissionPage(store, state)
-                            WebPage.GAME -> GamePage(store, state)
+                            WebPage.SUBMISSION -> if (settingsPageOpen) {
+                                PlayerSettingsPage(store, state, authStatus, user, { settingsPageOpen = false }, appearanceMode, updateAppearance)
+                            } else {
+                                SubmissionPage(store, state, onSettings = { settingsPageOpen = true })
+                            }
+                            WebPage.GAME -> if (settingsPageOpen) {
+                                PlayerSettingsPage(store, state, authStatus, user, { settingsPageOpen = false }, appearanceMode, updateAppearance)
+                            } else {
+                                GamePage(store, state, onSettings = { settingsPageOpen = true })
+                            }
                             WebPage.RESULTS -> ResultsPage(store, state)
                         }
                     }
@@ -267,6 +327,7 @@ private fun PostJoinFrame(
     description: String,
     state: WebUiState,
     onSettings: (() -> Unit)? = null,
+    useSharedHeader: Boolean = true,
     content: @Composable (wide: Boolean) -> Unit
 ) {
     androidx.compose.foundation.layout.BoxWithConstraints(Modifier.fillMaxSize()) {
@@ -283,37 +344,64 @@ private fun PostJoinFrame(
                     .widthIn(max = 1280.dp)
                     .align(Alignment.CenterHorizontally)
             ) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                        Text(kicker.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, letterSpacing = 0.7.sp)
-                        Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                        if (description.isNotBlank()) Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    state.room?.joinCode?.let { code ->
-                        Surface(
-                            color = MaterialTheme.colorScheme.surface,
-                            shape = RoundedCornerShape(8.dp),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(7.dp)
+                if (useSharedHeader) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        WebWordmark(Modifier.weight(1f))
+                        state.room?.joinCode?.let { code ->
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                shape = RoundedCornerShape(17.dp)
                             ) {
-                                Text("ROOM", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
-                                Text(code, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
+                                Column(
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                                    verticalArrangement = Arrangement.spacedBy(1.dp)
+                                ) {
+                                    Text("ROOM", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                                    Text(code.uppercase(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black, letterSpacing = 1.4.sp, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                                }
+                            }
+                        }
+                        onSettings?.let { openSettings ->
+                            IconButton(
+                                onClick = openSettings,
+                                modifier = Modifier.semantics { contentDescription = "Settings" }
+                            ) {
+                                Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = CircleShape) {
+                                    Box(Modifier.size(44.dp), contentAlignment = Alignment.Center) {
+                                        Icon(Icons.Default.Settings, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
+                                    }
+                                }
                             }
                         }
                     }
-                    onSettings?.let { openSettings ->
-                        TextButton(
-                            onClick = openSettings,
-                            modifier = Modifier.semantics { contentDescription = "Settings" }
-                        ) {
-                            Text("⚙", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+                    Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        Text(kicker.uppercase(), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black, letterSpacing = 0.7.sp)
+                        Text(title, style = MaterialTheme.typography.displaySmall, fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onBackground)
+                        if (description.isNotBlank()) Text(description, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                } else {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(kicker.uppercase(), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, letterSpacing = 0.7.sp)
+                            Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                            if (description.isNotBlank()) Text(description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        state.room?.joinCode?.let { code ->
+                            Surface(color = MaterialTheme.colorScheme.surface, shape = RoundedCornerShape(8.dp), border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
+                                Row(Modifier.padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                                    Text("ROOM", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, fontWeight = FontWeight.Bold)
+                                    Text(code, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Black, letterSpacing = 1.2.sp)
+                                }
+                            }
+                        }
+                        onSettings?.let { openSettings ->
+                            TextButton(onClick = openSettings) { Text("⚙", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary) }
                         }
                     }
                 }
@@ -322,6 +410,25 @@ private fun PostJoinFrame(
                 content(wide)
                 Spacer(Modifier.height(36.dp))
             }
+        }
+    }
+}
+
+@Composable
+private fun WebWordmark(modifier: Modifier = Modifier) {
+    val family = FontFamily(Font(Res.font.comfortaa_bold))
+    Row(modifier = modifier, verticalAlignment = Alignment.CenterVertically) {
+        Column(verticalArrangement = Arrangement.spacedBy((-3).dp)) {
+            Text("Guess", fontFamily = family, fontSize = 19.sp, lineHeight = 21.sp, letterSpacing = (-0.8).sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+            Text("Whose Song", fontFamily = family, fontSize = 18.sp, lineHeight = 21.sp, letterSpacing = (-0.8).sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+        }
+        Column(
+            modifier = Modifier.padding(start = 5.dp).height(34.dp),
+            verticalArrangement = Arrangement.SpaceEvenly
+        ) {
+            Box(Modifier.width(6.dp).height(12.dp).rotate(-34f).background(Color(0xFFFFC941), CircleShape))
+            Box(Modifier.width(5.dp).height(8.dp).rotate(32f).background(Color(0xFF98E96C), CircleShape))
+            Box(Modifier.width(7.dp).height(13.dp).rotate(35f).background(Color(0xFF8064F6), CircleShape))
         }
     }
 }
@@ -652,7 +759,9 @@ private fun PlayerSettingsPage(
     state: WebUiState,
     status: AuthStatus,
     user: WebUser?,
-    onBackToGame: () -> Unit
+    onBackToGame: () -> Unit,
+    appearanceMode: WebAppearanceMode = WebAppearanceMode.SYSTEM,
+    onAppearanceChange: (WebAppearanceMode) -> Unit = {}
 ) {
     var draftName by remember(state.displayName) { mutableStateOf(state.displayName) }
     var nameError by remember { mutableStateOf<String?>(null) }
@@ -680,6 +789,13 @@ private fun PlayerSettingsPage(
             wrapContent = false
         ) { compact, wide ->
             Column(verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 14.dp)) {
+                if (state.page in setOf(WebPage.LOBBY, WebPage.SUBMISSION, WebPage.GAME)) {
+                    GamePanel("Appearance", "Choose how these game screens look.") {
+                        SettingChoices("Theme", listOf("System", "Light", "Dark"), appearanceMode.label) { selected ->
+                            onAppearanceChange(WebAppearanceMode.entries.first { it.label == selected })
+                        }
+                    }
+                }
                 if (wide) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -1126,13 +1242,36 @@ private fun LobbyPage(store: WebGameStore, state: WebUiState, onSettings: () -> 
                     OutlinedButton(onClick = store::leaveRoom) { Text("Cancel") }
                 }
             } else {
-                GamePanel("Room code", "Share this with friends so they can join your game.") {
-                    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(18.dp)) {
-                        Text(room.joinCode, modifier = Modifier.padding(horizontal = 20.dp, vertical = 14.dp), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black, letterSpacing = 3.sp)
+                Row(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 86.dp).padding(bottom = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Get your people in the room,", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("then let the music do the talking.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                    Text("Waiting for everyone to arrive", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        WebAvatarCharacter(
+                            AvatarCustomization.defaultsFor("lime").copy(mouthId = "open"),
+                            Modifier.size(70.dp)
+                        )
+                        WebAvatarCharacter(
+                            AvatarCustomization.defaultsFor("sunny").copy(eyesId = "sleepy", mouthId = "open", accessoryId = "headphones"),
+                            Modifier.size(74.dp)
+                        )
+                    }
                 }
-                GamePanel("Players", "${room.players.size} of ${room.settings.playerLimit} spots filled") {
+                Row(modifier = Modifier.fillMaxWidth().padding(bottom = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Players", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black, modifier = Modifier.padding(end = 10.dp))
+                    Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(50)) {
+                        Text("${room.players.size} / ${room.settings.playerLimit}", modifier = Modifier.padding(horizontal = 13.dp, vertical = 7.dp), fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.primary)
+                    }
+                    Spacer(Modifier.weight(1f))
+                    TextButton(onClick = { copyTextToClipboard(room.joinCode) }) {
+                        Text("♙ Invite friends", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                    }
+                }
+                GamePanel("", "${room.players.count { it.connected }} connected · ${room.players.size} of ${room.settings.playerLimit} spots filled") {
                     room.players.forEachIndexed { index, player ->
                         if (index > 0) HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
                         PlayerRow(
@@ -1143,30 +1282,42 @@ private fun LobbyPage(store: WebGameStore, state: WebUiState, onSettings: () -> 
                         )
                     }
                 }
-                if (isHost) {
-                    val enoughRounds = RoundCountRules.isValid(room.settings.roundCount, room.players.size)
-                    val startDescription = if (room.settings.gameMode == GameMode.SPOTIFY_RECENT) {
-                        "The room will build a pool from unique playable recent Spotify tracks."
-                    } else {
-                        "Song selection opens for everyone when the host starts the game."
-                    }
-                    GamePanel("Ready to start?", startDescription) {
-                        if (room.settings.gameMode == GameMode.MANUAL) {
-                            if (room.players.any { it.isComputer }) {
-                                Text("🤖 The computer will pick songs and vote automatically.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            } else if (room.players.size < room.settings.playerLimit) {
-                                OutlinedButton(onClick = store::addComputerPlayer, modifier = Modifier.fillMaxWidth()) {
-                                    Text("Add Computer Player")
-                                }
+                Row(modifier = Modifier.fillMaxWidth().padding(top = 14.dp, bottom = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Game settings", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black, modifier = Modifier.weight(1f))
+                    TextButton(onClick = onSettings) { Text("✎ Edit", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) }
+                }
+                GamePanel("", "Make the round feel like your group.") {
+                    Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        listOf(
+                            Triple("♫", "Game mode", if (room.settings.gameMode == GameMode.SPOTIFY_RECENT) "Recent" else "Manual picks"),
+                            Triple("▱", "Total rounds", room.settings.roundCount.toString()),
+                            Triple("◷", "Voting time", "${room.settings.votingTimerSeconds}s"),
+                            Triple("♟", "Player limit", room.settings.playerLimit.toString())
+                        ).forEachIndexed { index, (icon, label, value) ->
+                            if (index > 0) Box(Modifier.width(1.dp).height(68.dp).background(MaterialTheme.colorScheme.outlineVariant))
+                            Column(Modifier.weight(1f).padding(horizontal = 3.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                Text(icon, fontSize = 23.sp, fontWeight = FontWeight.Black, color = when (index) { 1 -> Color(0xFFFFB82E); 2 -> Color(0xFFFF7049); else -> MaterialTheme.colorScheme.primary })
+                                Text(label, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                                Text(value, fontSize = 11.sp, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
                             }
                         }
-                        Button(onClick = store::startGame, enabled = room.players.size >= 2 && enoughRounds, modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                            Text("Start game", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                        }
-                        when {
-                            !enoughRounds -> Text("Set at least ${room.players.size} rounds in settings before starting.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                            room.players.size < 2 -> Text("Invite one more player to unlock song selection.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
+                    }
+                }
+                if (isHost) {
+                    val enoughRounds = RoundCountRules.isValid(room.settings.roundCount, room.players.size)
+                    if (room.settings.gameMode == GameMode.MANUAL && room.players.none { it.isComputer } && room.players.size < room.settings.playerLimit) {
+                        OutlinedButton(onClick = store::addComputerPlayer, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) { Text("Add Computer Player") }
+                    }
+                    Button(
+                        onClick = store::startGame,
+                        enabled = room.players.size >= 2 && enoughRounds,
+                        modifier = Modifier.fillMaxWidth().padding(top = 14.dp).height(64.dp),
+                        shape = RoundedCornerShape(50),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7557F4), contentColor = Color.White)
+                    ) { Text("▶  Start game", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black) }
+                    when {
+                        !enoughRounds -> Text("Set at least ${room.players.size} rounds in settings before starting.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+                        room.players.size < 2 -> Text("Invite one more player to unlock song selection.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
                     }
                 } else {
                     GamePanel("You're all set", "The host will start song selection when everyone's ready.") {
@@ -1625,7 +1776,7 @@ private fun SpotifyControls(store: WebGameStore, state: WebUiState) {
 }
 
 @Composable
-private fun SubmissionPage(store: WebGameStore, state: WebUiState) {
+private fun SubmissionPage(store: WebGameStore, state: WebUiState, onSettings: () -> Unit) {
     val now = rememberClockNow()
     val room = state.room
     if (room?.settings?.gameMode == GameMode.SPOTIFY_RECENT) {
@@ -1633,7 +1784,8 @@ private fun SubmissionPage(store: WebGameStore, state: WebUiState) {
             title = "Building the song pool",
             kicker = "RECENTLY PLAYED",
             description = "Checking for unique playable tracks from players’ recent Spotify history.",
-            state = state
+            state = state,
+            onSettings = onSettings
         ) { _ ->
             GamePanel("Gathering recent tracks", "Players without eligible tracks can still vote.") {
                 CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
@@ -1649,16 +1801,33 @@ private fun SubmissionPage(store: WebGameStore, state: WebUiState) {
     PostJoinFrame(
         title = "Add songs",
         kicker = "YOUR TASTE, YOUR TURN",
-        description = "Add the songs you want the group to hear. You can delete picks before locking them in.",
-        state = state
+        description = "Add up to $maxSongs songs for the group to guess. Pick what you love!",
+        state = state,
+        onSettings = onSettings
     ) { wide ->
+        Row(
+            modifier = Modifier.fillMaxWidth().heightIn(min = 74.dp).padding(bottom = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Spacer(Modifier.weight(1f))
+            Text("♪", color = MaterialTheme.colorScheme.primary, fontSize = 30.sp, fontWeight = FontWeight.Black)
+            WebAvatarCharacter(
+                AvatarCustomization.defaultsFor("lime").copy(mouthId = "open"),
+                Modifier.size(74.dp)
+            )
+            Text("♫", color = Color(0xFFFFB82E), fontSize = 28.sp, fontWeight = FontWeight.Black)
+            WebAvatarCharacter(
+                AvatarCustomization.defaultsFor("sunny").copy(eyesId = "sleepy", mouthId = "open", accessoryId = "headphones"),
+                Modifier.size(80.dp)
+            )
+        }
         val songColumn: @Composable () -> Unit = {
             val countLabel = "${state.pendingSongs.size} song${if (state.pendingSongs.size == 1) "" else "s"} added"
-            GamePanel("Your songs", countLabel) {
-                if (state.pendingSongs.isEmpty()) {
+            GamePanel("Your picks", "${state.pendingSongs.size} / $maxSongs songs") {
+            if (state.pendingSongs.isEmpty()) {
                     Text("No songs added yet. Search below to add one.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                state.pendingSongs.forEach { song ->
+                state.pendingSongs.forEachIndexed { index, song ->
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         color = MaterialTheme.colorScheme.surface,
@@ -1666,11 +1835,18 @@ private fun SubmissionPage(store: WebGameStore, state: WebUiState) {
                         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
                     ) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 15.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(12.dp)) {
+                                Box(Modifier.size(38.dp), contentAlignment = Alignment.Center) {
+                                    Text("${index + 1}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
+                                }
+                            }
+                            CoverThumb(song.albumArtUrl, Modifier.padding(start = 8.dp).size(52.dp), "${song.title} cover")
+                            Spacer(Modifier.width(11.dp))
                             Column(Modifier.weight(1f)) {
-                                Text(song.title, fontWeight = FontWeight.Bold)
+                                Text(song.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                                 Text(song.artist, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             }
-                            if (!locked) TextButton(onClick = { store.removeSong(song.songId) }) { Text("Delete") }
+                            if (!locked) TextButton(onClick = { store.removeSong(song.songId) }) { Text("⌫", color = Color(0xFFFF5267), fontSize = 20.sp, fontWeight = FontWeight.Black) }
                         }
                     }
                 }
@@ -1678,7 +1854,7 @@ private fun SubmissionPage(store: WebGameStore, state: WebUiState) {
             }
             if (!locked) SongSearchPanel(store, state, maxSongs, wide)
         }
-        val sideColumn: @Composable () -> Unit = {
+        val progressPanel: @Composable () -> Unit = {
             GamePanel(
                 "Round progress",
                 if (state.deadlineEpochMillis > 0L) "${deadlineLabel(state.deadlineEpochMillis, now)} · Song picks close when time runs out." else "Song picks close when time runs out."
@@ -1689,22 +1865,39 @@ private fun SubmissionPage(store: WebGameStore, state: WebUiState) {
                     modifier = Modifier.fillMaxWidth()
                 )
             }
+        }
+        val spotifyPanel: @Composable () -> Unit = {
             SpotifySuggestionsPanel(store, state, locked, maxSongs)
+        }
+        val lockButton: @Composable () -> Unit = {
             if (!locked) {
-                Button(onClick = store::lockSongs, enabled = state.pendingSongs.isNotEmpty(), modifier = Modifier.fillMaxWidth().height(52.dp)) {
-                    Text("Lock in picks · ${state.pendingSongs.size}/$maxSongs", fontWeight = FontWeight.Bold)
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(
+                        onClick = store::lockSongs,
+                        enabled = state.pendingSongs.isNotEmpty(),
+                        modifier = Modifier.fillMaxWidth().height(60.dp),
+                        shape = RoundedCornerShape(50.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7557F4), contentColor = Color.White)
+                    ) { Text("▶  Lock in picks · ${state.pendingSongs.size}/$maxSongs", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleLarge) }
+                    Text("Choose your songs, then lock them in.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
         if (wide) {
             Row(horizontalArrangement = Arrangement.spacedBy(22.dp), verticalAlignment = Alignment.Top) {
                 Column(Modifier.weight(1.4f), verticalArrangement = Arrangement.spacedBy(16.dp)) { songColumn() }
-                Column(Modifier.weight(0.85f), verticalArrangement = Arrangement.spacedBy(16.dp)) { sideColumn() }
+                Column(Modifier.weight(0.85f), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    progressPanel()
+                    spotifyPanel()
+                    lockButton()
+                }
             }
         } else {
-            Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-                sideColumn()
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                progressPanel()
+                spotifyPanel()
                 songColumn()
+                lockButton()
             }
         }
     }
@@ -1735,7 +1928,14 @@ private fun SongSearchPanel(store: WebGameStore, state: WebUiState, maxSongs: In
         if (state.isBusy) androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
         state.searchResults.forEach { track ->
             OutlinedButton(onClick = { store.selectTrack(track) }, enabled = state.pendingSongs.size < maxSongs, modifier = Modifier.fillMaxWidth()) {
-                Text("Add · ${track.title} — ${track.artist}", maxLines = 1)
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    CoverThumb(track.albumArtUrl, Modifier.size(42.dp), "${track.title} cover")
+                    Column(Modifier.weight(1f).padding(horizontal = 10.dp), horizontalAlignment = Alignment.Start) {
+                        Text(track.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
+                        Text(track.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                    }
+                    Text("+", fontWeight = FontWeight.Black, fontSize = 20.sp)
+                }
             }
         }
         OutlinedButton(onClick = { store.loadSpotifySuggestions(); store.refreshSpotify() }, modifier = Modifier.fillMaxWidth()) { Text("Load Spotify picks") }
@@ -1758,7 +1958,16 @@ private fun SpotifySuggestionsPanel(store: WebGameStore, state: WebUiState, lock
                     onClick = { store.selectSpotifySuggestion(suggestion) },
                     enabled = !locked && state.pendingSongs.size < maxSongs,
                     modifier = Modifier.fillMaxWidth()
-                ) { Text("Add · ${suggestion.title} — ${suggestion.artist}", maxLines = 1) }
+                ) {
+                    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        CoverThumb(suggestion.albumArtUrl, Modifier.size(44.dp), "${suggestion.title} cover")
+                        Column(Modifier.weight(1f).padding(horizontal = 10.dp), horizontalAlignment = Alignment.Start) {
+                            Text(suggestion.title, maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Bold)
+                            Text(suggestion.artist, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+                        }
+                        Text("+", fontWeight = FontWeight.Black, fontSize = 20.sp)
+                    }
+                }
             }
             if (state.spotifySuggestions.isEmpty()) Text("No suggestions loaded yet.", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -1766,7 +1975,7 @@ private fun SpotifySuggestionsPanel(store: WebGameStore, state: WebUiState, lock
 }
 
 @Composable
-private fun GamePage(store: WebGameStore, state: WebUiState) {
+private fun GamePage(store: WebGameStore, state: WebUiState, onSettings: () -> Unit) {
     val now = rememberClockNow()
     val stage = when {
         state.reveal != null -> GameStage.REVEAL
@@ -1793,7 +2002,7 @@ private fun GamePage(store: WebGameStore, state: WebUiState) {
         GameStage.REVEAL -> "See who knew the song, and how the scores changed."
         GameStage.WAITING -> "The next song will appear here when the round begins."
     }
-    PostJoinFrame(title, kicker, description, state) { wide ->
+    PostJoinFrame(title, kicker, description, state, onSettings = onSettings) { wide ->
         RoundSteps(stage, currentRound)
         val mainColumn: @Composable () -> Unit = {
             when (stage) {
@@ -1888,6 +2097,7 @@ private fun AlbumArt(
     maxSize: androidx.compose.ui.unit.Dp = 300.dp,
     modifier: Modifier = Modifier.fillMaxWidth()
 ) {
+    var failed by remember(albumArtUrl) { mutableStateOf(albumArtUrl.isBlank()) }
     BoxWithConstraints(Modifier.widthIn(max = maxSize).then(modifier).padding(vertical = 4.dp), contentAlignment = Alignment.Center) {
         val side = maxWidth.coerceAtMost(maxSize)
         Box(
@@ -1914,15 +2124,49 @@ private fun AlbumArt(
                 modifier = Modifier.align(Alignment.Center).size(side * 0.50f)
                     .border(2.dp, Color.White.copy(alpha = 0.7f), RoundedCornerShape(24.dp))
             )
-            if (albumArtUrl.isNotBlank()) {
+            if (albumArtUrl.isNotBlank() && !failed) {
                 AsyncImage(
                     model = albumArtUrl,
                     contentDescription = "Album cover",
                     modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(30.dp)),
-                    contentScale = ContentScale.Crop
+                    contentScale = ContentScale.Crop,
+                    onState = { state ->
+                        if (state is AsyncImagePainter.State.Error) {
+                            failed = true
+                            reportAlbumArtFailure(albumArtUrl)
+                        }
+                    }
                 )
             }
+            if (failed) Text("♫", modifier = Modifier.align(Alignment.Center), color = Color.White, fontSize = 42.sp, fontWeight = FontWeight.Black)
         }
+    }
+}
+
+@Composable
+private fun CoverThumb(url: String, modifier: Modifier = Modifier, description: String? = "Album cover") {
+    var failed by remember(url) { mutableStateOf(url.isBlank()) }
+    Box(
+        modifier = modifier.clip(RoundedCornerShape(11.dp)).background(
+            Brush.linearGradient(listOf(Color(0xFF34295F), Color(0xFF6F58D9), Color(0xFFFFB13B)))
+        ),
+        contentAlignment = Alignment.Center
+    ) {
+        if (url.isNotBlank() && !failed) {
+            AsyncImage(
+                model = url,
+                contentDescription = description,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
+                onState = { state ->
+                    if (state is AsyncImagePainter.State.Error) {
+                        failed = true
+                        reportAlbumArtFailure(url)
+                    }
+                }
+            )
+        }
+        if (failed) Text("♫", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Black)
     }
 }
 
@@ -1963,7 +2207,6 @@ private fun VoteStage(
     }
     val choices = eligiblePlayers.map { VoteChoice(it.id, it.displayName, it.avatarId, it.avatarCustomization, isSelf = it.id == state.selfPlayerId) } +
         if (recentMode) emptyList() else listOf(VoteChoice(GameConstants.DECOY_ID, "Nobody / Decoy", "cloud", isDecoy = true))
-    val optionRows = if (wide) choices.chunked(2) else choices.map { listOf(it) }
     GamePanel(
         "Who submitted this song?",
         if (recentMode) "Choose whose recent listening history this track came from." else "Choose the player you think picked the track."
@@ -1979,48 +2222,51 @@ private fun VoteStage(
             progress = { if (totalVotes == 0) 0f else (state.votesCast.toFloat() / totalVotes).coerceIn(0f, 1f) },
             modifier = Modifier.fillMaxWidth()
         )
-        optionRows.forEach { row ->
-            Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                row.forEach { choice ->
-                    val selected = choice.id == selectedVoteId
-                    val enabled = !submitted && (recentMode || !choice.isSelf) && secondsLeft > 0
-                    Surface(
-                        modifier = Modifier.weight(1f).heightIn(min = 88.dp)
-                            .clickable(enabled = enabled) { selectedVoteId = choice.id },
-                        color = when {
-                            selected -> MaterialTheme.colorScheme.primaryContainer
-                            choice.isSelf -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
-                            else -> MaterialTheme.colorScheme.surface
-                        },
-                        shape = RoundedCornerShape(18.dp),
-                        border = BorderStroke(
-                            if (selected) 2.dp else 1.dp,
-                            if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+        choices.forEach { choice ->
+            val selected = choice.id == selectedVoteId
+            val enabled = !submitted && (recentMode || !choice.isSelf) && secondsLeft > 0
+            Surface(
+                modifier = Modifier.fillMaxWidth().heightIn(min = 104.dp)
+                    .clickable(enabled = enabled) { selectedVoteId = choice.id },
+                color = when {
+                    selected -> MaterialTheme.colorScheme.primaryContainer
+                    choice.isSelf -> MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                    else -> MaterialTheme.colorScheme.surface
+                },
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(
+                    if (selected) 2.dp else 1.dp,
+                    if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant
+                )
+            ) {
+                Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    WebAvatarSwatch(choice.avatarId, size = 78.dp, customization = choice.avatarCustomization)
+                    Spacer(Modifier.width(14.dp))
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text(choice.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
+                        Text(
+                            when {
+                                choice.isSelf && recentMode && selected -> "You · selected"
+                                choice.isSelf && recentMode -> "You · select yourself"
+                                choice.isSelf -> "Your song · choose someone else"
+                                choice.isDecoy -> "The song belongs to nobody here."
+                                selected -> "Selected"
+                                submitted -> "Vote locked"
+                                else -> "Could it be them?"
+                            },
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
+                    }
+                    Surface(
+                        modifier = Modifier.size(31.dp),
+                        color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+                        shape = CircleShape,
+                        border = if (selected) null else BorderStroke(1.5.dp, MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.65f))
                     ) {
-                        Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                            WebAvatarSwatch(choice.avatarId, customization = choice.avatarCustomization)
-                            Spacer(Modifier.width(10.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(choice.name, fontWeight = FontWeight.Bold)
-                                Text(
-                                    when {
-                                        choice.isSelf && recentMode && selected -> "You · selected"
-                                        choice.isSelf && recentMode -> "You · select yourself"
-                                        choice.isSelf -> "You · choose someone else"
-                                        choice.isDecoy -> "The song belongs to nobody here"
-                                        selected -> "Selected"
-                                        submitted -> "Vote locked"
-                                        else -> "Tap to choose"
-                                    },
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                        }
+                        if (selected) Box(contentAlignment = Alignment.Center) { Text("✓", color = Color.White, fontWeight = FontWeight.Black) }
                     }
                 }
-                if (wide && row.size == 1) Spacer(Modifier.weight(1f))
             }
         }
         Button(
@@ -2031,8 +2277,10 @@ private fun VoteStage(
                 }
             },
             enabled = selectedVoteId != null && !submitted && secondsLeft > 0,
-            modifier = Modifier.fillMaxWidth().height(52.dp)
-        ) { Text(if (submitted) "Vote submitted" else "Confirm vote", fontWeight = FontWeight.Bold) }
+            modifier = Modifier.fillMaxWidth().height(60.dp),
+            shape = RoundedCornerShape(50.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7557F4), contentColor = Color.White)
+        ) { Text(if (submitted) "Vote submitted" else "▶  Confirm vote", fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleLarge) }
         Text(
             when {
                 submitted -> "Your vote is locked in. Waiting for the rest of the room…"
@@ -2048,20 +2296,19 @@ private fun VoteStage(
 
 @Composable
 private fun VoteTrackSummary(preview: com.guesswhosesong.shared.dto.RoundPreviewStarted, wide: Boolean) {
-    if (wide) {
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            AlbumArt(preview.albumArtUrl, maxSize = 180.dp, modifier = Modifier.width(180.dp))
-            Column(verticalArrangement = Arrangement.spacedBy(5.dp)) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.38f),
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f))
+    ) {
+        Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+            AlbumArt(preview.albumArtUrl, maxSize = 132.dp, modifier = Modifier.width(132.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text("Now guessing", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
-                Text(preview.title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                Text(preview.artist, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(preview.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(preview.artist, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
         }
-    } else {
-        AlbumArt(preview.albumArtUrl, maxSize = 220.dp)
-        Text("Now guessing", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
-        Text(preview.title, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black)
-        Text(preview.artist, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
 
@@ -2141,7 +2388,8 @@ private fun ResultsPage(store: WebGameStore, state: WebUiState) {
         title = "Final scores",
         kicker = "THAT'S THE GAME",
         description = players.firstOrNull()?.let { "${it.displayName} takes the top spot. How well did you know your friends' taste?" } ?: "The final standings will show here.",
-        state = state
+        state = state,
+        useSharedHeader = false
     ) { _ ->
         GamePanel("Final standings", "Players are ranked by total score.") {
             if (players.isEmpty()) {

@@ -26,7 +26,8 @@ data class LobbyUiState(
     val isSpotifyConnected: Boolean = false,
     val isAccountLinked: Boolean = false,
     val accountStatus: String? = null,
-    val accountStatusIsError: Boolean = false
+    val accountStatusIsError: Boolean = false,
+    val chatMessages: List<ChatMessage> = emptyList()
 )
 
 sealed class LobbyEvent {
@@ -105,6 +106,7 @@ class LobbyViewModel @Inject constructor(
                     }
                     is Kicked -> _events.emit(LobbyEvent.Kicked)
                     is ErrorMessage -> _uiState.update { it.copy(error = message.message) }
+                    is ChatReceived -> _uiState.update { it.copy(chatMessages = it.chatMessages + message.message) }
                     else -> {}
                 }
             }
@@ -200,6 +202,11 @@ class LobbyViewModel @Inject constructor(
 
     fun kickPlayer(playerId: String) {
         viewModelScope.launch { gameRepository.kickPlayer(playerId) }
+    }
+
+    fun sendChat(text: String) {
+        val message = text.trim()
+        if (message.isNotBlank()) viewModelScope.launch { gameRepository.sendChat(message) }
     }
 
     override fun onCleared() {

@@ -1,6 +1,7 @@
 package com.guesswhosesong.server.itunes
 
 import com.guesswhosesong.shared.models.TrackSearchResult
+import com.guesswhosesong.server.music.MusicCatalogClient
 import io.ktor.client.*
 import io.ktor.client.engine.cio.*
 import io.ktor.client.request.*
@@ -30,7 +31,7 @@ private data class ItunesRawTrack(
     val previewUrl: String? = null
 )
 
-class ItunesClient {
+class ItunesClient : MusicCatalogClient {
     private val logger = LoggerFactory.getLogger(ItunesClient::class.java)
 
     private val httpClient = HttpClient(CIO) {
@@ -43,7 +44,7 @@ class ItunesClient {
      * Search iTunes for tracks matching [query].
      * Returns an empty list if the search fails or network is unavailable.
      */
-    suspend fun search(query: String, limit: Int = 10): List<TrackSearchResult> {
+    override suspend fun search(query: String, limit: Int): List<TrackSearchResult> {
         return try {
             val responseText: String = httpClient.get("https://itunes.apple.com/search") {
                 parameter("term", query)
@@ -70,5 +71,5 @@ class ItunesClient {
         }
     }
 
-    fun close() = httpClient.close()
+    override fun close() = httpClient.close()
 }

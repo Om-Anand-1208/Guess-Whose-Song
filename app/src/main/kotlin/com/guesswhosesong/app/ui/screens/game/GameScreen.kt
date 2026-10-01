@@ -11,10 +11,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,9 +39,12 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player as Media3Player
 import androidx.media3.exoplayer.ExoPlayer
-import coil.compose.AsyncImage
+import com.guesswhosesong.app.ui.components.AlbumArtwork
 import com.guesswhosesong.app.ui.components.EmptyAvatarBadge
+import com.guesswhosesong.app.ui.components.PostJoinHeader
+import com.guesswhosesong.app.ui.theme.AppearanceSettingsSheet
 import com.guesswhosesong.app.ui.theme.GwsPalette
+import com.guesswhosesong.app.ui.theme.PostJoinPalette
 import com.guesswhosesong.shared.dto.RoundRevealed
 import com.guesswhosesong.shared.models.ChatMessage
 import com.guesswhosesong.shared.models.GameConstants
@@ -60,6 +61,7 @@ fun GameScreen(
     val uiState by viewModel.uiState.collectAsState()
     var chatInput by remember { mutableStateOf("") }
     var chatExpanded by remember { mutableStateOf(false) }
+    var showAppearanceSettings by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -141,12 +143,17 @@ fun GameScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(GwsPalette.Paper)
+            .background(PostJoinPalette.Background)
             .statusBarsPadding()
             .displayCutoutPadding()
             .navigationBarsPadding()
             .imePadding()
     ) {
+        PostJoinHeader(
+            roomCode = uiState.room?.joinCode.orEmpty(),
+            onSettings = { showAppearanceSettings = true },
+            modifier = Modifier.padding(horizontal = 18.dp)
+        )
         when (uiState.roundPhase) {
             RoundPhase.PLAYING_PREVIEW -> HeroPreviewScreen(
                 title = uiState.title,
@@ -161,14 +168,12 @@ fun GameScreen(
                 modifier = Modifier.weight(1f)
             )
             RoundPhase.VOTING -> Column(modifier = Modifier.weight(1f)) {
-                CompactTrackBar(
+                VotingSection(
                     title = uiState.title,
                     artist = uiState.artist,
                     albumArtUrl = uiState.albumArtUrl,
                     roundIndex = uiState.roundIndex,
-                    totalRounds = uiState.totalRounds
-                )
-                VotingSection(
+                    totalRounds = uiState.totalRounds,
                     players = uiState.players,
                     eligibleOwnerIds = uiState.eligibleOwnerIds,
                     selfPlayerId = uiState.selfPlayerId,
@@ -204,6 +209,9 @@ fun GameScreen(
                 }
             }
         )
+    }
+    if (showAppearanceSettings) {
+        AppearanceSettingsSheet(onDismiss = { showAppearanceSettings = false })
     }
 }
 
@@ -257,7 +265,7 @@ fun HeroPreviewScreen(
                         modifier = Modifier
                             .size(8.dp)
                             .clip(CircleShape)
-                            .background(if (isPlaying) GwsPalette.Mint else GwsPalette.Ink.copy(alpha = 0.28f))
+                            .background(if (isPlaying) GwsPalette.Mint else PostJoinPalette.Ink.copy(alpha = 0.28f))
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
@@ -276,22 +284,16 @@ fun HeroPreviewScreen(
                 .clip(RoundedCornerShape(24.dp))
                 .background(
                     Brush.linearGradient(
-                        listOf(GwsPalette.LavenderDeep, GwsPalette.Lavender, GwsPalette.Tangerine)
+                        listOf(MaterialTheme.colorScheme.primary, PostJoinPalette.Selected, GwsPalette.Tangerine)
                     )
                 )
         ) {
-            if (albumArtUrl.isNotBlank()) {
-                AsyncImage(
-                    model = albumArtUrl,
-                    contentDescription = "Album art",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = androidx.compose.ui.layout.ContentScale.Crop
-                )
-            } else {
-                Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("🎵", fontSize = 64.sp)
-                }
-            }
+            AlbumArtwork(
+                albumArtUrl,
+                modifier = Modifier.fillMaxSize(),
+                contentDescription = "Album art",
+                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+            )
         }
 
         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
@@ -305,7 +307,7 @@ fun HeroPreviewScreen(
             Text(
                 artist.ifBlank { "Listen closely" },
                 style = MaterialTheme.typography.titleMedium,
-                color = GwsPalette.Ink.copy(alpha = 0.63f),
+                color = PostJoinPalette.Ink.copy(alpha = 0.63f),
                 textAlign = TextAlign.Center,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -321,14 +323,14 @@ fun HeroPreviewScreen(
                     .fillMaxWidth()
                     .height(6.dp)
                     .clip(RoundedCornerShape(50)),
-                color = GwsPalette.LavenderDeep,
-                trackColor = GwsPalette.Lavender.copy(alpha = 0.3f)
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = PostJoinPalette.Selected.copy(alpha = 0.3f)
             )
             Spacer(Modifier.height(6.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(currentStr, style = MaterialTheme.typography.labelSmall, color = GwsPalette.Ink.copy(alpha = 0.6f))
-                Text("${remainingSeconds}s remaining", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = GwsPalette.LavenderDeep)
-                Text(totalStr, style = MaterialTheme.typography.labelSmall, color = GwsPalette.Ink.copy(alpha = 0.6f))
+                Text(currentStr, style = MaterialTheme.typography.labelSmall, color = PostJoinPalette.Ink.copy(alpha = 0.6f))
+                Text("${remainingSeconds}s remaining", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                Text(totalStr, style = MaterialTheme.typography.labelSmall, color = PostJoinPalette.Ink.copy(alpha = 0.6f))
             }
             Spacer(Modifier.height(8.dp))
             Text(
@@ -359,7 +361,7 @@ private fun AbstractCoverArtwork() {
                 .align(Alignment.BottomCenter)
                 .offset(y = 20.dp)
                 .clip(RoundedCornerShape(50))
-                .background(GwsPalette.LavenderDeep.copy(alpha = 0.78f))
+                .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.78f))
         )
         Box(
             modifier = Modifier
@@ -420,9 +422,9 @@ fun CompactTrackBar(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        color = Color.White,
+        color = PostJoinPalette.Surface,
         shape = RoundedCornerShape(17.dp),
-        border = androidx.compose.foundation.BorderStroke(1.dp, GwsPalette.Ink.copy(alpha = 0.08f)),
+        border = androidx.compose.foundation.BorderStroke(1.dp, PostJoinPalette.Ink.copy(alpha = 0.08f)),
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 18.dp, vertical = 8.dp)
@@ -435,19 +437,17 @@ fun CompactTrackBar(
                 modifier = Modifier
                     .size(50.dp)
                     .clip(RoundedCornerShape(11.dp))
-                    .background(Brush.linearGradient(listOf(GwsPalette.LavenderDeep, GwsPalette.Tangerine)))
+                    .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, GwsPalette.Tangerine)))
             ) {
-                if (albumArtUrl.isNotBlank()) {
-                    AsyncImage(model = albumArtUrl, contentDescription = null, modifier = Modifier.fillMaxSize())
-                } else AbstractCoverArtwork()
+                AlbumArtwork(albumArtUrl, contentDescription = null, modifier = Modifier.fillMaxSize())
             }
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Text(title.ifBlank { "Song ${roundIndex + 1}" }, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(artist.ifBlank { "Now playing" }, style = MaterialTheme.typography.bodySmall, color = GwsPalette.Ink.copy(alpha = 0.62f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(artist.ifBlank { "Now playing" }, style = MaterialTheme.typography.bodySmall, color = PostJoinPalette.Ink.copy(alpha = 0.62f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             Spacer(Modifier.width(7.dp))
-            Surface(color = GwsPalette.Lavender.copy(alpha = 0.36f), shape = RoundedCornerShape(50)) {
+            Surface(color = PostJoinPalette.Selected.copy(alpha = 0.36f), shape = RoundedCornerShape(50)) {
                 Text(
                     "${roundIndex + 1}/${if (totalRounds > 0) totalRounds else "?"}",
                     style = MaterialTheme.typography.labelSmall,
@@ -460,37 +460,24 @@ fun CompactTrackBar(
 }
 
 @Composable
-fun VotingHeader(votedCount: Int, totalCount: Int, deadlineMs: Long) {
-    var secondsLeft by remember { mutableIntStateOf(0) }
-    LaunchedEffect(deadlineMs) {
-        while (true) {
-            val remaining = ((deadlineMs - System.currentTimeMillis()) / 1000).toInt().coerceAtLeast(0)
-            secondsLeft = remaining
-            if (remaining == 0) break
-            kotlinx.coroutines.delay(500)
-        }
-    }
+private fun VoteChoicesHeading() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 20.dp, vertical = 5.dp)
+            .padding(horizontal = 19.dp, vertical = 5.dp)
     ) {
-        Text("Who submitted it?", style = MaterialTheme.typography.titleLarge)
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("Choose a player", style = MaterialTheme.typography.bodySmall, color = GwsPalette.Ink.copy(alpha = 0.63f))
-            Text("$votedCount/$totalCount voted · ${secondsLeft}s", style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = GwsPalette.LavenderDeep)
-        }
-        LinearProgressIndicator(
-            progress = { if (totalCount > 0) votedCount.toFloat() / totalCount else 0f },
-            modifier = Modifier.fillMaxWidth().padding(top = 7.dp).height(5.dp).clip(RoundedCornerShape(50)),
-            color = GwsPalette.LavenderDeep,
-            trackColor = GwsPalette.Lavender.copy(alpha = 0.25f)
-        )
+        Text("Who submitted this song?", style = MaterialTheme.typography.titleLarge, color = PostJoinPalette.Ink, fontWeight = FontWeight.Black)
+        Text("Choose one card, then confirm your vote.", style = MaterialTheme.typography.bodySmall, color = PostJoinPalette.Muted)
     }
 }
 
 @Composable
 fun VotingSection(
+    title: String,
+    artist: String,
+    albumArtUrl: String,
+    roundIndex: Int,
+    totalRounds: Int,
     players: List<Player>,
     eligibleOwnerIds: List<String> = emptyList(),
     selfPlayerId: String,
@@ -510,12 +497,37 @@ fun VotingSection(
         GameConstants.DECOY_ID -> GameConstants.DECOY_NAME
         else -> players.find { it.id == targetPlayerId }?.displayName
     }
+    var secondsLeft by remember(deadlineMs) { mutableIntStateOf(0) }
+    LaunchedEffect(deadlineMs) {
+        while (true) {
+            val remaining = ((deadlineMs - System.currentTimeMillis()) / 1000).toInt().coerceAtLeast(0)
+            secondsLeft = remaining
+            if (remaining == 0) break
+            kotlinx.coroutines.delay(500)
+        }
+    }
 
     Column(modifier = modifier.fillMaxWidth().padding(bottom = 9.dp)) {
-        VotingHeader(votedCount = votedCount, totalCount = totalCount, deadlineMs = deadlineMs)
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp)) {
+            Text("VOTE", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black, fontSize = 13.sp, letterSpacing = 0.6.sp)
+            Text("Make your guess", style = MaterialTheme.typography.headlineLarge, color = PostJoinPalette.Ink, fontWeight = FontWeight.Black)
+            Text("Who picked this one? Trust your music memory.", style = MaterialTheme.typography.bodyMedium, color = PostJoinPalette.Muted)
+        }
+        VotingSteps()
+        VotingSongCard(
+            title = title,
+            artist = artist,
+            albumArtUrl = albumArtUrl,
+            roundIndex = roundIndex,
+            totalRounds = totalRounds,
+            votedCount = votedCount,
+            totalCount = totalCount,
+            secondsLeft = secondsLeft
+        )
+        VoteChoicesHeading()
         if (isSelfSong) {
             Surface(
-                color = GwsPalette.Butter.copy(alpha = 0.52f),
+                color = MaterialTheme.colorScheme.secondaryContainer,
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 7.dp)
             ) {
@@ -533,7 +545,7 @@ fun VotingSection(
             filterEligibleOwners = allowSelfVote,
             selfPlayerId = selfPlayerId,
             selectedPlayerId = targetPlayerId,
-            enabled = !hasVoted,
+            enabled = !hasVoted && secondsLeft > 0,
             allowSelfVote = allowSelfVote,
             showDecoy = !allowSelfVote,
             onSelect = { candidateId -> if (!hasVoted) selectedCandidateId = candidateId },
@@ -541,7 +553,7 @@ fun VotingSection(
         )
         if (hasVoted) {
             Surface(
-                color = GwsPalette.Lime.copy(alpha = 0.42f),
+                color = MaterialTheme.colorScheme.primaryContainer,
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp)
             ) {
@@ -555,17 +567,91 @@ fun VotingSection(
         } else {
             Button(
                 onClick = { selectedCandidateId?.let(onConfirmVote) },
-                enabled = selectedCandidateId != null,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp).height(54.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = GwsPalette.Tangerine, contentColor = GwsPalette.Ink)
+                enabled = selectedCandidateId != null && secondsLeft > 0,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp).height(58.dp),
+                shape = RoundedCornerShape(50),
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7557F4), contentColor = Color.White)
             ) {
                 Text(
-                    targetDisplayName?.let { "Vote for $it" } ?: "Choose a player to vote",
+                    "▶  Confirm vote",
                     fontWeight = FontWeight.Black,
                     style = MaterialTheme.typography.titleMedium
                 )
             }
+        }
+    }
+}
+
+@Composable
+private fun VotingSteps() {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
+    ) {
+        listOf("Listen", "Vote", "Reveal").forEachIndexed { index, label ->
+            if (index > 0) {
+                Box(Modifier.weight(1f).height(1.dp).background(PostJoinPalette.Outline))
+            }
+            val active = index == 1
+            Surface(
+                color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
+                shape = CircleShape,
+                modifier = Modifier.size(37.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Text("0${index + 1}", color = if (active) Color.White else PostJoinPalette.Muted, fontWeight = FontWeight.Black)
+                }
+            }
+            Text(
+                label,
+                modifier = Modifier.padding(start = 7.dp, end = if (index == 2) 0.dp else 11.dp),
+                color = if (active) MaterialTheme.colorScheme.primary else PostJoinPalette.Muted,
+                fontWeight = if (active) FontWeight.Black else FontWeight.Medium,
+                style = MaterialTheme.typography.bodySmall
+            )
+        }
+    }
+}
+
+@Composable
+private fun VotingSongCard(
+    title: String,
+    artist: String,
+    albumArtUrl: String,
+    roundIndex: Int,
+    totalRounds: Int,
+    votedCount: Int,
+    totalCount: Int,
+    secondsLeft: Int
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        color = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(1.dp, PostJoinPalette.Outline.copy(alpha = 0.45f))
+    ) {
+        Column(Modifier.padding(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
+                AlbumArtwork(albumArtUrl, modifier = Modifier.size(118.dp), contentDescription = "Song cover")
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                    Text("NOW GUESSING · ${roundIndex + 1}/${if (totalRounds > 0) totalRounds else "?"}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black, style = MaterialTheme.typography.labelSmall)
+                    Text(title.ifBlank { "Song ${roundIndex + 1}" }, style = MaterialTheme.typography.titleLarge, color = PostJoinPalette.Ink, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(artist.ifBlank { "Unknown artist" }, style = MaterialTheme.typography.bodyMedium, color = PostJoinPalette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
+                        Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(50)) {
+                            Text("◷  ${secondsLeft}s left", modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSecondaryContainer, style = MaterialTheme.typography.labelLarge)
+                        }
+                        Text("$votedCount/$totalCount voted", style = MaterialTheme.typography.labelMedium, color = PostJoinPalette.Muted, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+            LinearProgressIndicator(
+                progress = { if (totalCount > 0) (votedCount.toFloat() / totalCount).coerceIn(0f, 1f) else 0f },
+                modifier = Modifier.fillMaxWidth().padding(top = 10.dp).height(5.dp).clip(RoundedCornerShape(50)),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = PostJoinPalette.Outline.copy(alpha = 0.38f)
+            )
         }
     }
 }
@@ -585,13 +671,12 @@ fun VoteGrid(
 ) {
     val choices = if (filterEligibleOwners) players.filter { it.id in eligibleOwnerIds }
     else if (eligibleOwnerIds.isEmpty()) players else players.filter { it.id in eligibleOwnerIds }
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
-        modifier = modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-        horizontalArrangement = Arrangement.spacedBy(9.dp),
-        verticalArrangement = Arrangement.spacedBy(9.dp)
+    LazyColumn(
+        modifier = modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(9.dp),
+        contentPadding = PaddingValues(bottom = 8.dp)
     ) {
-        items(choices) { player ->
+        items(choices, key = { it.id }) { player ->
             PlayerVoteCard(
                 player = player,
                 isSelf = player.id == selfPlayerId,
@@ -601,14 +686,12 @@ fun VoteGrid(
                 onClick = { onSelect(player.id) }
             )
         }
-        if (showDecoy) {
-            item {
-                DecoyVoteCard(
-                    isSelected = selectedPlayerId == GameConstants.DECOY_ID,
-                    enabled = enabled,
-                    onClick = { onSelect(GameConstants.DECOY_ID) }
-                )
-            }
+        if (showDecoy) item(key = GameConstants.DECOY_ID) {
+            DecoyVoteCard(
+                isSelected = selectedPlayerId == GameConstants.DECOY_ID,
+                enabled = enabled,
+                onClick = { onSelect(GameConstants.DECOY_ID) }
+            )
         }
     }
 }
@@ -622,41 +705,35 @@ fun PlayerVoteCard(
     allowSelfVote: Boolean = false,
     onClick: () -> Unit
 ) {
-    val borderColor = if (isSelected) GwsPalette.LavenderDeep else GwsPalette.Ink.copy(alpha = 0.09f)
+    val borderColor = if (isSelected) MaterialTheme.colorScheme.primary else PostJoinPalette.Ink.copy(alpha = 0.09f)
     val background = when {
-        isSelected -> GwsPalette.Lavender.copy(alpha = 0.3f)
+        isSelected -> PostJoinPalette.Selected.copy(alpha = 0.3f)
         isSelf -> GwsPalette.Butter.copy(alpha = 0.18f)
-        else -> Color.White
+        else -> PostJoinPalette.Surface
     }
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(112.dp)
+            .heightIn(min = 94.dp)
             .border(if (isSelected) 2.dp else 1.dp, borderColor, RoundedCornerShape(18.dp))
             .clip(RoundedCornerShape(18.dp))
             .clickable(enabled = enabled && (!isSelf || allowSelfVote), onClick = onClick),
         color = background,
         shape = RoundedCornerShape(18.dp)
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
             EmptyAvatarBadge(
                 avatarId = player.avatarId,
-                size = 43.dp,
+                size = 72.dp,
                 selected = isSelected,
                 customization = player.avatarCustomization
             )
-            Spacer(Modifier.height(6.dp))
-            Text(player.displayName, style = MaterialTheme.typography.bodyMedium, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 5.dp))
-            Text(
-                when {
-                    isSelf -> "You"
-                    isSelected -> "Selected"
-                    else -> " "
-                },
-                style = MaterialTheme.typography.labelSmall,
-                color = GwsPalette.LavenderDeep,
-                fontWeight = FontWeight.Bold
-            )
+            Spacer(Modifier.width(13.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(player.displayName, style = MaterialTheme.typography.titleMedium, color = PostJoinPalette.Ink, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(if (isSelf) "Your song · choose someone else" else if (isSelected) "Selected" else "Could it be them?", style = MaterialTheme.typography.bodyMedium, color = PostJoinPalette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
+            SelectionMark(isSelected)
         }
     }
 }
@@ -666,26 +743,39 @@ fun DecoyVoteCard(isSelected: Boolean, enabled: Boolean, onClick: () -> Unit) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .height(112.dp)
+            .heightIn(min = 94.dp)
             .border(
                 if (isSelected) 2.dp else 1.dp,
-                if (isSelected) GwsPalette.LavenderDeep else GwsPalette.Ink.copy(alpha = 0.09f),
+                if (isSelected) MaterialTheme.colorScheme.primary else PostJoinPalette.Ink.copy(alpha = 0.09f),
                 RoundedCornerShape(18.dp)
             )
             .clip(RoundedCornerShape(18.dp))
             .clickable(enabled = enabled, onClick = onClick),
-        color = if (isSelected) GwsPalette.Lavender.copy(alpha = 0.3f) else Color.White,
+        color = if (isSelected) PostJoinPalette.Selected.copy(alpha = 0.3f) else PostJoinPalette.Surface,
         shape = RoundedCornerShape(18.dp)
     ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
-            Surface(
-                modifier = Modifier.size(42.dp),
-                color = if (isSelected) GwsPalette.Lavender.copy(alpha = 0.46f) else GwsPalette.Butter.copy(alpha = 0.68f),
-                shape = CircleShape
-            ) { }
-            Spacer(Modifier.height(7.dp))
-            Text("Nobody / Decoy", style = MaterialTheme.typography.bodySmall, fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium, textAlign = TextAlign.Center)
-            Text(if (isSelected) "Selected" else "", style = MaterialTheme.typography.labelSmall, color = GwsPalette.LavenderDeep, fontWeight = FontWeight.Bold)
+        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+            EmptyAvatarBadge(avatarId = "cloud", size = 72.dp, selected = isSelected)
+            Spacer(Modifier.width(13.dp))
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text("Nobody / Decoy", style = MaterialTheme.typography.titleMedium, color = PostJoinPalette.Ink, fontWeight = FontWeight.Black)
+                Text("The song belongs to nobody here.", style = MaterialTheme.typography.bodyMedium, color = PostJoinPalette.Muted)
+            }
+            SelectionMark(isSelected)
+        }
+    }
+}
+
+@Composable
+private fun SelectionMark(selected: Boolean) {
+    Surface(
+        modifier = Modifier.size(31.dp),
+        color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
+        shape = CircleShape,
+        border = if (selected) null else BorderStroke(1.5.dp, PostJoinPalette.Muted.copy(alpha = 0.65f))
+    ) {
+        if (selected) Box(contentAlignment = Alignment.Center) {
+            Text("✓", color = Color.White, fontWeight = FontWeight.Black, style = MaterialTheme.typography.titleMedium)
         }
     }
 }
@@ -733,13 +823,13 @@ fun RevealPanel(
                     "Round ${currentRoundIndex + 1} of ${totalRounds.coerceAtLeast(1)}",
                     modifier = Modifier.fillMaxWidth(),
                     style = MaterialTheme.typography.labelMedium,
-                    color = GwsPalette.Ink.copy(alpha = 0.62f),
+                    color = PostJoinPalette.Ink.copy(alpha = 0.62f),
                     textAlign = TextAlign.Center
                 )
             }
             item {
                 Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    Text("SUBMITTED BY", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black, letterSpacing = 1.1.sp, color = GwsPalette.LavenderDeep)
+                    Text("SUBMITTED BY", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black, letterSpacing = 1.1.sp, color = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.height(3.dp))
                     Text(revealData.submitterName, style = MaterialTheme.typography.headlineLarge, textAlign = TextAlign.Center)
                     Spacer(Modifier.height(7.dp))
@@ -749,33 +839,24 @@ fun RevealPanel(
                         customization = players.find { it.id == revealData.songEntry.submitterId }?.avatarCustomization
                     )
                     if (isDecoy) {
-                        Text("Nobody in the room submitted this song.", style = MaterialTheme.typography.bodySmall, color = GwsPalette.Ink.copy(alpha = 0.65f), textAlign = TextAlign.Center)
+                        Text("Nobody in the room submitted this song.", style = MaterialTheme.typography.bodySmall, color = PostJoinPalette.Ink.copy(alpha = 0.65f), textAlign = TextAlign.Center)
                     } else if (submitterDelta != null) {
-                        Text("Nobody guessed it · +${submitterDelta.delta} point", style = MaterialTheme.typography.bodySmall, color = GwsPalette.LavenderDeep, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
+                        Text("Nobody guessed it · +${submitterDelta.delta} point", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, textAlign = TextAlign.Center)
                     }
                 }
             }
             item {
                 Surface(
-                    color = GwsPalette.Lavender.copy(alpha = 0.24f),
+                    color = PostJoinPalette.Selected.copy(alpha = 0.24f),
                     shape = RoundedCornerShape(18.dp),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(Modifier.padding(9.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            modifier = Modifier
-                                .size(52.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Brush.linearGradient(listOf(GwsPalette.LavenderDeep, GwsPalette.Tangerine)))
-                        ) {
-                            val image = revealData.songEntry.albumArtUrl
-                            if (image.isNotBlank()) AsyncImage(model = image, contentDescription = null, modifier = Modifier.fillMaxSize())
-                            else AbstractCoverArtwork()
-                        }
+                        AlbumArtwork(revealData.songEntry.albumArtUrl, contentDescription = null, modifier = Modifier.size(52.dp))
                         Spacer(Modifier.width(11.dp))
                         Column(modifier = Modifier.weight(1f)) {
                             Text(revealData.songEntry.title, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(revealData.songEntry.artist, style = MaterialTheme.typography.bodySmall, color = GwsPalette.Ink.copy(alpha = 0.63f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(revealData.songEntry.artist, style = MaterialTheme.typography.bodySmall, color = PostJoinPalette.Ink.copy(alpha = 0.63f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
@@ -787,9 +868,9 @@ fun RevealPanel(
                 val player = players.find { it.id == result.voterId }
                 val delta = revealData.scoreDeltas.find { it.playerId == result.voterId }
                 Surface(
-                    color = if (result.correct) GwsPalette.Lime.copy(alpha = 0.28f) else Color.White,
+                    color = if (result.correct) GwsPalette.Lime.copy(alpha = 0.28f) else PostJoinPalette.Surface,
                     shape = RoundedCornerShape(15.dp),
-                    border = androidx.compose.foundation.BorderStroke(1.dp, GwsPalette.Ink.copy(alpha = 0.07f)),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, PostJoinPalette.Ink.copy(alpha = 0.07f)),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -807,7 +888,7 @@ fun RevealPanel(
                             Text(
                                 "Voted ${result.guessedPlayerName}",
                                 style = MaterialTheme.typography.bodySmall,
-                                color = GwsPalette.Ink.copy(alpha = 0.65f),
+                                color = PostJoinPalette.Ink.copy(alpha = 0.65f),
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
@@ -815,12 +896,12 @@ fun RevealPanel(
                         Text(
                             if (result.correct) "Correct" else "Not quite",
                             style = MaterialTheme.typography.labelSmall,
-                            color = if (result.correct) Color(0xFF39752A) else GwsPalette.Ink.copy(alpha = 0.5f),
+                            color = if (result.correct) Color(0xFF39752A) else PostJoinPalette.Ink.copy(alpha = 0.5f),
                             fontWeight = FontWeight.Bold
                         )
                         if (delta != null && delta.delta != 0) {
                             Spacer(Modifier.width(8.dp))
-                            Text("+${delta.delta}", color = GwsPalette.LavenderDeep, fontWeight = FontWeight.Black)
+                            Text("+${delta.delta}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
                         }
                     }
                 }
@@ -837,7 +918,7 @@ fun RevealPanel(
             Box(modifier = Modifier.fillMaxWidth().height(52.dp), contentAlignment = Alignment.Center) {
                 Text(
                     "${if (isFinalRound) "Results" else "Next round"} in ${revealSecondsLeft}s",
-                    color = GwsPalette.Ink,
+                    color = PostJoinPalette.Ink,
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Black
                 )
@@ -858,8 +939,8 @@ fun ChatDock(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(GwsPalette.Paper)
-            .border(width = 1.dp, color = GwsPalette.Ink.copy(alpha = 0.08f))
+            .background(PostJoinPalette.Background)
+            .border(width = 1.dp, color = PostJoinPalette.Ink.copy(alpha = 0.08f))
     ) {
         Row(
             modifier = Modifier
@@ -870,7 +951,7 @@ fun ChatDock(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("ROOM CHAT", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black, letterSpacing = 0.8.sp)
-            Text(if (expanded) "Hide" else "Show", style = MaterialTheme.typography.labelMedium, color = GwsPalette.LavenderDeep, fontWeight = FontWeight.Bold)
+            Text(if (expanded) "Hide" else "Show", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
         }
         if (expanded) {
             LazyColumn(
@@ -901,7 +982,7 @@ fun ChatDock(
                 )
                 Spacer(Modifier.width(7.dp))
                 IconButton(onClick = onSend) {
-                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send message", tint = GwsPalette.LavenderDeep)
+                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send message", tint = MaterialTheme.colorScheme.primary)
                 }
             }
         }

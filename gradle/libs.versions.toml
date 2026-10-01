@@ -4,6 +4,7 @@ ktor = "3.6.0"
 kotlinx-serialization = "1.11.0"
 kotlinx-coroutines = "1.11.0"
 play-services-auth = "21.4.0"
+play-services-code-scanner = "16.1.0"
 redis-jedis = "8.0.1"
 firebase-admin = "9.4.3"
 android-gradle = "9.4.1"
@@ -59,6 +60,7 @@ firebase-messaging-ktx = { module = "com.google.firebase:firebase-messaging" }
 firebase-crashlytics-ktx = { module = "com.google.firebase:firebase-crashlytics" }
 firebase-analytics-ktx = { module = "com.google.firebase:firebase-analytics" }
 play-services-auth = { module = "com.google.android.gms:play-services-auth", version.ref = "play-services-auth" }
+play-services-code-scanner = { module = "com.google.android.gms:play-services-code-scanner", version.ref = "play-services-code-scanner" }
 
 # Android Compose
 compose-bom = { module = "androidx.compose:compose-bom", version.ref = "compose-bom" }

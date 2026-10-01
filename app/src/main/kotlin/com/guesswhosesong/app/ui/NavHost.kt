@@ -1,8 +1,21 @@
 package com.guesswhosesong.app.ui
 
+import android.app.Activity
 import android.widget.Toast
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.core.view.WindowCompat
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -13,6 +26,11 @@ import com.guesswhosesong.app.ui.screens.join.JoinScreen
 import com.guesswhosesong.app.ui.screens.lobby.LobbyScreen
 import com.guesswhosesong.app.ui.screens.results.ResultsScreen
 import com.guesswhosesong.app.ui.screens.submission.SubmissionScreen
+import com.guesswhosesong.app.ui.theme.AppearanceMode
+import com.guesswhosesong.app.ui.theme.AppearanceSettings
+import com.guesswhosesong.app.ui.theme.LocalAppearanceSettings
+import com.guesswhosesong.app.ui.theme.PostJoinTheme
+import com.guesswhosesong.app.ui.theme.GuessWhoseSongTheme
 import com.guesswhosesong.shared.models.AvatarCustomization
 
 object Routes {
@@ -31,8 +49,37 @@ object Routes {
 @Composable
 fun GWSNavHost() {
     val navController = rememberNavController()
+    val context = LocalContext.current
+    val appearancePreferences = remember {
+        context.getSharedPreferences("post_join_appearance", android.content.Context.MODE_PRIVATE)
+    }
+    var appearanceMode by remember {
+        mutableStateOf(AppearanceMode.fromStoredValue(appearancePreferences.getString("mode", null)))
+    }
+    val appearanceSettings = remember(appearanceMode) {
+        AppearanceSettings(appearanceMode) { mode ->
+            appearancePreferences.edit().putString("mode", mode.name).apply()
+            appearanceMode = mode
+        }
+    }
+    val darkTheme = appearanceMode.resolvesDark(isSystemInDarkTheme())
+    val view = LocalView.current
 
-    NavHost(navController = navController, startDestination = Routes.JOIN) {
+    SideEffect {
+        val window = (context as? Activity)?.window ?: return@SideEffect
+        WindowCompat.getInsetsController(window, view).apply {
+            isAppearanceLightStatusBars = !darkTheme
+            isAppearanceLightNavigationBars = !darkTheme
+        }
+    }
+
+    CompositionLocalProvider(LocalAppearanceSettings provides appearanceSettings) {
+      GuessWhoseSongTheme(darkTheme = darkTheme) {
+       Surface(
+           modifier = androidx.compose.ui.Modifier.fillMaxSize(),
+           color = MaterialTheme.colorScheme.background
+       ) {
+      NavHost(navController = navController, startDestination = Routes.JOIN) {
         composable(Routes.JOIN) {
             JoinScreen(
                 onNavigateToLobby = { joinCode, displayName, avatarCustomization ->
@@ -69,7 +116,8 @@ fun GWSNavHost() {
                 ),
                 "sunny"
             )
-            LobbyScreen(
+            PostJoinTheme {
+              LobbyScreen(
                 joinCode = joinCode,
                 displayName = displayName,
                 avatarCustomization = avatarCustomization,
@@ -81,12 +129,14 @@ fun GWSNavHost() {
                 onKicked = {
                     navController.navigate(Routes.JOIN) { popUpTo(0) { inclusive = true } }
                 }
-            )
+              )
+            }
         }
 
         composable(Routes.SUBMISSION) {
             val context = LocalContext.current
-            SubmissionScreen(
+            PostJoinTheme {
+              SubmissionScreen(
                 onNavigateToGame = {
                     navController.navigate(Routes.GAME) {
                         popUpTo(Routes.SUBMISSION) { inclusive = true }
@@ -98,11 +148,13 @@ fun GWSNavHost() {
                         popUpTo(0) { inclusive = true }
                     }
                 }
-            )
+              )
+            }
         }
 
         composable(Routes.GAME) {
-            GameScreen(
+            PostJoinTheme {
+              GameScreen(
                 onNavigateToResults = {
                     navController.navigate(Routes.RESULTS) {
                         popUpTo(Routes.GAME) { inclusive = true }
@@ -113,7 +165,8 @@ fun GWSNavHost() {
                         popUpTo(Routes.GAME) { inclusive = true }
                     }
                 }
-            )
+              )
+            }
         }
 
         composable(Routes.RESULTS) {
@@ -128,5 +181,8 @@ fun GWSNavHost() {
                 }
             )
         }
+      }
+       }
+      }
     }
 }

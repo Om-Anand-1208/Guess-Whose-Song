@@ -11,11 +11,11 @@ import kotlinx.coroutines.sync.withPermit
 
 /**
  * Service that unifies Deezer and iTunes API lookups.
- * Priority: Deezer -> fallback to iTunes if no results.
+ * Deezer supplies track identity and previews; iTunes fills missing artwork and acts as the no-result fallback.
  */
 class MusicService(
-    private val deezerClient: DeezerClient = DeezerClient(),
-    private val itunesClient: ItunesClient = ItunesClient()
+    private val deezerClient: MusicCatalogClient = DeezerClient(),
+    private val itunesClient: MusicCatalogClient = ItunesClient()
 ) {
 
     // Simple thread-safe LRU cache using LinkedHashMap, bounded to 200 items.
@@ -35,8 +35,19 @@ class MusicService(
 
             val deezerResults = deezerClient.search(query, limit)
             if (deezerResults.isNotEmpty()) {
-                searchCache[cacheKey] = deezerResults
-                return@withPermit deezerResults
+                val enriched = if (deezerResults.any { it.albumArtUrl.isBlank() }) {
+                    val itunesResults = itunesClient.search(query, limit.coerceAtLeast(deezerResults.size))
+                    deezerResults.map { deezerTrack ->
+                        if (deezerTrack.albumArtUrl.isNotBlank()) {
+                            deezerTrack
+                        } else {
+                            val match = findBestMatch(itunesResults, "${deezerTrack.title} ${deezerTrack.artist}")
+                            deezerTrack.copy(albumArtUrl = match?.albumArtUrl?.takeIf { it.isNotBlank() }.orEmpty())
+                        }
+                    }
+                } else deezerResults
+                searchCache[cacheKey] = enriched
+                return@withPermit enriched
             }
             val itunesResults = itunesClient.search(query, limit)
             searchCache[cacheKey] = itunesResults
@@ -56,19 +67,19 @@ class MusicService(
     suspend fun resolveEntry(entry: SongEntry): SongEntry? = externalRequestLimit.withPermit {
         val query = "${entry.title.trim()} ${entry.artist.trim()}".trim()
         
-        var bestMatch = findBestMatch(deezerClient.search(query, 10), query)
-        
-        if (bestMatch == null) {
-            bestMatch = findBestMatch(itunesClient.search(query, 10), query)
-        }
-
-        if (bestMatch == null) return@withPermit null
+        val deezerMatch = findBestMatch(deezerClient.search(query, 10), query)
+        val itunesMatch = if (deezerMatch == null || deezerMatch.albumArtUrl.isBlank()) {
+            findBestMatch(itunesClient.search(query, 10), query)
+        } else null
+        val bestMatch = deezerMatch ?: itunesMatch ?: return@withPermit null
 
         entry.copy(
             songId = bestMatch.id,
             title = bestMatch.title,
             artist = bestMatch.artist,
-            albumArtUrl = bestMatch.albumArtUrl,
+            albumArtUrl = entry.albumArtUrl.takeIf { it.isNotBlank() }
+                ?: deezerMatch?.albumArtUrl?.takeIf { it.isNotBlank() }
+                ?: itunesMatch?.albumArtUrl.orEmpty(),
             previewUrl = bestMatch.previewUrl
         )
     }

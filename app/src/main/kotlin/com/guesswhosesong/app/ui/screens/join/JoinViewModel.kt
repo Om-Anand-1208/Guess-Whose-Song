@@ -79,6 +79,10 @@ class JoinViewModel @Inject constructor(
         spotifyAuthManager.disconnect()
     }
 
+    fun refreshSpotifyStatus() {
+        spotifyAuthManager.refreshStatus()
+    }
+
     fun onDisplayNameChanged(name: String) {
         _uiState.update { it.copy(displayName = name.take(24), error = null) }
     }

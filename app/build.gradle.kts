@@ -68,6 +68,7 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth.ktx)
     implementation(libs.play.services.auth)
+    implementation(libs.play.services.code.scanner)
 
     // Compose BOM
     implementation(platform(libs.compose.bom))

@@ -51,24 +51,24 @@ private val LightColorScheme = lightColorScheme(
 )
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFFC3BBFF),
-    onPrimary = Color(0xFF29205F),
-    primaryContainer = Color(0xFF51479B),
-    onPrimaryContainer = Color(0xFFF0EDFF),
-    secondary = Color(0xFFFFBA63),
-    onSecondary = Color(0xFF3E2000),
-    secondaryContainer = Color(0xFF664000),
-    onSecondaryContainer = Color(0xFFFFDDB4),
-    tertiary = Color(0xFFC9FF79),
-    onTertiary = Color(0xFF1D3400),
-    background = Color(0xFF211F29),
-    onBackground = Color(0xFFF7F1E8),
-    surface = Color(0xFF2B2933),
-    onSurface = Color(0xFFF7F1E8),
-    surfaceVariant = Color(0xFF45414D),
-    onSurfaceVariant = Color(0xFFD0C8D1),
-    outline = Color(0xFFE4DCE6),
-    outlineVariant = Color(0xFF605A67),
+    primary = Color(0xFF8B69FF),
+    onPrimary = Color.White,
+    primaryContainer = Color(0xFF30284F),
+    onPrimaryContainer = Color(0xFFE8E1FF),
+    secondary = Color(0xFFFFD456),
+    onSecondary = Color(0xFF171717),
+    secondaryContainer = Color(0xFF55491F),
+    onSecondaryContainer = Color(0xFFFFEAA8),
+    tertiary = Color(0xFF9BEA61),
+    onTertiary = Color(0xFF162100),
+    background = Color(0xFF17191F),
+    onBackground = Color(0xFFF6F5F8),
+    surface = Color(0xFF202229),
+    onSurface = Color(0xFFF6F5F8),
+    surfaceVariant = Color(0xFF2A2D36),
+    onSurfaceVariant = Color(0xFFB7B9C7),
+    outline = Color(0xFF555966),
+    outlineVariant = Color(0xFF383B45),
     error = Color(0xFFFFB4AB),
     onError = Color(0xFF690005)
 )
@@ -142,4 +142,15 @@ fun GuessWhoseSongTheme(
         shapes = GwsShapes,
         content = content
     )
+}
+
+/** Colors used by the redesigned lobby, song selection, and voting screens. */
+object PostJoinPalette {
+    val Background: Color @Composable get() = MaterialTheme.colorScheme.background
+    val Ink: Color @Composable get() = MaterialTheme.colorScheme.onBackground
+    val Surface: Color @Composable get() = MaterialTheme.colorScheme.surface
+    val SurfaceVariant: Color @Composable get() = MaterialTheme.colorScheme.surfaceVariant
+    val Muted: Color @Composable get() = MaterialTheme.colorScheme.onSurfaceVariant
+    val Outline: Color @Composable get() = MaterialTheme.colorScheme.outlineVariant
+    val Selected: Color @Composable get() = MaterialTheme.colorScheme.primaryContainer
 }

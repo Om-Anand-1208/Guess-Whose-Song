@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.guesswhosesong.app.ui.components.EmptyAvatarBadge
 import com.guesswhosesong.app.ui.theme.GwsPalette
+import com.guesswhosesong.app.ui.theme.PostJoinPalette
 import com.guesswhosesong.shared.models.Player
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -60,11 +61,11 @@ fun ResultsScreen(
     }
 
     Scaffold(
-        containerColor = GwsPalette.Paper,
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
                 title = { Text("Final Scores 🏆") },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = GwsPalette.Paper)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
         }
     ) { padding ->
@@ -81,7 +82,7 @@ fun ResultsScreen(
                         Text(
                             "Final standings will appear here.",
                             modifier = Modifier.fillMaxWidth().padding(16.dp),
-                            color = GwsPalette.Ink.copy(alpha = 0.66f),
+                            color = PostJoinPalette.Muted,
                             textAlign = TextAlign.Center
                         )
                     }
@@ -105,7 +106,7 @@ fun ResultsActions(isHost: Boolean, onPlayAgain: () -> Unit, onEndGame: () -> Un
     if (isHost) {
         Button(
             onClick = onPlayAgain,
-            colors = ButtonDefaults.buttonColors(containerColor = GwsPalette.Tangerine, contentColor = GwsPalette.Ink),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary, contentColor = MaterialTheme.colorScheme.onSecondary),
             modifier = Modifier.fillMaxWidth().height(52.dp)
         ) { Text("Play Again 🎵", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
         Spacer(Modifier.height(8.dp))
@@ -115,7 +116,7 @@ fun ResultsActions(isHost: Boolean, onPlayAgain: () -> Unit, onEndGame: () -> Un
     } else {
         Text(
             "Waiting for host to continue…",
-            color = GwsPalette.Ink.copy(alpha = 0.65f),
+            color = PostJoinPalette.Muted,
             style = MaterialTheme.typography.bodyMedium
         )
     }
@@ -125,9 +126,9 @@ fun ResultsActions(isHost: Boolean, onPlayAgain: () -> Unit, onEndGame: () -> Un
 fun ScoreboardItem(rank: Int, player: Player, isSelf: Boolean) {
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = if (isSelf) GwsPalette.Lavender.copy(alpha = 0.3f) else Color.White,
+        color = if (isSelf) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(10.dp),
-        border = BorderStroke(1.dp, GwsPalette.Ink.copy(alpha = 0.08f))
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.55f))
     ) {
         Row(
             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
@@ -142,16 +143,16 @@ fun ScoreboardItem(rank: Int, player: Player, isSelf: Boolean) {
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(player.displayName, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(player.displayName, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     if (isSelf) {
                         Spacer(Modifier.width(5.dp))
-                        Text("(you)", color = GwsPalette.LavenderDeep, fontSize = 10.sp)
+                        Text("(you)", color = MaterialTheme.colorScheme.primary, fontSize = 10.sp)
                     }
                 }
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text("${player.score}", fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                Text("pts", color = GwsPalette.Ink.copy(alpha = 0.6f), fontSize = 10.sp)
+                Text("${player.score}", color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                Text("pts", color = MaterialTheme.colorScheme.onSurfaceVariant, fontSize = 10.sp)
             }
         }
     }
