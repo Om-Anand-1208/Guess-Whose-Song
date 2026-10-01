@@ -51,6 +51,7 @@ class FlowControlInteractionTest {
                     accountStatusIsError = false,
                     roomSettings = initialSettings,
                     currentPlayerCount = 3,
+                    hasComputerPlayer = false,
                     isHost = true,
                     profileError = null,
                     onConnectSpotify = { fake.connectedSpotify++ },
@@ -105,12 +106,11 @@ class FlowControlInteractionTest {
                     )
                     SearchSongsField(
                         query = query.value,
-                        songCount = 0,
                         onQueryChange = { query.value = it },
                         onSearch = { fake.searches++ }
                     )
                     TrackListItem(track = track, isAdded = false, isFull = false) { fake.selectedTracks++ }
-                    SelectedSongCard(index = 1, song = song, locked = false) { fake.removedSongs++ }
+                    SelectedSongCard(song = song, locked = false, onRemove = { fake.removedSongs++ }, index = 1)
                     SpotifyConnectCard { fake.connectedSpotify++ }
                 }
             }
@@ -121,7 +121,7 @@ class FlowControlInteractionTest {
         composeRule.onNode(hasSetTextAction()).performImeAction()
         composeRule.onNodeWithContentDescription("Clear search").performClick()
         composeRule.onNodeWithText("Night Train").performClick()
-        composeRule.onNodeWithContentDescription("Remove song").performClick()
+        composeRule.onNodeWithText("Delete").performClick()
         composeRule.onNodeWithText("Spotify connected?").performClick()
 
         composeRule.runOnIdle {
@@ -147,6 +147,11 @@ class FlowControlInteractionTest {
             MaterialTheme {
                 Column {
                     VotingSection(
+                        title = "Blue Hours",
+                        artist = "Artist",
+                        albumArtUrl = "",
+                        roundIndex = 0,
+                        totalRounds = 10,
                         players = players,
                         selfPlayerId = "p1",
                         votedPlayerId = null,
@@ -172,9 +177,9 @@ class FlowControlInteractionTest {
             }
         }
 
-        composeRule.onNodeWithText("Choose a player to vote").assertIsNotEnabled()
+        composeRule.onNodeWithText("Confirm vote", substring = true).assertIsNotEnabled()
         composeRule.onNodeWithText("Bob").performClick()
-        composeRule.onNodeWithText("Vote for Bob").performClick()
+        composeRule.onNodeWithText("Confirm vote", substring = true).performClick()
         composeRule.onNodeWithText("Show").performClick()
         composeRule.onNodeWithText("Hide").performClick()
         composeRule.onNodeWithText("Show").performClick()
@@ -201,6 +206,11 @@ class FlowControlInteractionTest {
                 Column {
                     TrackListItem(track = track, isAdded = false, isFull = true) { fake.selectedTracks++ }
                     VotingSection(
+                        title = "Blue Hours",
+                        artist = "Artist",
+                        albumArtUrl = "",
+                        roundIndex = 0,
+                        totalRounds = 10,
                         players = listOf(Player(id = "p1", displayName = "Alice"), Player(id = "p2", displayName = "Bob")),
                         selfPlayerId = "p1",
                         votedPlayerId = null,
@@ -214,7 +224,8 @@ class FlowControlInteractionTest {
         }
 
         composeRule.onNodeWithText("Night Train").assertIsNotEnabled()
-        composeRule.onNodeWithText("You").assertIsNotEnabled()
+        composeRule.onNodeWithText("Your song · choose someone else").assertExists()
+        composeRule.onNodeWithText("Confirm vote", substring = true).assertIsNotEnabled()
         composeRule.runOnIdle {
             assertEquals(0, fake.selectedTracks)
             assertEquals(null, fake.vote)
@@ -227,6 +238,11 @@ class FlowControlInteractionTest {
         composeRule.setContent {
             MaterialTheme {
                 VotingSection(
+                    title = "Blue Hours",
+                    artist = "Artist",
+                    albumArtUrl = "",
+                    roundIndex = 0,
+                    totalRounds = 10,
                     players = listOf(Player(id = "p1", displayName = "Alice"), Player(id = "p2", displayName = "Bob")),
                     eligibleOwnerIds = listOf("p1"),
                     selfPlayerId = "p1",
