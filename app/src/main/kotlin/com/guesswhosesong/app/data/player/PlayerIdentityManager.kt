@@ -51,7 +51,8 @@ class PlayerIdentityManager @Inject constructor(
 
     fun currentUid(): String? = auth.currentUser?.uid
 
-    fun isAccountLinked(): Boolean = auth.currentUser?.isAnonymous == false
+    fun isAccountLinked(): Boolean = auth.currentUser?.providerData
+        ?.any { it.providerId == GoogleAuthProvider.PROVIDER_ID } == true
 
     fun googleSignInIntent(activity: Activity): Intent {
         val clientIdResource = activity.resources.getIdentifier(
@@ -80,13 +81,29 @@ class PlayerIdentityManager @Inject constructor(
         }
     }
 
-    /** Recovery flow for a reinstall: signs in to an already-linked Google identity. */
+    suspend fun disconnectGoogle() {
+        val user = auth.currentUser ?: return
+        user.unlink(GoogleAuthProvider.PROVIDER_ID).await()
+    }
+
+    /** Signs in only when the Google credential already belongs to another Firebase player. */
     suspend fun signInWithGoogle(data: Intent): AccountLinkResult {
         return try {
             val account = GoogleSignIn.getSignedInAccountFromIntent(data).await()
             val idToken = account.idToken ?: return AccountLinkResult.Failed("Google did not return an ID token")
-            auth.signInWithCredential(GoogleAuthProvider.getCredential(idToken, null)).await()
-            AccountLinkResult.SignedIn
+            val credential = GoogleAuthProvider.getCredential(idToken, null)
+            if (isAccountLinked()) {
+                return AccountLinkResult.Failed("Google is already connected to this player")
+            }
+            val currentUser = ensureSignedIn()
+            try {
+                currentUser.linkWithCredential(credential).await()
+                currentUser.unlink(GoogleAuthProvider.PROVIDER_ID).await()
+                AccountLinkResult.Failed("No existing player is linked to this Google account")
+            } catch (_: FirebaseAuthUserCollisionException) {
+                auth.signInWithCredential(credential).await()
+                AccountLinkResult.SignedIn
+            }
         } catch (e: Exception) {
             AccountLinkResult.Failed(e.message ?: "Google sign-in failed")
         }

@@ -5,14 +5,10 @@ import com.guesswhosesong.server.itunes.ItunesClient
 import com.guesswhosesong.shared.models.SongEntry
 import com.guesswhosesong.shared.models.TrackSearchResult
 
-import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
-/**
- * Service that unifies Deezer and iTunes API lookups.
- * Deezer supplies track identity and previews; iTunes fills missing artwork and acts as the no-result fallback.
- */
+/** Prefer Deezer for tracks and previews, with iTunes as the fallback catalog. */
 class MusicService(
     private val deezerClient: MusicCatalogClient = DeezerClient(),
     private val itunesClient: MusicCatalogClient = ItunesClient()
@@ -33,31 +29,56 @@ class MusicService(
             val cacheKey = "${query.trim().lowercase()}_$limit"
             searchCache[cacheKey]?.let { return@withPermit it }
 
-            val deezerResults = deezerClient.search(query, limit)
-            if (deezerResults.isNotEmpty()) {
-                val enriched = if (deezerResults.any { it.albumArtUrl.isBlank() }) {
-                    val itunesResults = itunesClient.search(query, limit.coerceAtLeast(deezerResults.size))
-                    deezerResults.map { deezerTrack ->
-                        if (deezerTrack.albumArtUrl.isNotBlank()) {
-                            deezerTrack
-                        } else {
-                            val match = findBestMatch(itunesResults, "${deezerTrack.title} ${deezerTrack.artist}")
-                            deezerTrack.copy(albumArtUrl = match?.albumArtUrl?.takeIf { it.isNotBlank() }.orEmpty())
-                        }
-                    }
-                } else deezerResults
-                searchCache[cacheKey] = enriched
-                return@withPermit enriched
-            }
-            val itunesResults = itunesClient.search(query, limit)
-            searchCache[cacheKey] = itunesResults
-            itunesResults
+            searchCatalog(query, limit).also { searchCache[cacheKey] = it }
         }
     }
 
     suspend fun getTopTracks(): List<TrackSearchResult> = externalRequestLimit.withPermit {
-        val hits = itunesClient.search("Pop Hits", 30)
-        if (hits.isNotEmpty()) hits else itunesClient.search("Top Songs", 30)
+        searchCatalog("Pop Hits", 30).ifEmpty { searchCatalog("Top Songs", 30) }
+    }
+
+    /**
+     * Find playable tracks by artists already represented in the pool. This keeps
+     * computer picks and decoys in the room's existing musical context.
+     */
+    suspend fun getContextualTracks(
+        poolSongs: List<SongEntry>,
+        limit: Int
+    ): List<TrackSearchResult> = externalRequestLimit.withPermit {
+        if (limit <= 0) return@withPermit emptyList()
+        if (poolSongs.isEmpty()) {
+            return@withPermit searchCatalog("Pop Hits", maxOf(limit * 5, 30))
+                .ifEmpty { searchCatalog("Top Songs", maxOf(limit * 5, 30)) }
+                .take(limit)
+        }
+
+        val existingTracks = poolSongs.mapTo(mutableSetOf()) { trackKey(it.title, it.artist) }
+        val artists = poolSongs.asSequence()
+            .map { it.artist.trim() }
+            .filter(String::isNotBlank)
+            .groupBy(::normalize)
+            .values
+            .sortedByDescending { it.size }
+            .take(6)
+            .map { it.first() }
+
+        val candidates = mutableListOf<TrackSearchResult>()
+        for (artist in artists) {
+            val artistKey = normalize(artist)
+            val artistResults = searchCatalog(artist, maxOf(limit * 6, 20))
+            val exactArtistResults = artistResults.filter { normalize(it.artist) == artistKey }
+                .ifEmpty {
+                    itunesClient.search(artist, maxOf(limit * 6, 20))
+                        .filter { normalize(it.artist) == artistKey }
+                }
+            exactArtistResults
+                .asSequence()
+                .filterNot { trackKey(it.title, it.artist) in existingTracks }
+                .forEach { candidates += it }
+            if (candidates.distinctBy { trackKey(it.title, it.artist) }.size >= limit) break
+        }
+
+        candidates.distinctBy { trackKey(it.title, it.artist) }.shuffled().take(limit)
     }
 
     /**
@@ -66,7 +87,7 @@ class MusicService(
      */
     suspend fun resolveEntry(entry: SongEntry): SongEntry? = externalRequestLimit.withPermit {
         val query = "${entry.title.trim()} ${entry.artist.trim()}".trim()
-        
+
         val deezerMatch = findBestMatch(deezerClient.search(query, 10), query)
         val itunesMatch = if (deezerMatch == null || deezerMatch.albumArtUrl.isBlank()) {
             findBestMatch(itunesClient.search(query, 10), query)
@@ -83,6 +104,25 @@ class MusicService(
             previewUrl = bestMatch.previewUrl
         )
     }
+
+    private suspend fun searchCatalog(query: String, limit: Int): List<TrackSearchResult> {
+        val deezerResults = deezerClient.search(query, limit)
+        if (deezerResults.isEmpty()) return itunesClient.search(query, limit)
+        if (deezerResults.none { it.albumArtUrl.isBlank() }) return deezerResults
+
+        val itunesResults = itunesClient.search(query, limit.coerceAtLeast(deezerResults.size))
+        return deezerResults.map { deezerTrack ->
+            if (deezerTrack.albumArtUrl.isNotBlank()) {
+                deezerTrack
+            } else {
+                val match = findBestMatch(itunesResults, "${deezerTrack.title} ${deezerTrack.artist}")
+                deezerTrack.copy(albumArtUrl = match?.albumArtUrl?.takeIf { it.isNotBlank() }.orEmpty())
+            }
+        }
+    }
+
+    private fun trackKey(title: String, artist: String): String =
+        "${normalize(title)}|${normalize(artist)}"
 
     private fun findBestMatch(results: List<TrackSearchResult>, query: String): TrackSearchResult? {
         if (results.isEmpty()) return null
@@ -103,7 +143,7 @@ class MusicService(
     }
 
     private fun normalize(s: String): String =
-        s.lowercase().replace(Regex("[^a-z0-9 ]"), "").trim()
+        s.lowercase().replace(Regex("[^\\p{L}\\p{N} ]"), "").trim()
 
     /** Standard iterative Levenshtein distance */
     private fun levenshtein(a: String, b: String): Int {

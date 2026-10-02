@@ -26,7 +26,6 @@ data class GameUiState(
     val totalVoters: Int = 0,
     val votingDeadlineEpochMs: Long = 0L,
     val revealData: RoundRevealed? = null,
-    val chatMessages: List<ChatMessage> = emptyList(),
     val room: Room? = null,
     val isSelfSong: Boolean = false
 )
@@ -134,10 +133,6 @@ class GameViewModel @Inject constructor(
 
                     is GameResults -> _events.emit(GameEvent.NavigateToResults)
 
-                    is ChatReceived -> _uiState.update {
-                        it.copy(chatMessages = it.chatMessages + message.message)
-                    }
-
                     is RoomUpdated -> {
                         val room = message.room
                         _uiState.update {
@@ -161,10 +156,6 @@ class GameViewModel @Inject constructor(
         if (_uiState.value.votedPlayerId != null) return // already voted
         _uiState.update { it.copy(votedPlayerId = playerId) }
         viewModelScope.launch { gameRepository.castVote(playerId) }
-    }
-
-    fun sendChat(text: String) {
-        viewModelScope.launch { gameRepository.sendChat(text) }
     }
 
     fun kickPlayer(targetId: String) {

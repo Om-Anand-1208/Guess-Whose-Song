@@ -6,6 +6,5 @@ window.GWS_FIREBASE_CONFIG = {
 };
 
 window.GWS_RUNTIME_CONFIG = {
-    apiBaseUrl: "https://your-api.example.com",
-    wsBaseUrl: "wss://your-api.example.com"
+    apiBaseUrl: "https://your-api.example.com"
 };

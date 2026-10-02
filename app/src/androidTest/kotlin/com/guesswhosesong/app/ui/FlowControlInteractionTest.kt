@@ -12,7 +12,6 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
-import com.guesswhosesong.app.ui.screens.game.ChatDock
 import com.guesswhosesong.app.ui.screens.game.VotingSection
 import com.guesswhosesong.app.ui.screens.lobby.LobbySettingsSheet
 import com.guesswhosesong.app.ui.screens.lobby.PlayerListItem
@@ -22,7 +21,6 @@ import com.guesswhosesong.app.ui.screens.submission.SelectedSongCard
 import com.guesswhosesong.app.ui.screens.submission.SpotifyConnectCard
 import com.guesswhosesong.app.ui.screens.submission.TrackListItem
 import com.guesswhosesong.shared.models.AvatarCustomization
-import com.guesswhosesong.shared.models.ChatMessage
 import com.guesswhosesong.shared.models.GameMode
 import com.guesswhosesong.shared.models.Player
 import com.guesswhosesong.shared.models.RoomSettings
@@ -57,6 +55,7 @@ class FlowControlInteractionTest {
                     onConnectSpotify = { fake.connectedSpotify++ },
                     onDisconnectSpotify = { fake.disconnectedSpotify++ },
                     onLinkGoogle = { fake.linkedGoogle++ },
+                    onDisconnectGoogle = {},
                     onDismiss = { fake.dismissedSettings++ },
                     onSave = { name, avatar, settings ->
                         fake.savedName = name
@@ -135,10 +134,8 @@ class FlowControlInteractionTest {
     }
 
     @Test
-    fun votingChatAndResultsActionsReachTheFakeGameService() {
+    fun votingAndResultsActionsReachTheFakeGameService() {
         val fake = FakeFlowActions()
-        val chatDraft = mutableStateOf("")
-        val chatExpanded = mutableStateOf(false)
         val players = listOf(
             Player(id = "p1", displayName = "Alice"),
             Player(id = "p2", displayName = "Bob")
@@ -160,14 +157,6 @@ class FlowControlInteractionTest {
                         deadlineMs = System.currentTimeMillis() + 30_000L,
                         onConfirmVote = { fake.vote = it }
                     )
-                    ChatDock(
-                        messages = listOf(ChatMessage("p2", "Bob", "Nice pick")),
-                        expanded = chatExpanded.value,
-                        onExpandToggle = { chatExpanded.value = !chatExpanded.value },
-                        input = chatDraft.value,
-                        onInputChange = { chatDraft.value = it },
-                        onSend = { fake.sentMessage = chatDraft.value; chatDraft.value = "" }
-                    )
                     ResultsActions(
                         isHost = true,
                         onPlayAgain = { fake.playAgain++ },
@@ -180,20 +169,13 @@ class FlowControlInteractionTest {
         composeRule.onNodeWithText("Confirm vote", substring = true).assertIsNotEnabled()
         composeRule.onNodeWithText("Bob").performClick()
         composeRule.onNodeWithText("Confirm vote", substring = true).performClick()
-        composeRule.onNodeWithText("Show").performClick()
-        composeRule.onNodeWithText("Hide").performClick()
-        composeRule.onNodeWithText("Show").performClick()
-        composeRule.onNodeWithText("Say something…").performTextInput("Good game")
-        composeRule.onNodeWithContentDescription("Send message").performClick()
         composeRule.onNodeWithText("Play Again 🎵").performClick()
         composeRule.onNodeWithText("End Game").performClick()
 
         composeRule.runOnIdle {
             assertEquals("p2", fake.vote)
-            assertEquals("Good game", fake.sentMessage)
             assertEquals(1, fake.playAgain)
             assertEquals(1, fake.endedGame)
-            assertEquals("", chatDraft.value)
         }
     }
 
@@ -291,7 +273,6 @@ class FlowControlInteractionTest {
         var selectedTracks = 0
         var removedSongs = 0
         var vote: String? = null
-        var sentMessage: String? = null
         var playAgain = 0
         var endedGame = 0
     }

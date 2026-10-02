@@ -7,7 +7,7 @@ import com.guesswhosesong.app.data.player.AccountLinkResult
 import com.guesswhosesong.app.data.player.PlayerIdentityManager
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.guesswhosesong.app.data.network.WebSocketManager
+import com.guesswhosesong.app.data.network.RoomPollingClient
 import com.guesswhosesong.app.data.repository.GameRepository
 import com.guesswhosesong.app.data.spotify.SpotifyAuthManager
 import com.guesswhosesong.shared.dto.*
@@ -26,8 +26,7 @@ data class LobbyUiState(
     val isSpotifyConnected: Boolean = false,
     val isAccountLinked: Boolean = false,
     val accountStatus: String? = null,
-    val accountStatusIsError: Boolean = false,
-    val chatMessages: List<ChatMessage> = emptyList()
+    val accountStatusIsError: Boolean = false
 )
 
 sealed class LobbyEvent {
@@ -106,14 +105,13 @@ class LobbyViewModel @Inject constructor(
                     }
                     is Kicked -> _events.emit(LobbyEvent.Kicked)
                     is ErrorMessage -> _uiState.update { it.copy(error = message.message) }
-                    is ChatReceived -> _uiState.update { it.copy(chatMessages = it.chatMessages + message.message) }
                     else -> {}
                 }
             }
         }
         viewModelScope.launch {
             gameRepository.connectionState.collect { state ->
-                val isConnected = state == WebSocketManager.ConnectionState.CONNECTED
+                val isConnected = state == RoomPollingClient.ConnectionState.CONNECTED
                 _uiState.update {
                     it.copy(
                         isConnected = isConnected,
@@ -145,22 +143,50 @@ class LobbyViewModel @Inject constructor(
         spotifyAuthManager.disconnect()
     }
 
+    fun disconnectGoogle() {
+        viewModelScope.launch {
+            runCatching { playerIdentityManager.disconnectGoogle() }
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(
+                            isAccountLinked = playerIdentityManager.isAccountLinked(),
+                            accountStatus = null,
+                            accountStatusIsError = false
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isAccountLinked = playerIdentityManager.isAccountLinked(),
+                            accountStatus = error.message ?: "Google disconnect failed",
+                            accountStatusIsError = true
+                        )
+                    }
+                }
+        }
+    }
+
     fun googleSignInIntent(activity: Activity) = playerIdentityManager.googleSignInIntent(activity)
 
     fun linkGoogle(data: Intent) {
         viewModelScope.launch {
             when (val result = playerIdentityManager.linkGoogle(data)) {
                 AccountLinkResult.Linked -> _uiState.update {
-                    it.copy(isAccountLinked = true, accountStatus = "Google account linked for recovery", accountStatusIsError = false)
+                    it.copy(isAccountLinked = true, accountStatus = null, accountStatusIsError = false)
                 }
                 AccountLinkResult.SignedIn -> _uiState.update {
-                    it.copy(isAccountLinked = true, accountStatus = "Google account signed in", accountStatusIsError = false)
+                    it.copy(isAccountLinked = true, accountStatus = null, accountStatusIsError = false)
                 }
                 AccountLinkResult.Collision -> _uiState.update {
-                    it.copy(accountStatus = "That Google account is already linked to another player", accountStatusIsError = true)
+                    it.copy(accountStatus = "That Google account belongs to another player. Leave the room to log in from the home screen.", accountStatusIsError = true)
                 }
                 is AccountLinkResult.Failed -> _uiState.update {
-                    it.copy(accountStatus = result.message, accountStatusIsError = true)
+                    it.copy(
+                        isAccountLinked = playerIdentityManager.isAccountLinked(),
+                        accountStatus = result.message,
+                        accountStatusIsError = true
+                    )
                 }
             }
         }
@@ -204,13 +230,4 @@ class LobbyViewModel @Inject constructor(
         viewModelScope.launch { gameRepository.kickPlayer(playerId) }
     }
 
-    fun sendChat(text: String) {
-        val message = text.trim()
-        if (message.isNotBlank()) viewModelScope.launch { gameRepository.sendChat(message) }
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        gameRepository.disconnect()
-    }
 }

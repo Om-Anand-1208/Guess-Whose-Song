@@ -5,6 +5,7 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import com.guesswhosesong.app.data.repository.GameRepository
 import com.guesswhosesong.app.data.spotify.SpotifyAuthManager
 import com.guesswhosesong.app.ui.GWSNavHost
 import dagger.hilt.android.AndroidEntryPoint
@@ -15,6 +16,9 @@ class MainActivity : ComponentActivity() {
 
     @Inject
     lateinit var spotifyAuthManager: SpotifyAuthManager
+
+    @Inject
+    lateinit var gameRepository: GameRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -28,6 +32,11 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleSpotifyIntent(intent)
+    }
+
+    override fun onDestroy() {
+        if (isFinishing) gameRepository.disconnect()
+        super.onDestroy()
     }
 
     private fun handleSpotifyIntent(intent: Intent?) {

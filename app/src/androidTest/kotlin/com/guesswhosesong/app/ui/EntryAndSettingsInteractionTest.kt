@@ -99,6 +99,7 @@ class EntryAndSettingsInteractionTest {
                     error = null,
                     onLinkGoogle = { fake.linkedGoogle++ },
                     onRecoverGoogle = { fake.recoveredGoogle++ },
+                    onDisconnectGoogle = {},
                     onConnectSpotify = { fake.connectedSpotify++ },
                     onDisconnectSpotify = { fake.disconnectedSpotify++ },
                     onRefreshSpotify = { fake.refreshedSpotify++ },
@@ -131,7 +132,7 @@ class EntryAndSettingsInteractionTest {
     }
 
     @Test
-    fun connectedProfileCanDisconnectSpotifyAndLinkedGoogleCannotBeLinkedAgain() {
+    fun connectedProfileCanDisconnectGoogleAndSpotify() {
         val fake = FakeEntryActions()
         composeRule.setContent {
             MaterialTheme {
@@ -147,6 +148,7 @@ class EntryAndSettingsInteractionTest {
                     error = null,
                     onLinkGoogle = { fake.linkedGoogle++ },
                     onRecoverGoogle = { fake.recoveredGoogle++ },
+                    onDisconnectGoogle = { fake.disconnectedGoogle++ },
                     onConnectSpotify = { fake.connectedSpotify++ },
                     onDisconnectSpotify = { fake.disconnectedSpotify++ },
                     onRefreshSpotify = { fake.refreshedSpotify++ },
@@ -156,12 +158,13 @@ class EntryAndSettingsInteractionTest {
             }
         }
 
-        composeRule.onAllNodesWithText("Manage")[1].performClick()
-        composeRule.onAllNodesWithText("Manage")[0].performClick()
+        composeRule.onAllNodesWithText("Disconnect")[1].performClick()
+        composeRule.onAllNodesWithText("Disconnect")[0].performClick()
         composeRule.onNodeWithText("Refresh Spotify status").performClick()
         composeRule.runOnIdle {
             assertEquals(1, fake.disconnectedSpotify)
-            assertEquals(1, fake.recoveredGoogle)
+            assertEquals(1, fake.disconnectedGoogle)
+            assertEquals(0, fake.recoveredGoogle)
             assertEquals(0, fake.linkedGoogle)
             assertEquals(1, fake.refreshedSpotify)
         }
@@ -174,6 +177,7 @@ class EntryAndSettingsInteractionTest {
         var openedScanner = 0
         var connectedSpotify = 0
         var disconnectedSpotify = 0
+        var disconnectedGoogle = 0
         var linkedGoogle = 0
         var recoveredGoogle = 0
         var editedCharacter = 0

@@ -38,7 +38,7 @@ class RoomRepository(private val redis: RedisClient) {
 
     fun exists(joinCode: String): Boolean = redis.exists(roomKey(joinCode))
 
-    /** Refresh TTL without full re-save (e.g. on activity ping) */
+    /** Refresh TTL without a full re-save (for example, on room activity). */
     fun refreshTtl(joinCode: String) {
         redis.expire(roomKey(joinCode), ROOM_TTL_SECONDS)
     }

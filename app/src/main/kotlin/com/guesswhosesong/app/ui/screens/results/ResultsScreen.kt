@@ -38,6 +38,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.guesswhosesong.app.ui.components.EmptyAvatarBadge
+import com.guesswhosesong.app.ui.components.AppearanceToggleButton
+import com.guesswhosesong.app.ui.components.GuessWhoseSongWordmark
 import com.guesswhosesong.app.ui.theme.GwsPalette
 import com.guesswhosesong.app.ui.theme.PostJoinPalette
 import com.guesswhosesong.shared.models.Player
@@ -64,7 +66,13 @@ fun ResultsScreen(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("Final Scores 🏆") },
+                title = {
+                    GuessWhoseSongWordmark(
+                        fontSize = 18.sp,
+                        lineHeight = 20.sp
+                    )
+                },
+                actions = { AppearanceToggleButton() },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
             )
         }
@@ -73,6 +81,13 @@ fun ResultsScreen(
             modifier = Modifier.fillMaxSize().padding(padding).navigationBarsPadding().padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Text(
+                "Final scores 🏆",
+                modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                style = MaterialTheme.typography.headlineSmall,
+                fontWeight = FontWeight.Black,
+                color = MaterialTheme.colorScheme.onBackground
+            )
             LazyColumn(
                 modifier = Modifier.weight(1f).fillMaxWidth(),
                 verticalArrangement = Arrangement.spacedBy(8.dp)

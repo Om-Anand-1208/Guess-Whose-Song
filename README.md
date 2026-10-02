@@ -47,7 +47,7 @@ Run only one Ktor server on port 8080. If it is already running in another termi
 
 ### 6. Web
 
-The browser client uses Kotlin/Wasm and Compose Multiplatform. It signs users in anonymously through Firebase, then optionally links Google without changing the Firebase UID. Copy `web/firebase-config.example.js` to `web/src/wasmJsMain/resources/firebase-config.local.js`, fill in the public Firebase web configuration and API/WebSocket origins, and copy it over `web/src/wasmJsMain/resources/firebase-config.js` for a local build.
+The browser client uses Kotlin/Wasm and Compose Multiplatform. It signs users in anonymously through Firebase, then optionally links Google without changing the Firebase UID. Copy `web/firebase-config.example.js` to `web/src/wasmJsMain/resources/firebase-config.local.js`, fill in the public Firebase web configuration and API origin, and copy it over `web/src/wasmJsMain/resources/firebase-config.js` for a local build.
 
 ```bash
 ./gradlew :web:wasmJsBrowserDevelopmentRun
@@ -66,7 +66,7 @@ For Firebase Hosting:
 firebase deploy --only hosting
 ```
 
-The hosting output is `web/build/dist/wasmJs/productionExecutable`. Room connections use a six-character code and display name; credentials and display names are never placed in the URL. Since browser WebSockets cannot set custom Authorization headers, the web client first obtains a 30-second single-use ticket over authenticated HTTP and presents it as a WebSocket subprotocol.
+The hosting output is `web/build/dist/wasmJs/productionExecutable`. Room connections use a six-character code and display name. Clients authenticate room joins, actions, and event polling with a Firebase bearer token; room credentials and display names are never placed in the URL. The event endpoint holds each request for up to 20 seconds and returns any queued room events.
 
 CI can inject the complete public `firebase-config.js` contents through the `WEB_FIREBASE_CONFIG` repository secret. Firebase web configuration is client-visible; Firebase Admin service-account credentials must never be placed in this file or any browser bundle.
 
@@ -87,7 +87,7 @@ CI can inject the complete public `firebase-config.js` contents through the `WEB
 
 ## Architecture
 
-- **Transport**: WebSockets (Ktor) for real-time game events
+- **Transport**: Authenticated Ktor REST actions with long-poll room events
 - **State**: Redis (ephemeral, TTL-based cleanup)
 - **Audio**: Deezer public API (30-second preview clips, keyless)
 - **Identity**: Firebase Anonymous Auth
@@ -97,9 +97,8 @@ CI can inject the complete public `firebase-config.js` contents through the `WEB
 
 ## Security and deployment notes
 
-- All room, music, Spotify, crash-log, and WebSocket operations require a Firebase ID token. The server uses the verified Firebase UID; legacy client-generated player IDs are not accepted.
-- WebSockets authenticate with `Authorization: Bearer <Firebase ID token>` and then require a first `JOIN_ROOM` frame containing the display name and selected avatar ID.
-- Browser WebSockets use `POST /rooms/{joinCode}/ws-ticket` with a Firebase bearer token, followed by the negotiated `gws-ticket` marker plus the single-use `gws-ticket.<ticket>` subprotocol and the same `JOIN_ROOM(displayName, avatarId)` first frame. Native clients continue using the Authorization header. Tickets are bound to the verified UID and room code and are atomically consumed in Redis.
+- All room, music, Spotify, and crash-log operations require a Firebase ID token. The server uses the verified Firebase UID; legacy client-generated player IDs are not accepted.
+- Room sessions use `POST /rooms/{joinCode}/join`, `POST /rooms/{joinCode}/actions`, and authenticated long polling at `GET /rooms/{joinCode}/events`. Clients leave with `DELETE /rooms/{joinCode}/join`.
 - Spotify OAuth state and PKCE verifier are generated and stored server-side in Redis for ten minutes and are single-use. Android refreshes authenticated status after the deep-link callback.
 - Room state uses the `gws:v2` Redis namespace for the Firebase hard cutover. The deployment is intentionally single-instance until distributed room ownership/pub-sub is implemented.
 - See [SECURITY_ROTATION.md](SECURITY_ROTATION.md) for the required credential revocation and Git-history cleanup procedure.

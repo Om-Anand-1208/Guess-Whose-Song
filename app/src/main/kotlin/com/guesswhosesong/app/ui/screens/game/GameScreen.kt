@@ -9,6 +9,7 @@ import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.BorderStroke
@@ -16,20 +17,26 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.Send
+import androidx.compose.material.icons.filled.AccessTime
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.rotate
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -40,13 +47,16 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player as Media3Player
 import androidx.media3.exoplayer.ExoPlayer
 import com.guesswhosesong.app.ui.components.AlbumArtwork
+import com.guesswhosesong.app.ui.components.AvatarCharacter
 import com.guesswhosesong.app.ui.components.EmptyAvatarBadge
 import com.guesswhosesong.app.ui.components.PostJoinHeader
+import com.guesswhosesong.app.ui.components.avatarOption
 import com.guesswhosesong.app.ui.theme.AppearanceSettingsSheet
 import com.guesswhosesong.app.ui.theme.GwsPalette
 import com.guesswhosesong.app.ui.theme.PostJoinPalette
 import com.guesswhosesong.shared.dto.RoundRevealed
-import com.guesswhosesong.shared.models.ChatMessage
+import com.guesswhosesong.shared.models.AvatarCatalog
+import com.guesswhosesong.shared.models.AvatarCustomization
 import com.guesswhosesong.shared.models.GameConstants
 import com.guesswhosesong.shared.models.GameMode
 import com.guesswhosesong.shared.models.Player
@@ -59,8 +69,6 @@ fun GameScreen(
     onNavigateToSubmission: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    var chatInput by remember { mutableStateOf("") }
-    var chatExpanded by remember { mutableStateOf(false) }
     var showAppearanceSettings by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
@@ -152,7 +160,7 @@ fun GameScreen(
         PostJoinHeader(
             roomCode = uiState.room?.joinCode.orEmpty(),
             onSettings = { showAppearanceSettings = true },
-            modifier = Modifier.padding(horizontal = 18.dp)
+            modifier = Modifier.padding(start = 18.dp, end = 22.5.dp)
         )
         when (uiState.roundPhase) {
             RoundPhase.PLAYING_PREVIEW -> HeroPreviewScreen(
@@ -174,6 +182,7 @@ fun GameScreen(
                     albumArtUrl = uiState.albumArtUrl,
                     roundIndex = uiState.roundIndex,
                     totalRounds = uiState.totalRounds,
+                    votingTimerSeconds = uiState.room?.settings?.votingTimerSeconds ?: 20,
                     players = uiState.players,
                     eligibleOwnerIds = uiState.eligibleOwnerIds,
                     selfPlayerId = uiState.selfPlayerId,
@@ -196,19 +205,6 @@ fun GameScreen(
             )
         }
 
-        ChatDock(
-            messages = uiState.chatMessages,
-            expanded = chatExpanded,
-            onExpandToggle = { chatExpanded = !chatExpanded },
-            input = chatInput,
-            onInputChange = { chatInput = it },
-            onSend = {
-                if (chatInput.isNotBlank()) {
-                    viewModel.sendChat(chatInput.trim())
-                    chatInput = ""
-                }
-            }
-        )
     }
     if (showAppearanceSettings) {
         AppearanceSettingsSheet(onDismiss = { showAppearanceSettings = false })
@@ -304,8 +300,8 @@ fun HeroPreviewScreen(
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis
             )
-            Text(
-                artist.ifBlank { "Listen closely" },
+            if (artist.isNotBlank()) Text(
+                artist,
                 style = MaterialTheme.typography.titleMedium,
                 color = PostJoinPalette.Ink.copy(alpha = 0.63f),
                 textAlign = TextAlign.Center,
@@ -333,13 +329,6 @@ fun HeroPreviewScreen(
                 Text(totalStr, style = MaterialTheme.typography.labelSmall, color = PostJoinPalette.Ink.copy(alpha = 0.6f))
             }
             Spacer(Modifier.height(8.dp))
-            Text(
-                "Listen closely. Voting starts when this preview ends.",
-                modifier = Modifier.fillMaxWidth(),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center
-            )
         }
     }
 }
@@ -461,14 +450,17 @@ fun CompactTrackBar(
 
 @Composable
 private fun VoteChoicesHeading() {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 19.dp, vertical = 5.dp)
-    ) {
-        Text("Who submitted this song?", style = MaterialTheme.typography.titleLarge, color = PostJoinPalette.Ink, fontWeight = FontWeight.Black)
-        Text("Choose one card, then confirm your vote.", style = MaterialTheme.typography.bodySmall, color = PostJoinPalette.Muted)
-    }
+    Text(
+        "Who submitted this song?",
+        modifier = Modifier.fillMaxWidth().padding(start = 24.5.dp, end = 24.dp).padding(top = 10.dp, bottom = 10.dp),
+        style = MaterialTheme.typography.titleLarge.copy(
+            fontSize = 18.7.sp,
+            lineHeight = 23.sp,
+            letterSpacing = 0.sp
+        ),
+        color = PostJoinPalette.Ink,
+        fontWeight = FontWeight.Black
+    )
 }
 
 @Composable
@@ -478,6 +470,7 @@ fun VotingSection(
     albumArtUrl: String,
     roundIndex: Int,
     totalRounds: Int,
+    votingTimerSeconds: Int = 30,
     players: List<Player>,
     eligibleOwnerIds: List<String> = emptyList(),
     selfPlayerId: String,
@@ -507,11 +500,9 @@ fun VotingSection(
         }
     }
 
-    Column(modifier = modifier.fillMaxWidth().padding(bottom = 9.dp)) {
-        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 4.dp)) {
-            Text("VOTE", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black, fontSize = 13.sp, letterSpacing = 0.6.sp)
-            Text("Make your guess", style = MaterialTheme.typography.headlineLarge, color = PostJoinPalette.Ink, fontWeight = FontWeight.Black)
-            Text("Who picked this one? Trust your music memory.", style = MaterialTheme.typography.bodyMedium, color = PostJoinPalette.Muted)
+    Column(modifier = modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 23.dp, vertical = 4.dp)) {
+            Text("Make your guess", style = MaterialTheme.typography.displaySmall.copy(fontSize = 32.sp, lineHeight = 37.sp), color = PostJoinPalette.Ink, fontWeight = FontWeight.Black)
         }
         VotingSteps()
         VotingSongCard(
@@ -522,23 +513,10 @@ fun VotingSection(
             totalRounds = totalRounds,
             votedCount = votedCount,
             totalCount = totalCount,
-            secondsLeft = secondsLeft
+            secondsLeft = secondsLeft,
+            votingTimerSeconds = votingTimerSeconds
         )
         VoteChoicesHeading()
-        if (isSelfSong) {
-            Surface(
-                color = MaterialTheme.colorScheme.secondaryContainer,
-                shape = RoundedCornerShape(14.dp),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 7.dp)
-            ) {
-                Text(
-                    "This is your song. You earn 1 point if nobody guesses it’s yours.",
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
-                    style = MaterialTheme.typography.bodySmall,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        }
         VoteGrid(
             players = players,
             eligibleOwnerIds = eligibleOwnerIds,
@@ -565,18 +543,48 @@ fun VotingSection(
                 )
             }
         } else {
-            Button(
-                onClick = { selectedCandidateId?.let(onConfirmVote) },
-                enabled = selectedCandidateId != null && secondsLeft > 0,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 18.dp).height(58.dp),
-                shape = RoundedCornerShape(50),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF7557F4), contentColor = Color.White)
+            val canConfirm = selectedCandidateId != null && secondsLeft > 0
+            val confirmGradient = if (canConfirm) {
+                listOf(Color(0xFF7054F4), Color(0xFF7D52FA), Color(0xFF714DF5))
+            } else {
+                listOf(Color(0xFF9A94B3), Color(0xFFA39AB7), Color(0xFF9A94B3))
+            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .height(52.dp)
+                    .clip(CircleShape)
+                    .background(Brush.horizontalGradient(confirmGradient))
             ) {
-                Text(
-                    "▶  Confirm vote",
-                    fontWeight = FontWeight.Black,
-                    style = MaterialTheme.typography.titleMedium
-                )
+                Button(
+                    onClick = { selectedCandidateId?.let(onConfirmVote) },
+                    enabled = canConfirm,
+                    modifier = Modifier.fillMaxSize(),
+                    shape = CircleShape,
+                    contentPadding = PaddingValues(0.dp),
+                    elevation = ButtonDefaults.buttonElevation(
+                        defaultElevation = 0.dp,
+                        pressedElevation = 0.dp,
+                        disabledElevation = 0.dp
+                    ),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Transparent,
+                        contentColor = Color.White,
+                        disabledContainerColor = Color.Transparent,
+                        disabledContentColor = Color.White.copy(alpha = 0.6f)
+                    )
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.Center) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, modifier = Modifier.size(30.dp))
+                        Spacer(Modifier.width(9.dp))
+                        Text(
+                            "Confirm vote",
+                            fontWeight = FontWeight.Black,
+                            style = MaterialTheme.typography.titleLarge.copy(fontSize = 19.sp)
+                        )
+                    }
+                }
             }
         }
     }
@@ -585,7 +593,7 @@ fun VotingSection(
 @Composable
 private fun VotingSteps() {
     Row(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp).padding(top = 14.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.Center
     ) {
@@ -597,7 +605,7 @@ private fun VotingSteps() {
             Surface(
                 color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant,
                 shape = CircleShape,
-                modifier = Modifier.size(37.dp)
+                modifier = Modifier.size(38.dp)
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Text("0${index + 1}", color = if (active) Color.White else PostJoinPalette.Muted, fontWeight = FontWeight.Black)
@@ -608,7 +616,7 @@ private fun VotingSteps() {
                 modifier = Modifier.padding(start = 7.dp, end = if (index == 2) 0.dp else 11.dp),
                 color = if (active) MaterialTheme.colorScheme.primary else PostJoinPalette.Muted,
                 fontWeight = if (active) FontWeight.Black else FontWeight.Medium,
-                style = MaterialTheme.typography.bodySmall
+                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 14.sp)
             )
         }
     }
@@ -623,35 +631,73 @@ private fun VotingSongCard(
     totalRounds: Int,
     votedCount: Int,
     totalCount: Int,
-    secondsLeft: Int
+    secondsLeft: Int,
+    votingTimerSeconds: Int
 ) {
     Surface(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(top = 6.5.dp, bottom = 5.5.dp),
         color = MaterialTheme.colorScheme.surface,
         shape = RoundedCornerShape(22.dp),
         border = BorderStroke(1.dp, PostJoinPalette.Outline.copy(alpha = 0.45f))
     ) {
-        Column(Modifier.padding(12.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(13.dp)) {
-                AlbumArtwork(albumArtUrl, modifier = Modifier.size(118.dp), contentDescription = "Song cover")
+        Column(Modifier.padding(horizontal = 12.dp).padding(top = 18.dp, bottom = 19.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                AlbumArtwork(albumArtUrl, modifier = Modifier.size(146.dp), contentDescription = "Song cover")
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
-                    Text("NOW GUESSING · ${roundIndex + 1}/${if (totalRounds > 0) totalRounds else "?"}", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black, style = MaterialTheme.typography.labelSmall)
-                    Text(title.ifBlank { "Song ${roundIndex + 1}" }, style = MaterialTheme.typography.titleLarge, color = PostJoinPalette.Ink, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                    Text(title.ifBlank { "Song ${roundIndex + 1}" }, style = MaterialTheme.typography.titleLarge.copy(fontSize = 22.sp, lineHeight = 27.sp), color = PostJoinPalette.Ink, fontWeight = FontWeight.Black, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     Text(artist.ifBlank { "Unknown artist" }, style = MaterialTheme.typography.bodyMedium, color = PostJoinPalette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 4.dp)) {
-                        Surface(color = MaterialTheme.colorScheme.secondaryContainer, shape = RoundedCornerShape(50)) {
-                            Text("◷  ${secondsLeft}s left", modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp), fontWeight = FontWeight.Black, color = MaterialTheme.colorScheme.onSecondaryContainer, style = MaterialTheme.typography.labelLarge)
+                        Surface(color = Color(0xFFFFD34F), shape = RoundedCornerShape(50)) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(5.dp)
+                            ) {
+                                Icon(Icons.Default.AccessTime, contentDescription = null, tint = Color(0xFF151515), modifier = Modifier.size(18.dp))
+                                Text("${secondsLeft}s left", fontWeight = FontWeight.Black, color = Color(0xFF151515), style = MaterialTheme.typography.labelLarge)
+                            }
                         }
-                        Text("$votedCount/$totalCount voted", style = MaterialTheme.typography.labelMedium, color = PostJoinPalette.Muted, fontWeight = FontWeight.Bold)
+                        Text("$votedCount/$totalCount voted", style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp), color = PostJoinPalette.Muted, fontWeight = FontWeight.Bold, maxLines = 1)
                     }
                 }
             }
-            LinearProgressIndicator(
-                progress = { if (totalCount > 0) (votedCount.toFloat() / totalCount).coerceIn(0f, 1f) else 0f },
-                modifier = Modifier.fillMaxWidth().padding(top = 10.dp).height(5.dp).clip(RoundedCornerShape(50)),
-                color = MaterialTheme.colorScheme.primary,
-                trackColor = PostJoinPalette.Outline.copy(alpha = 0.38f)
-            )
+            Box(
+                modifier = Modifier.fillMaxWidth().padding(top = 7.dp).height(12.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxSize().padding(vertical = 3.dp),
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier.weight(1f).height(6.dp)
+                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(50))
+                    )
+                    BoxWithConstraints(
+                        Modifier.weight(1f).height(6.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(PostJoinPalette.Outline.copy(alpha = 0.38f))
+                    ) {
+                        val timerProgress = (
+                            secondsLeft.toFloat() / votingTimerSeconds.coerceAtLeast(1)
+                        ).coerceIn(0f, 1f)
+                        Box(
+                            Modifier.fillMaxWidth(timerProgress).fillMaxHeight()
+                                .background(Color(0xFFFFD34F), RoundedCornerShape(50))
+                        )
+                    }
+                }
+                Box(
+                    modifier = Modifier.align(Alignment.CenterEnd).size(13.dp)
+                        .background(Color.White, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        Modifier.size(7.dp).background(MaterialTheme.colorScheme.primary, CircleShape)
+                    )
+                }
+            }
         }
     }
 }
@@ -672,9 +718,9 @@ fun VoteGrid(
     val choices = if (filterEligibleOwners) players.filter { it.id in eligibleOwnerIds }
     else if (eligibleOwnerIds.isEmpty()) players else players.filter { it.id in eligibleOwnerIds }
     LazyColumn(
-        modifier = modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(9.dp),
-        contentPadding = PaddingValues(bottom = 8.dp)
+        modifier = modifier.padding(horizontal = 16.dp, vertical = 3.dp),
+        verticalArrangement = Arrangement.spacedBy(10.5.dp),
+        contentPadding = PaddingValues(bottom = 6.dp)
     ) {
         items(choices, key = { it.id }) { player ->
             PlayerVoteCard(
@@ -714,24 +760,24 @@ fun PlayerVoteCard(
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 94.dp)
+            .heightIn(min = if (isSelected) 102.dp else 95.dp)
             .border(if (isSelected) 2.dp else 1.dp, borderColor, RoundedCornerShape(18.dp))
             .clip(RoundedCornerShape(18.dp))
             .clickable(enabled = enabled && (!isSelf || allowSelfVote), onClick = onClick),
         color = background,
         shape = RoundedCornerShape(18.dp)
     ) {
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-            EmptyAvatarBadge(
+        Row(modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 16.dp, top = 9.dp, bottom = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+            VoteAvatarScene(
                 avatarId = player.avatarId,
-                size = 72.dp,
-                selected = isSelected,
-                customization = player.avatarCustomization
+                customization = if (player.isComputer) {
+                    AvatarCustomization.normalize(player.avatarCustomization, player.avatarId).copy(mouthId = "smile")
+                } else player.avatarCustomization,
+                modifier = Modifier.width(100.dp).height(if (isSelected) 76.dp else 68.dp)
             )
-            Spacer(Modifier.width(13.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Spacer(Modifier.width(19.5.dp))
+            Column(Modifier.weight(1f)) {
                 Text(player.displayName, style = MaterialTheme.typography.titleMedium, color = PostJoinPalette.Ink, fontWeight = FontWeight.Black, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(if (isSelf) "Your song · choose someone else" else if (isSelected) "Selected" else "Could it be them?", style = MaterialTheme.typography.bodyMedium, color = PostJoinPalette.Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
             SelectionMark(isSelected)
         }
@@ -743,7 +789,7 @@ fun DecoyVoteCard(isSelected: Boolean, enabled: Boolean, onClick: () -> Unit) {
     Surface(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 94.dp)
+            .heightIn(min = if (isSelected) 102.dp else 95.dp)
             .border(
                 if (isSelected) 2.dp else 1.dp,
                 if (isSelected) MaterialTheme.colorScheme.primary else PostJoinPalette.Ink.copy(alpha = 0.09f),
@@ -754,22 +800,190 @@ fun DecoyVoteCard(isSelected: Boolean, enabled: Boolean, onClick: () -> Unit) {
         color = if (isSelected) PostJoinPalette.Selected.copy(alpha = 0.3f) else PostJoinPalette.Surface,
         shape = RoundedCornerShape(18.dp)
     ) {
-        Row(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 9.dp), verticalAlignment = Alignment.CenterVertically) {
-            EmptyAvatarBadge(avatarId = "cloud", size = 72.dp, selected = isSelected)
-            Spacer(Modifier.width(13.dp))
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        Row(modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 16.dp, top = 9.dp, bottom = 9.dp), verticalAlignment = Alignment.CenterVertically) {
+            VoteAvatarScene(
+                avatarId = "cloud",
+                customization = AvatarCustomization.defaultsFor("cloud").copy(mouthId = "smile"),
+                modifier = Modifier.width(100.dp).height(if (isSelected) 76.dp else 68.dp)
+            )
+            Spacer(Modifier.width(19.5.dp))
+            Column(Modifier.widthIn(max = 155.dp)) {
                 Text("Nobody / Decoy", style = MaterialTheme.typography.titleMedium, color = PostJoinPalette.Ink, fontWeight = FontWeight.Black)
-                Text("The song belongs to nobody here.", style = MaterialTheme.typography.bodyMedium, color = PostJoinPalette.Muted)
             }
             SelectionMark(isSelected)
         }
     }
 }
 
+/** Scenic, vote-only framing for avatars, matching the illustrated choice cards. */
+@Composable
+private fun VoteAvatarScene(
+    avatarId: String,
+    modifier: Modifier = Modifier,
+    customization: AvatarCustomization? = null
+) {
+    val appearance = AvatarCustomization.normalize(customization, AvatarCatalog.normalize(avatarId))
+    val option = avatarOption(appearance.colorId)
+    val darkTheme = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
+    Box(modifier = modifier, contentAlignment = Alignment.Center) {
+        Canvas(Modifier.fillMaxSize()) {
+            val w = size.width
+            val h = size.height
+            fun point(x: Float, y: Float) = Offset(w * x, h * y)
+            fun drawBackdrop(path: Path, color: Color) = drawPath(path, color)
+
+            when (appearance.shapeId) {
+                "lime" -> {
+                    val blob = Path().apply {
+                        moveTo(point(0.12f, 0.76f).x, point(0.12f, 0.76f).y)
+                        cubicTo(point(0.01f, 0.67f).x, point(0.01f, 0.67f).y, point(0.08f, 0.43f).x, point(0.08f, 0.43f).y, point(0.23f, 0.41f).x, point(0.23f, 0.41f).y)
+                        cubicTo(point(0.25f, 0.23f).x, point(0.25f, 0.23f).y, point(0.45f, 0.25f).x, point(0.45f, 0.25f).y, point(0.51f, 0.37f).x, point(0.51f, 0.37f).y)
+                        cubicTo(point(0.64f, 0.25f).x, point(0.64f, 0.25f).y, point(0.86f, 0.33f).x, point(0.86f, 0.33f).y, point(0.82f, 0.51f).x, point(0.82f, 0.51f).y)
+                        cubicTo(point(0.99f, 0.63f).x, point(0.99f, 0.63f).y, point(0.85f, 0.78f).x, point(0.85f, 0.78f).y, point(0.68f, 0.80f).x, point(0.68f, 0.80f).y)
+                        lineTo(point(0.28f, 0.82f).x, point(0.28f, 0.82f).y)
+                        cubicTo(point(0.19f, 0.83f).x, point(0.19f, 0.83f).y, point(0.12f, 0.81f).x, point(0.12f, 0.81f).y, point(0.12f, 0.76f).x, point(0.12f, 0.76f).y)
+                        close()
+                    }
+                    drawBackdrop(blob, Color(0xFF799344).copy(alpha = if (darkTheme) 0.48f else 0.24f))
+                    drawOval(
+                        color = Color(0xFF78934B).copy(alpha = if (darkTheme) 0.66f else 0.28f),
+                        topLeft = point(0.08f, 0.84f),
+                        size = Size(w * 0.84f, h * 0.13f)
+                    )
+                }
+                "sunny" -> {
+                    // The sunny character sits on a pale halo and a warm yellow ground stroke.
+                    drawOval(
+                        color = if (darkTheme) Color.White.copy(alpha = 0.09f) else Color.White.copy(alpha = 0.80f),
+                        topLeft = point(0.08f, 0.25f),
+                        size = Size(w * 0.84f, h * 0.62f)
+                    )
+                    drawOval(
+                        color = Color(0xFFFFD34F).copy(alpha = if (darkTheme) 0.55f else 0.72f),
+                        topLeft = point(0.08f, 0.84f),
+                        size = Size(w * 0.84f, h * 0.13f)
+                    )
+                    drawVoteMusicNote(point(0.17f, 0.30f), Color(0xFF8B69FF), h * 0.22f)
+                    drawVoteMusicNote(point(0.89f, 0.29f), Color(0xFFFFC52E), h * 0.23f)
+                    listOf(
+                        point(0.07f, 0.54f) to point(0.16f, 0.58f),
+                        point(0.09f, 0.64f) to point(0.18f, 0.64f)
+                    ).forEach { (start, end) ->
+                        drawLine(Color(0xFFFFC52E), start, end, strokeWidth = 2.2.dp.toPx(), cap = StrokeCap.Round)
+                    }
+                }
+                "cloud" -> {
+                    val blob = Path().apply {
+                        moveTo(point(0.13f, 0.76f).x, point(0.13f, 0.76f).y)
+                        cubicTo(point(0.04f, 0.68f).x, point(0.04f, 0.68f).y, point(0.09f, 0.51f).x, point(0.09f, 0.51f).y, point(0.22f, 0.48f).x, point(0.22f, 0.48f).y)
+                        cubicTo(point(0.22f, 0.32f).x, point(0.22f, 0.32f).y, point(0.40f, 0.28f).x, point(0.40f, 0.28f).y, point(0.50f, 0.42f).x, point(0.50f, 0.42f).y)
+                        cubicTo(point(0.61f, 0.26f).x, point(0.61f, 0.26f).y, point(0.81f, 0.34f).x, point(0.81f, 0.34f).y, point(0.81f, 0.49f).x, point(0.81f, 0.49f).y)
+                        cubicTo(point(0.96f, 0.49f).x, point(0.96f, 0.49f).y, point(0.95f, 0.70f).x, point(0.95f, 0.70f).y, point(0.84f, 0.77f).x, point(0.84f, 0.77f).y)
+                        lineTo(point(0.13f, 0.76f).x, point(0.13f, 0.76f).y)
+                        close()
+                    }
+                    drawBackdrop(blob, option.color.copy(alpha = if (darkTheme) 0.20f else 0.28f))
+                    drawOval(
+                        color = Color(0xFF8CB8E5).copy(alpha = if (darkTheme) 0.64f else 0.36f),
+                        topLeft = point(0.08f, 0.84f),
+                        size = Size(w * 0.84f, h * 0.13f)
+                    )
+                    val rayColor = Color(0xFF8B69FF)
+                    val rayWidth = 2.4.dp.toPx()
+                    listOf(
+                        Offset(0.34f, 0.24f) to Offset(0.30f, 0.13f),
+                        Offset(0.45f, 0.20f) to Offset(0.45f, 0.07f),
+                        Offset(0.56f, 0.20f) to Offset(0.59f, 0.08f),
+                        Offset(0.68f, 0.23f) to Offset(0.73f, 0.13f)
+                    ).forEach { (from, to) ->
+                        drawLine(rayColor, point(from.x, from.y), point(to.x, to.y), strokeWidth = rayWidth, cap = StrokeCap.Round)
+                    }
+                }
+                else -> {
+                    drawOval(
+                        color = option.color.copy(alpha = if (darkTheme) 0.20f else 0.16f),
+                        topLeft = point(0.04f, 0.28f),
+                        size = Size(w * 0.92f, h * 0.62f)
+                    )
+                    drawOval(
+                        color = option.accent.copy(alpha = if (darkTheme) 0.55f else 0.28f),
+                        topLeft = point(0.08f, 0.84f),
+                        size = Size(w * 0.84f, h * 0.13f)
+                    )
+                }
+            }
+        }
+
+        AvatarCharacter(
+            avatarId = appearance.shapeId,
+            modifier = Modifier.fillMaxSize().graphicsLayer {
+                scaleX = 0.90f
+                scaleY = 0.84f
+            },
+            customization = appearance,
+            heroPose = true,
+            bodyRotation = when (appearance.shapeId) {
+                "lime" -> -4f
+                "sunny" -> 2f
+                "violet" -> -1f
+                "tangerine" -> 1.5f
+                "berry" -> -2f
+                else -> 0f
+            }
+        )
+
+        when (appearance.shapeId) {
+            "lime" -> Text(
+                "?",
+                modifier = Modifier.align(Alignment.TopEnd).offset(x = (-4).dp, y = (-2).dp).rotate(8f),
+                color = Color(0xFF8B69FF),
+                fontSize = 26.sp,
+                lineHeight = 26.sp,
+                fontWeight = FontWeight.Black
+            )
+        }
+    }
+}
+
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawVoteMusicNote(
+    center: Offset,
+    color: Color,
+    unit: Float
+) {
+    val ink = Color(0xFF17161A)
+    val head = Offset(center.x - unit * 0.36f, center.y + unit * 0.29f)
+    val headSize = Size(unit * 0.43f, unit * 0.29f)
+    val stemStart = Offset(head.x + headSize.width * 0.78f, head.y + headSize.height * 0.12f)
+    val stemEnd = Offset(stemStart.x, center.y - unit * 0.52f)
+    val flag = Path().apply {
+        moveTo(stemEnd.x, stemEnd.y)
+        cubicTo(
+            stemEnd.x + unit * 0.40f, stemEnd.y + unit * 0.03f,
+            stemEnd.x + unit * 0.48f, stemEnd.y + unit * 0.24f,
+            stemEnd.x + unit * 0.40f, stemEnd.y + unit * 0.42f
+        )
+    }
+    val outline = 1.2.dp.toPx()
+    val noteStroke = 2.1.dp.toPx()
+
+    drawLine(ink, stemStart, stemEnd, strokeWidth = noteStroke + outline, cap = StrokeCap.Round)
+    drawPath(flag, ink, style = Stroke(noteStroke + outline, cap = StrokeCap.Round))
+    drawOval(ink, topLeft = head, size = headSize)
+
+    drawLine(color, stemStart, stemEnd, strokeWidth = noteStroke, cap = StrokeCap.Round)
+    drawPath(flag, color, style = Stroke(noteStroke, cap = StrokeCap.Round))
+    drawOval(
+        color,
+        topLeft = Offset(head.x + outline / 2f, head.y + outline / 2f),
+        size = Size(headSize.width - outline, headSize.height - outline)
+    )
+}
+
 @Composable
 private fun SelectionMark(selected: Boolean) {
     Surface(
-        modifier = Modifier.size(31.dp),
+        modifier = Modifier.size(if (selected) 31.dp else 24.dp),
         color = if (selected) MaterialTheme.colorScheme.primary else Color.Transparent,
         shape = CircleShape,
         border = if (selected) null else BorderStroke(1.5.dp, PostJoinPalette.Muted.copy(alpha = 0.65f))
@@ -922,68 +1136,6 @@ fun RevealPanel(
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Black
                 )
-            }
-        }
-    }
-}
-
-@Composable
-fun ChatDock(
-    messages: List<ChatMessage>,
-    expanded: Boolean,
-    onExpandToggle: () -> Unit,
-    input: String,
-    onInputChange: (String) -> Unit,
-    onSend: () -> Unit
-) {
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(PostJoinPalette.Background)
-            .border(width = 1.dp, color = PostJoinPalette.Ink.copy(alpha = 0.08f))
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clickable(onClick = onExpandToggle)
-                .padding(horizontal = 18.dp, vertical = 10.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text("ROOM CHAT", style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Black, letterSpacing = 0.8.sp)
-            Text(if (expanded) "Hide" else "Show", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-        }
-        if (expanded) {
-            LazyColumn(
-                modifier = Modifier.fillMaxWidth().heightIn(max = 160.dp).padding(horizontal = 16.dp),
-                reverseLayout = true
-            ) {
-                items(messages.reversed()) { message ->
-                    Text(
-                        text = "${message.senderName}: ${message.text}",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.padding(vertical = 3.dp)
-                    )
-                }
-            }
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = input,
-                    onValueChange = onInputChange,
-                    placeholder = { Text("Say something…") },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
-                    keyboardActions = KeyboardActions(onSend = { onSend() }),
-                    shape = RoundedCornerShape(15.dp),
-                    modifier = Modifier.weight(1f)
-                )
-                Spacer(Modifier.width(7.dp))
-                IconButton(onClick = onSend) {
-                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send message", tint = MaterialTheme.colorScheme.primary)
-                }
             }
         }
     }

@@ -1,6 +1,6 @@
 package com.guesswhosesong.app.di
 
-import com.guesswhosesong.app.data.network.WebSocketManager
+import com.guesswhosesong.app.data.network.RoomPollingClient
 import com.guesswhosesong.app.data.repository.GameRepository
 import com.guesswhosesong.app.data.repository.RoomRepository
 import com.guesswhosesong.app.data.player.PlayerIdentityManager
@@ -22,6 +22,6 @@ object RepositoryModule {
 
     @Provides
     @Singleton
-    fun provideGameRepository(wsManager: WebSocketManager): GameRepository =
-        GameRepository(wsManager)
+    fun provideGameRepository(roomPollingClient: RoomPollingClient): GameRepository =
+        GameRepository(roomPollingClient)
 }

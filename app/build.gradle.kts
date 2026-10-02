@@ -6,6 +6,9 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
+val gwsApiBaseUrl = providers.gradleProperty("gwsApiBaseUrl")
+    .orElse("https://acquaint-capital-bling.ngrok-free.dev")
+
 // The Firebase Android config is deployment/project-specific and intentionally ignored.
 // Apply the plugin when a local/CI secret-provided config is present.
 if (file("google-services.json").exists()) {
@@ -22,6 +25,8 @@ android {
         targetSdk = 37
         versionCode = 1
         versionName = "1.0.0"
+
+        buildConfigField("String", "GWS_API_BASE_URL", "\"${gwsApiBaseUrl.get()}\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -108,7 +113,6 @@ dependencies {
     implementation(libs.ktor.client.okhttp)
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.client.logging)
-    implementation(libs.ktor.client.websockets)
     implementation(libs.ktor.serialization.kotlinx.json)
 
     // Coroutines

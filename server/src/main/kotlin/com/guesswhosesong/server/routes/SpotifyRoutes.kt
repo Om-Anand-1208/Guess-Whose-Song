@@ -2,13 +2,11 @@ package com.guesswhosesong.server.routes
 
 import com.guesswhosesong.server.auth.FirebaseTokenVerifier
 import com.guesswhosesong.server.auth.requireUser
-import com.guesswhosesong.server.music.MusicService
 import com.guesswhosesong.server.redis.RateLimiter
 import com.guesswhosesong.server.redis.RedisClient
 import com.guesswhosesong.server.security.InputValidation
 import com.guesswhosesong.server.spotify.SpotifyClient
 import com.guesswhosesong.server.spotify.SpotifyOAuth
-import com.guesswhosesong.shared.models.SpotifyCategory
 import com.guesswhosesong.shared.models.SpotifySuggestion
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -34,7 +32,6 @@ fun closeSpotifyResources() {
 fun Route.spotifyRoutes(
     redis: RedisClient,
     tokenVerifier: FirebaseTokenVerifier,
-    musicService: MusicService,
     spotifyClient: SpotifyClient
 ) {
     val rateLimiter = RateLimiter(redis)
@@ -155,15 +152,14 @@ fun Route.spotifyRoutes(
         }
 
         get("/suggestions") {
-            val user = call.authenticatedUser()
-                ?: return@get call.respond(HttpStatusCode.Unauthorized, mapOf("error" to "AUTH_REQUIRED"))
-            if (!rateLimiter.allow("spotify:suggestions", user.uid, 30, 60)) {
-                return@get call.respond(HttpStatusCode.TooManyRequests, mapOf("error" to "RATE_LIMITED"))
-            }
-            val tracks = musicService.getTopTracks().map {
-                SpotifySuggestion(it.title, it.artist, it.albumArtUrl, SpotifyCategory.TOP_TRACKS)
-            }
-            call.respond(mapOf("suggestions" to tracks))
+            call.respondSpotify(
+                redis,
+                tokenVerifier,
+                rateLimiter,
+                spotifyClient,
+                "spotify:suggestions",
+                responseKey = "suggestions"
+            ) { spotifyClient.getTopTracks(it) }
         }
     }
 }
@@ -174,6 +170,7 @@ private suspend fun ApplicationCall.respondSpotify(
     rateLimiter: RateLimiter,
     client: SpotifyClient,
     scope: String,
+    responseKey: String = "tracks",
     operation: suspend (String) -> List<SpotifySuggestion>
 ) {
     val user = try { requireUser(verifier) } catch (_: Exception) {
@@ -191,7 +188,7 @@ private suspend fun ApplicationCall.respondSpotify(
         return
     }
     try {
-        respond(mapOf("tracks" to operation(token)))
+        respond(mapOf(responseKey to operation(token)))
     } catch (_: SpotifyClient.UnauthorizedException) {
         redis.del(key)
         respond(HttpStatusCode.Unauthorized, mapOf("error" to "Spotify authorization expired"))

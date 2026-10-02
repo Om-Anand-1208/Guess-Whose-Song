@@ -5,14 +5,13 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * All messages sent FROM the Android client TO the Ktor server over WebSocket.
+ * All actions sent from clients to the Ktor server.
  * Discriminated automatically by the [type] field using @SerialName.
  */
 @Serializable
 sealed class ClientMessage
 
-/** First frame sent after a WebSocket handshake. Authentication is supplied by
- * the Authorization header; this message carries the player's display name and avatar. */
+/** Sent when a player joins a room. Authentication is supplied by the Authorization header. */
 @Serializable
 @SerialName("JOIN_ROOM")
 data class JoinRoom(
@@ -62,12 +61,6 @@ class LockSong : ClientMessage() {
 @SerialName("CAST_VOTE")
 data class CastVote(
     val guessedPlayerId: String
-) : ClientMessage()
-
-@Serializable
-@SerialName("SEND_CHAT")
-data class SendChat(
-    val text: String
 ) : ClientMessage()
 
 @Serializable

@@ -1,6 +1,10 @@
 package com.guesswhosesong.web
 
 import com.guesswhosesong.shared.dto.GWSJson
+import com.guesswhosesong.shared.dto.ClientMessage
+import com.guesswhosesong.shared.dto.JoinRoom
+import com.guesswhosesong.shared.dto.ServerMessage
+import com.guesswhosesong.shared.dto.toJson
 import com.guesswhosesong.shared.models.SpotifySuggestion
 import com.guesswhosesong.shared.models.TrackSearchResult
 import com.guesswhosesong.shared.models.AvatarCatalog
@@ -18,9 +22,6 @@ data class CreateRoomRequest(
 
 @Serializable
 data class CreateRoomResponse(val joinCode: String)
-
-@Serializable
-data class WebSocketTicketResponse(val ticket: String)
 
 @Serializable
 data class TracksResponse(val tracks: List<TrackSearchResult> = emptyList())
@@ -64,10 +65,29 @@ class WebApiClient(private val auth: WebAuthManager) {
         request("/rooms", "POST", GWSJson.encodeToString(CreateRoomRequest(displayName, avatarId, avatarCustomization)))
     )
 
-    suspend fun webSocketTicket(joinCode: String): String =
-        GWSJson.decodeFromString<WebSocketTicketResponse>(
-            request("/rooms/${joinCode.uppercase()}/ws-ticket", "POST")
-        ).ticket
+    suspend fun joinRoom(
+        joinCode: String,
+        displayName: String,
+        avatarId: String,
+        avatarCustomization: AvatarCustomization
+    ) {
+        request(
+            "/rooms/${joinCode.uppercase()}/join",
+            "POST",
+            GWSJson.encodeToString(JoinRoom(displayName, avatarId, avatarCustomization))
+        )
+    }
+
+    suspend fun pollRoomEvents(joinCode: String): List<ServerMessage> =
+        GWSJson.decodeFromString<List<ServerMessage>>(request("/rooms/${joinCode.uppercase()}/events"))
+
+    suspend fun sendRoomAction(joinCode: String, action: ClientMessage) {
+        request("/rooms/${joinCode.uppercase()}/actions", "POST", action.toJson())
+    }
+
+    suspend fun leaveRoom(joinCode: String) {
+        request("/rooms/${joinCode.uppercase()}/join", "DELETE")
+    }
 
     suspend fun search(query: String): List<TrackSearchResult> =
         GWSJson.decodeFromString<TracksResponse>(request("/music/search?q=${encodeQuery(query)}&limit=20")).tracks

@@ -194,14 +194,6 @@ data class Room(
     val currentRoundIndex: Int = 0
 )
 
-@Serializable
-data class ChatMessage(
-    val senderId: String,
-    val senderName: String,
-    val text: String,
-    val timestamp: Long = 0L
-)
-
 /** Sent to clients during reveal — vote breakdown per player */
 @Serializable
 data class VoteResult(
@@ -238,7 +230,7 @@ enum class SpotifyCategory {
     PLAYLIST
 }
 
-/** Search result returned by backend proxy (from iTunes or fallback) */
+/** Search result returned by the backend proxy (Deezer first, then iTunes fallback). */
 @Serializable
 data class TrackSearchResult(
     val id: String,

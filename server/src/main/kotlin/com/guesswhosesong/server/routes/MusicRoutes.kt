@@ -12,7 +12,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 
 /**
- * Proxy route for unified music search (Deezer with iTunes fallback).
+ * Proxy route for Deezer-first music search with iTunes fallback.
  * Clients call this instead of music APIs directly (avoids CORS, encapsulates API).
  *
  * GET /music/search?q=<query>&limit=<n>

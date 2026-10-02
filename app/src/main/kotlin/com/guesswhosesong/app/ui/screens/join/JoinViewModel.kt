@@ -79,6 +79,30 @@ class JoinViewModel @Inject constructor(
         spotifyAuthManager.disconnect()
     }
 
+    fun disconnectGoogle() {
+        viewModelScope.launch {
+            runCatching { playerIdentityManager.disconnectGoogle() }
+                .onSuccess {
+                    _uiState.update {
+                        it.copy(
+                            isAccountLinked = playerIdentityManager.isAccountLinked(),
+                            accountStatus = null,
+                            accountStatusIsError = false
+                        )
+                    }
+                }
+                .onFailure { error ->
+                    _uiState.update {
+                        it.copy(
+                            isAccountLinked = playerIdentityManager.isAccountLinked(),
+                            accountStatus = error.message ?: "Google disconnect failed",
+                            accountStatusIsError = true
+                        )
+                    }
+                }
+        }
+    }
+
     fun refreshSpotifyStatus() {
         spotifyAuthManager.refreshStatus()
     }
@@ -195,16 +219,20 @@ class JoinViewModel @Inject constructor(
             _uiState.update { it.copy(accountStatus = null, accountStatusIsError = false) }
             when (val result = playerIdentityManager.linkGoogle(data)) {
                 AccountLinkResult.Linked -> _uiState.update {
-                    it.copy(isAccountLinked = true, accountStatus = "Google account linked for recovery", accountStatusIsError = false)
+                    it.copy(isAccountLinked = true, accountStatus = null, accountStatusIsError = false)
                 }
                 AccountLinkResult.SignedIn -> _uiState.update {
-                    it.copy(isAccountLinked = true, accountStatus = "Google account signed in", accountStatusIsError = false)
+                    it.copy(isAccountLinked = true, accountStatus = null, accountStatusIsError = false)
                 }
                 AccountLinkResult.Collision -> _uiState.update {
-                    it.copy(accountStatus = "That Google account is already linked to another player", accountStatusIsError = true)
+                    it.copy(accountStatus = "That Google account belongs to another player. Log in to the existing account below.", accountStatusIsError = true)
                 }
                 is AccountLinkResult.Failed -> _uiState.update {
-                    it.copy(accountStatus = result.message, accountStatusIsError = true)
+                    it.copy(
+                        isAccountLinked = playerIdentityManager.isAccountLinked(),
+                        accountStatus = result.message,
+                        accountStatusIsError = true
+                    )
                 }
             }
         }
@@ -215,11 +243,17 @@ class JoinViewModel @Inject constructor(
             _uiState.update { it.copy(accountStatus = null, accountStatusIsError = false) }
             when (val result = playerIdentityManager.signInWithGoogle(data)) {
                 AccountLinkResult.SignedIn -> _uiState.update {
-                    it.copy(isAccountLinked = true, accountStatus = "Recovered linked Google identity", accountStatusIsError = false)
+                    it.copy(isAccountLinked = true, accountStatus = null, accountStatusIsError = false)
                 }
                 else -> {
                     val message = (result as? AccountLinkResult.Failed)?.message ?: "Google sign-in failed"
-                    _uiState.update { it.copy(accountStatus = message, accountStatusIsError = true) }
+                    _uiState.update {
+                        it.copy(
+                            isAccountLinked = playerIdentityManager.isAccountLinked(),
+                            accountStatus = message,
+                            accountStatusIsError = true
+                        )
+                    }
                 }
             }
         }

@@ -11,6 +11,7 @@ import kotlinx.serialization.decodeFromString
 data class WebUser(
     val uid: String,
     val isAnonymous: Boolean,
+    val isGoogleLinked: Boolean = false,
     val email: String = ""
 )
 
@@ -74,6 +75,17 @@ class WebAuthManager {
                     _status.value = AuthStatus.READY
                     _error.value = null
                 }
+                onComplete(result)
+            },
+            reject = { message -> onComplete(Result.failure(IllegalStateException(message))) }
+        )
+    }
+
+    fun disconnectGoogle(onComplete: (Result<WebUser>) -> Unit) {
+        firebaseDisconnectGoogle(
+            resolve = { encoded ->
+                val result = runCatching { GWSJson.decodeFromString<WebUser>(encoded) }
+                result.onSuccess { _user.value = it }
                 onComplete(result)
             },
             reject = { message -> onComplete(Result.failure(IllegalStateException(message))) }

@@ -5,7 +5,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.decodeFromString
 
 /**
- * Shared JSON configuration for encoding/decoding WebSocket messages.
+ * Shared JSON configuration for client actions and server events.
  * Use this instance everywhere for consistency.
  */
 val GWSJson = Json {

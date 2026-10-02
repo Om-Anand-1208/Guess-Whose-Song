@@ -8,7 +8,6 @@ import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import kotlin.js.JsAny
 import kotlin.js.js
 
 @Serializable
@@ -16,10 +15,6 @@ internal data class BrowserHttpEnvelope(val status: Int, val body: String)
 
 internal fun configuredApiBaseUrl(): String = js(
     "window.GWS_RUNTIME_CONFIG?.apiBaseUrl || 'http://localhost:8080'"
-)
-
-internal fun configuredWsBaseUrl(): String = js(
-    "window.GWS_RUNTIME_CONFIG?.wsBaseUrl || (window.location.protocol === 'https:' ? 'wss://' + window.location.host : 'ws://' + window.location.host)"
 )
 
 internal fun firebaseConfigJson(): String = js("JSON.stringify(window.GWS_FIREBASE_CONFIG || {})")
@@ -129,7 +124,12 @@ private fun firebaseBootstrap(
             if (!window.firebase.apps.length) window.firebase.initializeApp(config);
             const auth = window.firebase.auth();
             const ready = auth.currentUser ? Promise.resolve(auth.currentUser) : auth.signInAnonymously().then(result => result.user);
-            ready.then(user => resolve(JSON.stringify({ uid: user.uid, isAnonymous: user.isAnonymous, email: user.email || '' })))
+            ready.then(user => resolve(JSON.stringify({
+                uid: user.uid,
+                isAnonymous: user.isAnonymous,
+                isGoogleLinked: (user.providerData || []).some(profile => profile.providerId === 'google.com'),
+                email: user.email || ''
+            })))
                 .catch(error => reject(String(error.code || error.message || error)));
         } catch (error) {
             reject(String(error && error.message ? error.message : error));
@@ -170,7 +170,7 @@ internal suspend fun firebaseIdToken(forceRefresh: Boolean): String = suspendCan
 }
 
 private fun firebaseGoogleOperation(
-    link: Boolean,
+    mode: String,
     resolve: (String) -> Unit,
     reject: (String) -> Unit
 ) {
@@ -180,14 +180,45 @@ private fun firebaseGoogleOperation(
             const message = error && error.message ? String(error.message) : String(error);
             return code && !message.includes(code) ? code + ': ' + message : message;
         };
+        const encodeUser = user => JSON.stringify({
+            uid: user.uid,
+            isAnonymous: user.isAnonymous,
+            isGoogleLinked: (user.providerData || []).some(profile => profile.providerId === 'google.com'),
+            email: user.email || ''
+        });
         try {
             const auth = window.firebase.auth();
             const provider = new window.firebase.auth.GoogleAuthProvider();
-            if (link && !auth.currentUser) throw new Error('Firebase user is not available');
-            const operation = link ? auth.currentUser.linkWithPopup(provider) : auth.signInWithPopup(provider);
+            const currentUser = auth.currentUser;
+            if ((mode === 'link' || mode === 'recover') && !currentUser) throw new Error('Firebase user is not available');
+            if (mode === 'recover' && (currentUser.providerData || []).some(profile => profile.providerId === 'google.com')) {
+                throw new Error('Google is already connected to this player');
+            }
+            let operation;
+            if (mode === 'link') {
+                operation = currentUser.linkWithPopup(provider);
+            } else if (mode === 'recover') {
+                operation = currentUser.linkWithPopup(provider).then(() =>
+                    currentUser.unlink(provider.providerId).then(
+                        () => Promise.reject(new Error('No existing player is linked to this Google account')),
+                        error => Promise.reject(new Error('No existing player was found. The temporary Google link could not be removed: ' + errorMessage(error)))
+                    )
+                ).catch(error => {
+                    if (![
+                        'auth/credential-already-in-use',
+                        'auth/email-already-in-use',
+                        'auth/account-exists-with-different-credential'
+                    ].includes(error && error.code)) throw error;
+                    const credential = window.firebase.auth.GoogleAuthProvider.credentialFromError(error);
+                    if (!credential) throw error;
+                    return auth.signInWithCredential(credential);
+                });
+            } else {
+                operation = auth.signInWithPopup(provider);
+            }
             operation.then(result => {
                 const user = result.user || result;
-                resolve(JSON.stringify({ uid: user.uid, isAnonymous: user.isAnonymous, email: user.email || '' }));
+                resolve(encodeUser(user));
             }).catch(error => reject(errorMessage(error)));
         } catch (error) {
             reject(errorMessage(error));
@@ -196,44 +227,25 @@ private fun firebaseGoogleOperation(
 }
 
 internal fun firebaseLinkGoogle(resolve: (String) -> Unit, reject: (String) -> Unit) =
-    firebaseGoogleOperation(true, resolve, reject)
+    firebaseGoogleOperation("link", resolve, reject)
 
 internal fun firebaseRecoverGoogle(resolve: (String) -> Unit, reject: (String) -> Unit) =
-    firebaseGoogleOperation(false, resolve, reject)
+    firebaseGoogleOperation("recover", resolve, reject)
 
-private fun openSocket(
-    url: String,
-    protocol: String,
-    ticketProtocol: String,
-    onOpen: () -> Unit,
-    onMessage: (String) -> Unit,
-    onClose: (Int, String) -> Unit,
-    onError: () -> Unit
-): JsAny = js("""
-    (() => {
-        const socket = new WebSocket(url, [protocol, ticketProtocol]);
-        socket.onopen = () => onOpen();
-        socket.onmessage = event => onMessage(String(event.data));
-        socket.onclose = event => onClose(event.code, String(event.reason || ''));
-        socket.onerror = () => onError();
-        return socket;
-    })()
-""")
-
-internal fun browserOpenSocket(
-    url: String,
-    protocol: String,
-    ticketProtocol: String,
-    onOpen: () -> Unit,
-    onMessage: (String) -> Unit,
-    onClose: (Int, String) -> Unit,
-    onError: () -> Unit
-): JsAny = openSocket(url, protocol, ticketProtocol, onOpen, onMessage, onClose, onError)
-
-internal fun browserSendSocket(socket: JsAny, text: String) {
-    js("socket.send(text)")
-}
-
-internal fun browserCloseSocket(socket: JsAny, code: Int, reason: String) {
-    js("socket.close(code, reason)")
+internal fun firebaseDisconnectGoogle(resolve: (String) -> Unit, reject: (String) -> Unit) {
+    js("""
+        try {
+            const auth = window.firebase.auth();
+            const user = auth.currentUser;
+            if (!user) throw new Error('Firebase user is not available');
+            user.unlink('google.com').then(updatedUser => resolve(JSON.stringify({
+                uid: updatedUser.uid,
+                isAnonymous: updatedUser.isAnonymous,
+                isGoogleLinked: (updatedUser.providerData || []).some(profile => profile.providerId === 'google.com'),
+                email: updatedUser.email || ''
+            }))).catch(error => reject(String(error.code || error.message || error)));
+        } catch (error) {
+            reject(String(error && error.message ? error.message : error));
+        }
+    """)
 }

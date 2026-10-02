@@ -22,14 +22,14 @@ fun Application.configureRouting(
             call.respond(mapOf("status" to "ok"))
         }
 
-        // Room REST + WebSocket
+        // Room REST and long-poll event routes
         roomRoutes(roomManager, redisClient, tokenVerifier)
 
         // Music proxy (Deezer + iTunes fallback)
         musicRoutes(tokenVerifier, redisClient, roomManager.musicService)
 
         // Spotify OAuth + data routes (optional — gracefully unavailable if not configured)
-        spotifyRoutes(redisClient, tokenVerifier, roomManager.musicService, spotifyClient)
+        spotifyRoutes(redisClient, tokenVerifier, spotifyClient)
 
         // Client crash logging
         crashLogRoutes(tokenVerifier, redisClient)

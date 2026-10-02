@@ -5,7 +5,6 @@ import com.guesswhosesong.shared.dto.ClientMessage
 import com.guesswhosesong.shared.dto.EndRoom
 import com.guesswhosesong.shared.dto.LockSong
 import com.guesswhosesong.shared.dto.PlayAgain
-import com.guesswhosesong.shared.dto.SendChat
 import com.guesswhosesong.shared.dto.StartGame
 import com.guesswhosesong.shared.dto.UpdatePendingSongs
 import com.guesswhosesong.shared.dto.UpdateSettings
@@ -39,25 +38,21 @@ class WebGameStoreInteractionTest {
     }
 
     @Test
-    fun lobbyVotingChatReplayAndEndActionsSendTheirClientMessages() {
+    fun lobbyVotingReplayAndEndActionsSendTheirClientMessages() {
         val sent = mutableListOf<ClientMessage>()
         val store = fakeStore(sent)
 
         store.updateSettings(RoomSettings(roundCount = 6))
         store.startGame()
         store.castVote("p2")
-        store.setChatDraft("  great song  ")
-        store.sendChat()
         store.playAgain()
         store.endRoom()
 
         assertIs<UpdateSettings>(sent[0])
         assertIs<StartGame>(sent[1])
         assertIs<CastVote>(sent[2])
-        assertEquals("great song", assertIs<SendChat>(sent[3]).text)
-        assertIs<PlayAgain>(sent[4])
-        assertIs<EndRoom>(sent[5])
-        assertEquals("", store.state.value.chatDraft)
+        assertIs<PlayAgain>(sent[3])
+        assertIs<EndRoom>(sent[4])
     }
 
     private fun fakeStore(sent: MutableList<ClientMessage>): WebGameStore {

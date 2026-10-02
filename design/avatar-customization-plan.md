@@ -37,7 +37,7 @@ Keep `Player.avatarId` as the legacy shape field. Add an optional serialized cus
 
 ## State and transport
 
-- Carry configuration with the room-create REST request for the host and the first WebSocket join message for every player.
+- Carry configuration with the room-create REST request for the host and the authenticated REST join request for every player.
 - Store it on the server's `Player` model and include it in room snapshots so all clients render the same design.
 - Keep the selected configuration locally between visits where the client's existing storage makes that straightforward. This phase does not promise cloud profile sync or cross-device restoration; the current player/account model does not store avatar profiles.
 - Keep old clients and older room payloads working through nullable/default fields and the existing `avatarId` fallback.

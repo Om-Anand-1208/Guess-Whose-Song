@@ -5,7 +5,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 /**
- * All messages sent FROM the Ktor server TO Android clients over WebSocket.
+ * All events sent from the Ktor server to clients.
  * Discriminated automatically by the [type] field using @SerialName.
  */
 @Serializable
@@ -13,7 +13,7 @@ sealed class ServerMessage
 
 // ─── Connection / Room ──────────────────────────────────────────────────────
 
-/** Sent immediately on WebSocket connect; carries full room state */
+/** Sent when a player joins; carries full room state. */
 @Serializable
 @SerialName("ROOM_JOINED")
 data class RoomJoined(
@@ -121,14 +121,6 @@ class RoomEnded : ServerMessage() {
     override fun hashCode(): Int = 1
 }
 
-// ─── Chat ────────────────────────────────────────────────────────────────────
-
-@Serializable
-@SerialName("CHAT_RECEIVED")
-data class ChatReceived(
-    val message: ChatMessage
-) : ServerMessage()
-
 // ─── Errors ──────────────────────────────────────────────────────────────────
 
 @Serializable
@@ -137,12 +129,3 @@ data class ErrorMessage(
     val code: String,
     val message: String
 ) : ServerMessage()
-
-// ─── Ping/Pong ───────────────────────────────────────────────────────────────
-
-@Serializable
-@SerialName("PONG")
-class Pong : ServerMessage() {
-    override fun equals(other: Any?): Boolean = other is Pong
-    override fun hashCode(): Int = 1
-}

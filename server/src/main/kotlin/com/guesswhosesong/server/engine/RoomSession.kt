@@ -1,9 +1,7 @@
 package com.guesswhosesong.server.engine
 
 import com.guesswhosesong.server.music.MusicService
-import com.guesswhosesong.server.redis.ChatRepository
 import com.guesswhosesong.server.redis.RedisClient
-import com.guesswhosesong.server.redis.RateLimiter
 import com.guesswhosesong.server.redis.RoomRepository
 import com.guesswhosesong.server.redis.RoomRuntime
 import com.guesswhosesong.server.redis.RoomRuntimeRepository
@@ -11,9 +9,10 @@ import com.guesswhosesong.server.security.InputValidation
 import com.guesswhosesong.server.spotify.SpotifyClient
 import com.guesswhosesong.shared.dto.*
 import com.guesswhosesong.shared.models.*
-import io.ktor.websocket.*
-import io.ktor.server.websocket.*
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.slf4j.LoggerFactory
@@ -45,8 +44,6 @@ class RoomSession(
 
     private val repository = RoomRepository(redisClient)
     private val runtimeRepository = RoomRuntimeRepository(redisClient)
-    private val chatRepository = ChatRepository(redisClient)
-    private val rateLimiter = RateLimiter(redisClient)
     private val ended = AtomicBoolean(false)
     private var gameJob: Job? = null
     private var runtime: RoomRuntime = runtimeRepository.load(initialRoom.joinCode) ?: RoomRuntime()
@@ -59,8 +56,9 @@ class RoomSession(
     var room: Room = initialRoom
         private set
 
-    /** Map of playerId -> WebSocketSession. Multiple tabs not supported (last wins). */
-    private val connections = ConcurrentHashMap<String, DefaultWebSocketServerSession>()
+    /** Map of playerId -> pending room events. Multiple tabs are not supported (last join wins). */
+    private val eventQueues = ConcurrentHashMap<String, Channel<ServerMessage>>()
+    private val lastActivity = ConcurrentHashMap<String, Long>()
 
     /** Pending disconnect grace-period jobs */
     private val disconnectJobs = ConcurrentHashMap<String, Job>()
@@ -71,17 +69,10 @@ class RoomSession(
         playerId: String,
         displayName: String,
         avatarId: String,
-        socket: DefaultWebSocketServerSession,
         avatarCustomization: AvatarCustomization? = null
     ) {
-        val previousSocket = connections.put(playerId, socket)
-        if (previousSocket != null && previousSocket !== socket) {
-            try { previousSocket.close(CloseReason(CloseReason.Codes.NORMAL, "replaced")) }
-            catch (_: Exception) { }
-        }
-
-        // Cancel any pending disconnect grace timer
-        disconnectJobs.remove(playerId)?.cancel()
+        eventQueues.put(playerId, Channel(capacity = 256, onBufferOverflow = BufferOverflow.DROP_OLDEST))?.close()
+        markPlayerActive(playerId)
 
         val hasSpotify = redisClient.get("spotify_token:$playerId") != null
 
@@ -118,7 +109,6 @@ class RoomSession(
         }
 
         // Send full room state to the joining player
-        val selfPlayer = room.players.find { it.id == playerId }!!
         sendToPlayer(
             playerId,
             RoomJoined(room = sanitizedRoom(playerId), selfPlayerId = playerId)
@@ -126,12 +116,6 @@ class RoomSession(
 
         // Broadcast updated player list to all others
         broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
-
-        // Send recent chat history to reconnecting player
-        val recentChat = chatRepository.getRecent(room.joinCode)
-        recentChat.forEach { msg ->
-            sendToPlayer(playerId, ChatReceived(message = msg))
-        }
 
         // If game is in progress, sync current round to the player
         if (room.state == RoomState.PLAYING) {
@@ -176,9 +160,12 @@ class RoomSession(
         logger.info("[${room.joinCode}] Player connected")
     }
 
-    suspend fun onPlayerDisconnect(playerId: String, socket: DefaultWebSocketServerSession) {
-        // A stale callback from an old socket must not disconnect a replacement socket.
-        if (!connections.remove(playerId, socket)) return
+    suspend fun onPlayerDisconnect(playerId: String) {
+        val channel = eventQueues.remove(playerId) ?: return
+        channel.close()
+        lastActivity.remove(playerId)
+        val currentJob = currentCoroutineContext()[Job]
+        disconnectJobs.remove(playerId)?.takeIf { it !== currentJob }?.cancel()
 
         val player = room.players.find { it.id == playerId } ?: return
         logger.info("[${room.joinCode}] Player disconnected; starting ${DISCONNECT_GRACE_MS}ms grace period")
@@ -193,12 +180,48 @@ class RoomSession(
         broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
 
         // Start grace timer
-        val gracJob = scope.launch {
-            delay(DISCONNECT_GRACE_MS)
-            handleGraceExpired(playerId)
-        }
-        disconnectJobs[playerId] = gracJob
+        scheduleGraceExpiry(playerId)
     }
+
+    private fun markPlayerActive(playerId: String) {
+        if (!eventQueues.containsKey(playerId)) return
+        lastActivity[playerId] = System.currentTimeMillis()
+        disconnectJobs.remove(playerId)?.cancel()
+        scheduleGraceExpiry(playerId)
+    }
+
+    private fun scheduleGraceExpiry(playerId: String) {
+        disconnectJobs[playerId] = scope.launch {
+            delay(DISCONNECT_GRACE_MS)
+            if (!eventQueues.containsKey(playerId)) {
+                handleGraceExpired(playerId)
+            } else {
+                val elapsed = System.currentTimeMillis() - (lastActivity[playerId] ?: return@launch)
+                if (elapsed >= DISCONNECT_GRACE_MS) {
+                    onPlayerDisconnect(playerId)
+                } else {
+                    delay(DISCONNECT_GRACE_MS - elapsed)
+                    if (eventQueues.containsKey(playerId) &&
+                        System.currentTimeMillis() - (lastActivity[playerId] ?: return@launch) >= DISCONNECT_GRACE_MS
+                    ) {
+                        onPlayerDisconnect(playerId)
+                    }
+                }
+            }
+        }
+    }
+
+    suspend fun pollMessages(playerId: String, waitMillis: Long): List<ServerMessage> {
+        markPlayerActive(playerId)
+        val channel = eventQueues[playerId] ?: return emptyList()
+        val first = withTimeoutOrNull(waitMillis) { channel.receiveCatching().getOrNull() } ?: return emptyList()
+        return buildList {
+            add(first)
+            while (true) add(channel.tryReceive().getOrNull() ?: break)
+        }
+    }
+
+    fun hasPlayerConnection(playerId: String): Boolean = eventQueues.containsKey(playerId)
 
     private suspend fun handleGraceExpired(playerId: String) {
         disconnectJobs.remove(playerId)
@@ -242,6 +265,7 @@ class RoomSession(
     // ─── Message dispatch ─────────────────────────────────────────────────────
 
     suspend fun handleMessage(playerId: String, message: ClientMessage) {
+        markPlayerActive(playerId)
         val player = room.players.find { it.id == playerId }
         if (player == null) {
             sendToPlayer(playerId, ErrorMessage(code = "UNKNOWN_PLAYER", message = "Player not found in room"))
@@ -258,7 +282,6 @@ class RoomSession(
             is UpdatePendingSongs -> handleUpdatePendingSongs(playerId, message.songs)
             is LockSong -> handleLockSong(playerId)
             is CastVote -> handleCastVote(playerId, message.guessedPlayerId)
-            is SendChat -> handleSendChat(playerId, player.displayName, message.text)
             is PlayAgain -> handlePlayAgain(playerId)
             is EndRoom -> handleEndRoom(playerId)
             is RefreshSpotify -> handleRefreshSpotify(playerId)
@@ -398,8 +421,8 @@ class RoomSession(
         if (hostId == targetId) return // can't kick yourself
 
         sendToPlayer(targetId, Kicked())
-        connections[targetId]?.close(CloseReason(CloseReason.Codes.NORMAL, "kicked"))
-        connections.remove(targetId)
+        eventQueues.remove(targetId)?.close()
+        lastActivity.remove(targetId)
         disconnectJobs.remove(targetId)?.cancel()
 
         mutex.withLock {
@@ -564,24 +587,6 @@ class RoomSession(
         }
     }
 
-    // ─── Chat ─────────────────────────────────────────────────────────────────
-
-    private suspend fun handleSendChat(senderId: String, senderName: String, text: String) {
-        if (!rateLimiter.allow("chat", senderId, 5, 10)) {
-            sendToPlayer(senderId, ErrorMessage("RATE_LIMITED", "Chat rate limit exceeded"))
-            return
-        }
-        if (text.isBlank() || text.length > 300 || text.any { it.isISOControl() && it != '\n' && it != '\t' }) return
-        val rawMsg = ChatMessage(
-            senderId = senderId,
-            senderName = senderName,
-            text = text.trim(),
-            timestamp = System.currentTimeMillis()
-        )
-        val stored = chatRepository.append(room.joinCode, rawMsg)
-        broadcastAll(ChatReceived(message = stored))
-    }
-
     // ─── Play Again / End ─────────────────────────────────────────────────────
 
     private suspend fun handlePlayAgain(playerId: String) {
@@ -630,15 +635,25 @@ class RoomSession(
 
     private var submissionCompleteSignal = CompletableDeferred<Unit>()
 
-    private suspend fun prepareComputerSongs() {
+    private suspend fun markComputerReady() {
+        mutex.withLock {
+            room = room.copy(players = room.players.map { player ->
+                if (player.isComputer) {
+                    player.copy(pendingSong = null, pendingSongs = emptyList(), songLocked = true)
+                } else player
+            })
+            persist()
+        }
+    }
+
+    private suspend fun prepareComputerSongs(poolSongs: List<SongEntry>) {
         val computers = room.players.filter { it.isComputer }
         if (computers.isEmpty()) return
 
         val maxSongs = RoundCountRules.maxSongsPerPlayer(room.settings.roundCount, room.players.size)
         val tracks = try {
-            musicService.getTopTracks()
+            musicService.getContextualTracks(poolSongs, maxSongs)
                 .filter { it.previewUrl.isNotBlank() }
-                .distinctBy { it.id }
                 .take(maxSongs)
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -682,7 +697,7 @@ class RoomSession(
             room = room.copy(state = RoomState.SUBMISSION)
             persist()
         }
-        prepareComputerSongs()
+        markComputerReady()
         broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
 
         while (true) {
@@ -722,21 +737,18 @@ class RoomSession(
             persist()
         }
 
-        // Resolve Deezer preview URLs for all locked songs
-        logger.info("[${room.joinCode}] Resolving Deezer preview URLs...")
+        // Resolve each human pick before choosing computer songs and decoys, so
+        // generated tracks can follow the language/style represented in the pool.
+        logger.info("[${room.joinCode}] Resolving song preview URLs...")
         val resolvedEntries = mutableListOf<SongEntry>()
-        room.players.filter { it.songLocked }.forEach { player ->
+        room.players.filter { it.songLocked && !it.isComputer }.forEach { player ->
             val songsToResolve = if (player.pendingSongs.isNotEmpty()) {
                 player.pendingSongs
             } else {
                 listOfNotNull(player.pendingSong)
             }
             songsToResolve.forEach { pending ->
-                val resolved = if (player.isComputer) {
-                    pending.takeIf { it.previewUrl.isNotBlank() }
-                } else {
-                    musicService.resolveEntry(pending)
-                }
+                val resolved = musicService.resolveEntry(pending)
                 if (resolved != null && resolved.previewUrl.isNotBlank()) {
                     resolvedEntries.add(resolved.copy(submitterId = player.id))
                 } else {
@@ -746,16 +758,20 @@ class RoomSession(
             }
         }
 
+        prepareComputerSongs(resolvedEntries)
+        room.players.filter { it.isComputer }.forEach { player ->
+            player.pendingSongs.forEach { song ->
+                if (song.previewUrl.isNotBlank()) resolvedEntries.add(song.copy(submitterId = player.id))
+            }
+        }
+        broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
+
         // Add up to two decoy tracks; the pool builder applies the selected round cap.
         try {
             val numDecoys = if (resolvedEntries.size <= 4) 1 else 2
-            val topTracks = musicService.getTopTracks().filterNot { top ->
-                resolvedEntries.any {
-                    it.title.equals(top.title, ignoreCase = true) && it.artist.equals(top.artist, ignoreCase = true)
-                }
-            }.shuffled().take(numDecoys)
+            val contextualTracks = musicService.getContextualTracks(resolvedEntries, numDecoys)
 
-            for (track in topTracks) {
+            for (track in contextualTracks) {
                 val decoyEntry = SongEntry(
                     songId = track.id,
                     title = track.title,
@@ -764,11 +780,12 @@ class RoomSession(
                     previewUrl = track.previewUrl,
                     submitterId = ScoreEngine.DECOY_ID
                 )
-                val resolvedDecoy = musicService.resolveEntry(decoyEntry) ?: decoyEntry
-                if (resolvedDecoy.previewUrl.isNotBlank()) {
-                    resolvedEntries.add(resolvedDecoy.copy(submitterId = ScoreEngine.DECOY_ID))
+                if (decoyEntry.previewUrl.isNotBlank()) {
+                    resolvedEntries.add(decoyEntry)
                 }
             }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (e: Exception) {
             logger.warn("[${room.joinCode}] Could not inject decoy tracks")
         }
@@ -1066,17 +1083,13 @@ class RoomSession(
             room = room.copy(state = RoomState.ENDED)
         }
         broadcastAll(RoomEnded())
-        // Close all connections
-        val sockets = connections.values.toList()
-        connections.clear()
-        sockets.forEach { socket ->
-            try { socket.close(CloseReason(CloseReason.Codes.NORMAL, "room ended")) }
-            catch (e: Exception) { /* ignore */ }
-        }
+        // Close all pending event queues after delivering the final room event.
+        val queues = eventQueues.values.toList()
+        eventQueues.clear()
+        queues.forEach { it.close() }
         // Delete from Redis immediately
         repository.delete(room.joinCode)
         runtimeRepository.delete(room.joinCode)
-        chatRepository.delete(room.joinCode)
         disconnectJobs.values.forEach { it.cancel() }
         disconnectJobs.clear()
         onEnded(room.joinCode)
@@ -1123,22 +1136,10 @@ class RoomSession(
     }
 
     suspend fun broadcastAll(message: ServerMessage) {
-        val json = message.toJson()
-        connections.entries.forEach { (_, socket) ->
-            try {
-                socket.send(io.ktor.websocket.Frame.Text(json))
-            } catch (e: Exception) {
-                // Connection dropped silently — onPlayerDisconnect handles cleanup
-            }
-        }
+        eventQueues.values.forEach { it.trySend(message) }
     }
 
     private suspend fun sendToPlayer(playerId: String, message: ServerMessage) {
-        val json = message.toJson()
-        try {
-            connections[playerId]?.send(io.ktor.websocket.Frame.Text(json))
-        } catch (e: Exception) {
-            logger.warn("[${room.joinCode}] Failed to send message")
-        }
+        eventQueues[playerId]?.trySend(message)
     }
 }

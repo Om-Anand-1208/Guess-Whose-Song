@@ -10,6 +10,5 @@ window.GWS_FIREBASE_CONFIG = {
 };
 
 window.GWS_RUNTIME_CONFIG = {
-    apiBaseUrl: "https://acquaint-capital-bling.ngrok-free.dev",
-    wsBaseUrl: "wss://acquaint-capital-bling.ngrok-free.dev"
+    apiBaseUrl: "https://acquaint-capital-bling.ngrok-free.dev"
 };

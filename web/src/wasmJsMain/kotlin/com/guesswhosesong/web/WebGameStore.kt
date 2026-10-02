@@ -2,7 +2,6 @@ package com.guesswhosesong.web
 
 import com.guesswhosesong.shared.dto.CastVote
 import com.guesswhosesong.shared.dto.AddComputerPlayer
-import com.guesswhosesong.shared.dto.ChatReceived
 import com.guesswhosesong.shared.dto.ClientMessage
 import com.guesswhosesong.shared.dto.EndRoom
 import com.guesswhosesong.shared.dto.ErrorMessage
@@ -15,7 +14,6 @@ import com.guesswhosesong.shared.dto.RoomJoined
 import com.guesswhosesong.shared.dto.RoomUpdated
 import com.guesswhosesong.shared.dto.RoundPreviewStarted
 import com.guesswhosesong.shared.dto.RoundRevealed
-import com.guesswhosesong.shared.dto.SendChat
 import com.guesswhosesong.shared.dto.ServerMessage
 import com.guesswhosesong.shared.dto.StartGame
 import com.guesswhosesong.shared.dto.SubmissionStarted
@@ -25,7 +23,6 @@ import com.guesswhosesong.shared.dto.UpdateSettings
 import com.guesswhosesong.shared.dto.VotingStarted
 import com.guesswhosesong.shared.dto.VoteCountUpdated
 import com.guesswhosesong.shared.dto.RoomEnded
-import com.guesswhosesong.shared.models.ChatMessage
 import com.guesswhosesong.shared.models.Player
 import com.guesswhosesong.shared.models.Room
 import com.guesswhosesong.shared.models.RoomSettings
@@ -77,8 +74,6 @@ data class WebUiState(
     val reveal: RoundRevealed? = null,
     val revealStartedAtEpochMillis: Long = 0L,
     val results: GameResults? = null,
-    val chat: List<ChatMessage> = emptyList(),
-    val chatDraft: String = "",
     val isBusy: Boolean = false,
     val error: String? = null,
     val notice: String? = null
@@ -91,18 +86,18 @@ class WebGameStore internal constructor(
 ) {
     val auth = WebAuthManager()
     private val api = WebApiClient(auth)
-    private val socket = WebSocketGameClient(api)
+    private val roomClient = RoomPollingClient(api)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow(initialState)
     val state: StateFlow<WebUiState> = _state.asStateFlow()
-    val connectionState: StateFlow<ConnectionState> = socket.state
+    val connectionState: StateFlow<ConnectionState> = roomClient.state
 
     init {
         persistPlayerProfile(state.value.displayName, state.value.avatarCustomization)
         if (startServices) {
-            scope.launch { socket.messages.collect(::applyMessage) }
+            scope.launch { roomClient.messages.collect(::applyMessage) }
             scope.launch {
-                socket.lastError.collect { message ->
+                roomClient.lastError.collect { message ->
                     if (!message.isNullOrBlank()) fail(connectionError(message))
                 }
             }
@@ -168,8 +163,6 @@ class WebGameStore internal constructor(
 
     fun setSearchQuery(value: String) = _state.update { it.copy(searchQuery = value.take(200)) }
 
-    fun setChatDraft(value: String) = _state.update { it.copy(chatDraft = value.take(500)) }
-
     fun createRoom() {
         scope.launch {
             val name = validatedName() ?: return@launch
@@ -209,7 +202,7 @@ class WebGameStore internal constructor(
         sessionSet("gws.displayName", name)
         sessionSet("gws.avatarId", avatarId)
         persistAvatarCustomization(avatarCustomization)
-        socket.connect(code, name, avatarId, avatarCustomization)
+        roomClient.connect(code, name, avatarId, avatarCustomization)
     }
 
     fun startGame() = send(StartGame())
@@ -300,13 +293,6 @@ class WebGameStore internal constructor(
         send(CastVote(playerId))
     }
 
-    fun sendChat() {
-        val text = state.value.chatDraft.trim()
-        if (text.isBlank()) return
-        _state.update { it.copy(chatDraft = "") }
-        send(SendChat(text))
-    }
-
     fun search() {
         val query = state.value.searchQuery.trim()
         if (query.isBlank()) return
@@ -348,21 +334,38 @@ class WebGameStore internal constructor(
 
     fun linkGoogle() {
         auth.linkGoogle { result ->
-            result.onSuccess { _state.update { it.copy(notice = "Google account linked for recovery", error = null) } }
-                .onFailure { fail(it.message ?: "Google linking failed") }
+            result.onSuccess { _state.update { it.copy(error = null) } }
+                .onFailure {
+                    val message = it.message ?: "Google linking failed"
+                    fail(
+                        if (_state.value.room != null && message.contains("already linked", ignoreCase = true)) {
+                            "That Google account belongs to another player. Leave the room to log in from the home screen."
+                        } else message
+                    )
+                }
         }
     }
 
     fun recoverGoogle() {
+        if (_state.value.room != null) {
+            fail("Leave the room to log in to an existing player")
+            return
+        }
         auth.recoverGoogle { result ->
-            result.onSuccess {
-                _state.update { state -> state.copy(notice = "Recovered your linked Google identity", error = null) }
-            }.onFailure { fail(it.message ?: "Google recovery failed") }
+            result.onSuccess { _state.update { it.copy(error = null) } }
+                .onFailure { fail(it.message ?: "Google recovery failed") }
+        }
+    }
+
+    fun disconnectGoogle() {
+        auth.disconnectGoogle { result ->
+            result.onSuccess { _state.update { it.copy(error = null) } }
+                .onFailure { fail(it.message ?: "Google disconnect failed") }
         }
     }
 
     fun leaveRoom() {
-        socket.disconnect()
+        roomClient.disconnect()
         _state.update { current ->
             WebUiState(
                 displayName = current.displayName,
@@ -383,7 +386,7 @@ class WebGameStore internal constructor(
         }
         scope.launch {
             try {
-                socket.send(message)
+                roomClient.send(message)
             } catch (error: Throwable) {
                 val description = error.message ?: "Connection unavailable"
                 if (message is CastVote) failVote(description) else fail(description)
@@ -478,15 +481,14 @@ class WebGameStore internal constructor(
             is VoteCountUpdated -> _state.update { it.copy(votesCast = message.votedCount, totalVotes = message.totalCount) }
             is RoundRevealed -> _state.update { it.copy(page = WebPage.GAME, reveal = message, revealStartedAtEpochMillis = currentEpochMillis()) }
             is GameResults -> _state.update { it.copy(page = WebPage.RESULTS, results = message, reveal = null, revealStartedAtEpochMillis = 0L) }
-            is ChatReceived -> _state.update { it.copy(chat = (it.chat + message.message).takeLast(100)) }
             is HostChanged -> _state.update { current -> current.copy(notice = "${message.newHostName} is now the host") }
             is ErrorMessage -> if (message.code == "INVALID_VOTE") failVote(message.message) else fail(message.message)
             is Kicked -> {
-                socket.disconnect()
+                roomClient.disconnect()
                 _state.update { it.copy(page = WebPage.JOIN, room = null, error = "You were removed from the room") }
             }
             is RoomEnded -> {
-                socket.disconnect()
+                roomClient.disconnect()
                 _state.update { it.copy(page = WebPage.JOIN, room = null, error = "This room has ended") }
             }
             else -> Unit
@@ -502,7 +504,7 @@ class WebGameStore internal constructor(
     }
 
     fun close() {
-        socket.close()
+        roomClient.close()
         scope.coroutineContext[Job]?.cancel()
     }
 }

@@ -8,6 +8,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,7 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -27,13 +28,18 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Groups
+import androidx.compose.material.icons.filled.Layers
+import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.PersonAdd
+import androidx.compose.material.icons.filled.SmartToy
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Button
@@ -60,8 +66,16 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.StrokeJoin
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -79,7 +93,10 @@ import com.guesswhosesong.app.ui.components.EmptyAvatarBadge
 import com.guesswhosesong.app.ui.components.GoogleGMark
 import com.guesswhosesong.app.ui.components.SpotifyMark
 import com.guesswhosesong.app.ui.components.PostJoinHeader
-import com.guesswhosesong.app.ui.components.AvatarCharacter
+import com.guesswhosesong.app.ui.components.avatarOption
+import com.guesswhosesong.app.ui.components.PostJoinHeroCharacter
+import com.guesswhosesong.app.ui.components.PostJoinHeroFloorShadow
+import com.guesswhosesong.app.ui.components.PostJoinMusicNote
 import com.guesswhosesong.app.ui.theme.GwsPalette
 import com.guesswhosesong.app.ui.theme.PostJoinPalette
 import com.guesswhosesong.app.ui.theme.LocalAppearanceSettings
@@ -102,14 +119,12 @@ fun LobbyScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var showSettings by remember { mutableStateOf(false) }
-    var showChat by remember { mutableStateOf(false) }
-    var chatDraft by remember { mutableStateOf("") }
     val appearanceSettings = LocalAppearanceSettings.current
     val context = LocalContext.current
+    val isDarkAppearance = PostJoinPalette.Background.luminance() < 0.5f
     val googleLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result -> result.data?.let(viewModel::linkGoogle) }
-
     LaunchedEffect(joinCode) {
         viewModel.connect(joinCode, displayName, avatarCustomization)
     }
@@ -148,27 +163,35 @@ fun LobbyScreen(
             .statusBarsPadding()
             .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 18.dp, vertical = 8.dp)
+            .padding(horizontal = 20.dp, vertical = 8.dp)
     ) {
-        PostJoinHeader(roomCode = roomCode, onSettings = { showSettings = true })
+        PostJoinHeader(
+            roomCode = roomCode,
+            onSettings = { showSettings = true },
+            modifier = Modifier.padding(top = 10.5.dp),
+            trailingControlsOffsetY = 4.dp,
+            roomHorizontalPadding = 15.5.dp,
+            roomVerticalPadding = 7.5.dp,
+            roomOffsetY = (-2.75).dp
+        )
 
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 18.dp, bottom = 18.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 20.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(Modifier.weight(1f)) {
-                Text("THE HANGOUT", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black, fontSize = 13.sp, letterSpacing = 0.5.sp)
-                Text("Room lobby", style = MaterialTheme.typography.displaySmall, color = PostJoinPalette.Ink)
+            Column(modifier = Modifier.weight(1f).padding(start = 4.dp).offset(y = 3.dp)) {
                 Text(
-                    "Get your people in the room, then let the music do the talking.",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = PostJoinPalette.Muted
+                    "Room lobby",
+                    color = PostJoinPalette.Ink,
+                    fontSize = 38.5.sp,
+                    lineHeight = 45.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = (-0.35).sp,
+                    maxLines = 1,
+                    softWrap = false
                 )
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                AvatarCharacter("lime", Modifier.size(48.dp), customization = AvatarCustomization.defaultsFor("lime").copy(eyesId = "happy", mouthId = "open"))
-                AvatarCharacter("sunny", Modifier.size(52.dp), customization = AvatarCustomization.defaultsFor("sunny").copy(eyesId = "sleepy", mouthId = "open", accessoryId = "headphones"))
-            }
+            LobbyHeroCharacters(Modifier.width(175.dp).height(123.dp).offset(y = 19.5.dp))
         }
 
         uiState.error?.let { error ->
@@ -182,21 +205,50 @@ fun LobbyScreen(
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 10.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 3.dp, bottom = 6.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Players", style = MaterialTheme.typography.headlineSmall, color = PostJoinPalette.Ink)
-            Spacer(Modifier.width(10.dp))
-            Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = CircleShape) {
-                Text("${players.size} / $playerLimit", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
+            Text(
+                "Players",
+                color = PostJoinPalette.Ink,
+                fontSize = 19.sp,
+                fontWeight = FontWeight.ExtraBold,
+                modifier = Modifier.offset(x = 2.dp, y = 2.5.dp)
+            )
+            Spacer(Modifier.width(8.5.dp))
+            Surface(
+                modifier = Modifier.offset(x = if (isDarkAppearance) 6.dp else 0.dp),
+                color = MaterialTheme.colorScheme.primaryContainer,
+                shape = CircleShape
+            ) {
+                Text(
+                    "${players.size} / $playerLimit",
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 15.sp,
+                    modifier = Modifier.padding(horizontal = 13.5.dp, vertical = 4.dp)
+                )
             }
             Spacer(Modifier.weight(1f))
-            TextButton(onClick = copyRoomCode) { Text("Invite friends", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) }
+            Surface(
+                modifier = Modifier.offset(x = (-0.5).dp).clickable(onClick = copyRoomCode),
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.56f),
+                shape = CircleShape
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = if (isDarkAppearance) 11.125.dp else 12.375.dp, vertical = 7.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.PersonAdd, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(19.dp))
+                    Text("Invite friends", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+            }
         }
 
         if (players.isEmpty()) {
             Surface(
-                modifier = Modifier.fillMaxWidth().padding(bottom = 9.dp),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
                 color = PostJoinPalette.Surface,
                 shape = RoundedCornerShape(18.dp),
                 border = BorderStroke(1.dp, PostJoinPalette.Outline)
@@ -209,13 +261,18 @@ fun LobbyScreen(
                 )
             }
         }
-        players.forEach { player ->
-            PlayerListItem(
+        players.forEachIndexed { index, player ->
+            LobbyPlayerRow(
                 player = player,
                 isSelf = player.id == selfId,
-                onKick = if (isHost && player.id != selfId) ({ viewModel.kickPlayer(player.id) }) else null
+                onRemove = if (isHost && player.id != selfId) ({ viewModel.kickPlayer(player.id) }) else null,
+                modifier = if (index == 1) Modifier.offset(y = (-4).dp) else Modifier
             )
-            Spacer(Modifier.height(8.dp))
+            androidx.compose.material3.HorizontalDivider(
+                modifier = if (index == 1) Modifier.offset(y = (-4).dp) else Modifier,
+                color = PostJoinPalette.Outline,
+                thickness = 1.dp
+            )
         }
         if (remainingSlots > 0 && players.isEmpty()) OpenSeatsCard(openSeats = remainingSlots)
 
@@ -226,11 +283,30 @@ fun LobbyScreen(
         }
 
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 16.dp, bottom = 9.dp),
+            modifier = Modifier.fillMaxWidth().padding(top = 23.dp, bottom = 10.5.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Game settings", style = MaterialTheme.typography.headlineSmall, color = PostJoinPalette.Ink, modifier = Modifier.weight(1f))
-            TextButton(onClick = { showSettings = true }) { Text("Edit", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold) }
+            Text(
+                "Game settings",
+                color = PostJoinPalette.Ink,
+                fontSize = 19.sp,
+                fontWeight = FontWeight.ExtraBold,
+                modifier = Modifier.weight(1f).offset(x = 2.dp, y = if (isDarkAppearance) (-2.5).dp else 0.dp)
+            )
+            Surface(
+                modifier = Modifier.offset(y = (-3).dp).clickable { showSettings = true },
+                color = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.72f),
+                shape = CircleShape
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 11.75.dp, vertical = 7.dp),
+                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.Edit, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(19.dp))
+                    Text("Edit", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+            }
         }
         GameSettingsSummary(
             mode = room?.settings?.gameMode ?: GameMode.MANUAL,
@@ -240,21 +316,30 @@ fun LobbyScreen(
         )
 
         when {
-            room == null -> Surface(modifier = Modifier.fillMaxWidth().padding(top = 14.dp), color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(16.dp)) {
+            room == null -> Surface(modifier = Modifier.fillMaxWidth().padding(top = 18.dp), color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(16.dp)) {
                 Text(if (uiState.isConnected) "Loading room…" else "Joining room…", modifier = Modifier.padding(15.dp), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.Bold)
             }
             isHost -> {
                 val canStart = connectedCount >= 2 && enoughRounds
                 Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp).height(64.dp)
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 0.5.dp).padding(top = 17.dp)
+                        .height(if (isDarkAppearance) 66.dp else 64.dp)
+                        .alpha(if (canStart) 1f else 0.50f)
                         .clip(RoundedCornerShape(50))
-                        .background(Brush.horizontalGradient(listOf(Color(0xFF7760F5), Color(0xFF714FF1))))
+                        .background(Brush.horizontalGradient(listOf(Color(0xFF7657FF), Color(0xFF6F50F5))))
                         .clickable(enabled = canStart, onClick = viewModel::startGame),
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.Center
                 ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(29.dp))
-                    Text("Start game", color = Color.White, fontWeight = FontWeight.Black, style = MaterialTheme.typography.headlineSmall)
+                    Row(
+                        modifier = Modifier.offset(x = (-10).dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center
+                    ) {
+                        Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(44.dp).offset(x = (-3).dp))
+                        Spacer(Modifier.width(8.dp))
+                        Text("Start game", color = Color.White, fontWeight = FontWeight.Black, fontSize = 19.sp, lineHeight = 24.sp)
+                    }
                 }
                 if (!enoughRounds || connectedCount < 2) Text(
                     if (!enoughRounds) "Choose at least ${players.size} rounds in settings before starting." else "Invite one more player to unlock song selection.",
@@ -264,29 +349,13 @@ fun LobbyScreen(
                     style = MaterialTheme.typography.bodySmall
                 )
             }
-            else -> Surface(modifier = Modifier.fillMaxWidth().padding(top = 14.dp), color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(16.dp)) {
+            else -> Surface(modifier = Modifier.fillMaxWidth().padding(top = 18.dp), color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(16.dp)) {
                 Column(Modifier.padding(horizontal = 14.dp, vertical = 11.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("You’re all set", color = MaterialTheme.colorScheme.onPrimaryContainer, fontWeight = FontWeight.ExtraBold)
                     Text("Waiting for ${players.firstOrNull { it.isHost }?.displayName ?: "the host"} to start", color = PostJoinPalette.Muted, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 14.dp)
-                .clip(RoundedCornerShape(20.dp)).clickable { showChat = true }
-                .padding(horizontal = 12.dp, vertical = 13.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Surface(color = MaterialTheme.colorScheme.surfaceVariant, shape = CircleShape) {
-                Box(Modifier.size(54.dp), contentAlignment = Alignment.Center) { Text("◉", fontSize = 26.sp, color = MaterialTheme.colorScheme.primary) }
-            }
-            Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                Text("Room chat", fontWeight = FontWeight.Bold, color = PostJoinPalette.Ink)
-                Text("Say hi to the room!", color = PostJoinPalette.Muted, style = MaterialTheme.typography.bodyMedium)
-            }
-            Text("›", fontSize = 32.sp, color = PostJoinPalette.Muted)
-        }
     }
 
     if (showSettings && room != null) {
@@ -303,6 +372,7 @@ fun LobbyScreen(
             profileError = uiState.error,
             onConnectSpotify = viewModel::connectSpotify,
             onDisconnectSpotify = viewModel::disconnectSpotify,
+            onDisconnectGoogle = viewModel::disconnectGoogle,
             onLinkGoogle = {
                 val activity = context as? Activity
                 if (activity != null) googleLauncher.launch(viewModel.googleSignInIntent(activity))
@@ -318,43 +388,252 @@ fun LobbyScreen(
         )
     }
 
-    if (showChat) {
-        ModalBottomSheet(
-            onDismissRequest = { showChat = false },
-            containerColor = PostJoinPalette.Surface
-        ) {
-            Column(
-                modifier = Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 18.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                Text("Room chat", style = MaterialTheme.typography.headlineSmall, color = PostJoinPalette.Ink)
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 90.dp, max = 300.dp),
-                    verticalArrangement = Arrangement.spacedBy(7.dp)
-                ) {
-                    items(uiState.chatMessages.takeLast(30)) { message ->
-                        Column {
-                            Text(message.senderName, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                            Text(message.text, color = PostJoinPalette.Ink)
-                        }
-                    }
-                    if (uiState.chatMessages.isEmpty()) item { Text("Say hi to the room!", color = PostJoinPalette.Muted) }
+}
+
+@Composable
+private fun LobbyHeroCharacters(modifier: Modifier = Modifier) {
+    Box(modifier = modifier) {
+        val isDarkSurface = MaterialTheme.colorScheme.background.luminance() < 0.5f
+        val floor = if (isDarkSurface) {
+            Color(0xFF474A57).copy(alpha = 0.36f)
+        } else {
+            Color(0xFFFFD85A).copy(alpha = 0.27f)
+        }
+        PostJoinHeroFloorShadow(
+            Modifier.align(Alignment.BottomStart).offset(x = 1.dp, y = (-5).dp).size(width = 120.dp, height = 27.dp),
+            color = floor
+        )
+        PostJoinHeroFloorShadow(
+            Modifier.align(Alignment.BottomEnd).offset(x = (-1).dp, y = (-4).dp).size(width = 128.dp, height = 27.dp),
+            color = floor,
+            alternate = true
+        )
+        PostJoinHeroCharacter(
+            "lime",
+            Modifier.align(Alignment.BottomStart).offset(x = (-6).dp, y = (-7).dp).size(103.dp),
+            customization = AvatarCustomization.defaultsFor("lime").copy(eyesId = "dots", mouthId = "open"),
+            tiltBodyOnly = true,
+            richFinish = true,
+            brightLimbs = isDarkSurface
+        )
+        PostJoinHeroCharacter(
+            "sunny",
+            Modifier.align(Alignment.BottomEnd).offset(x = 4.dp, y = (-2).dp).size(100.dp),
+            customization = AvatarCustomization.defaultsFor("sunny").copy(
+                eyesId = "happy",
+                mouthId = "open",
+                accessoryId = "headphones"
+            ),
+            tiltBodyOnly = true,
+            richFinish = true,
+            brightLimbs = isDarkSurface
+        )
+        PostJoinMusicNote(
+            Modifier.align(Alignment.TopCenter).offset(x = 2.dp, y = 1.dp).size(28.dp),
+            color = Color(0xFFFFD64A),
+            double = true
+        )
+        PostJoinMusicNote(
+            Modifier.align(Alignment.TopEnd).offset(x = (-1).dp, y = 7.dp).size(27.dp),
+            color = Color(0xFF8061FF)
+        )
+        LobbySoundAccent(
+            Modifier.align(Alignment.TopStart).offset(x = 29.dp, y = 18.dp),
+            color = Color(0xFF8061FF),
+            rotation = -18f
+        )
+        LobbySoundAccent(
+            Modifier.align(Alignment.TopStart).offset(x = 47.dp, y = 8.dp),
+            color = Color(0xFF8061FF),
+            rotation = 12f,
+            height = 7.dp
+        )
+        LobbySoundAccent(
+            Modifier.align(Alignment.TopEnd).offset(x = (-2).dp, y = 36.dp),
+            color = Color(0xFFFFD64A),
+            rotation = 52f,
+            width = 3.dp,
+            height = 10.dp
+        )
+        LobbySoundAccent(
+            Modifier.align(Alignment.TopEnd).offset(x = (-12).dp, y = 49.dp),
+            color = Color(0xFFFFD64A),
+            rotation = 68f,
+            width = 3.dp,
+            height = 7.dp
+        )
+    }
+}
+
+@Composable
+private fun LobbySoundAccent(
+    modifier: Modifier,
+    color: Color,
+    rotation: Float,
+    width: androidx.compose.ui.unit.Dp = 4.dp,
+    height: androidx.compose.ui.unit.Dp = 13.dp
+) {
+    Box(
+        modifier.size(width = width, height = height)
+            .rotate(rotation)
+            .clip(CircleShape)
+            .background(color)
+    )
+}
+
+@Composable
+private fun LobbyPlayerRow(
+    player: Player,
+    isSelf: Boolean,
+    onRemove: (() -> Unit)?,
+    modifier: Modifier = Modifier
+) {
+    Row(
+        modifier = modifier.fillMaxWidth().padding(start = 2.5.dp, top = 15.dp, bottom = 15.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        LobbyAvatarTile(player)
+        Column(modifier = Modifier.weight(1f).padding(start = 17.5.dp, end = 5.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    if (isSelf) "${player.displayName} (you)" else player.displayName,
+                    modifier = Modifier.weight(1f, fill = false),
+                    color = PostJoinPalette.Ink,
+                    fontSize = 17.sp,
+                    lineHeight = 21.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (player.isHost) {
+                    Spacer(Modifier.width(7.dp))
+                    LobbyRoleBadge("HOST", Color(0xFFFFE49A), crown = true)
                 }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
-                        value = chatDraft,
-                        onValueChange = { chatDraft = it.take(280) },
-                        modifier = Modifier.weight(1f),
-                        placeholder = { Text("Message") },
-                        singleLine = true
-                    )
-                    Button(
-                        onClick = { viewModel.sendChat(chatDraft); chatDraft = "" },
-                        enabled = chatDraft.isNotBlank()
-                    ) { Text("Send") }
+                if (player.isComputer) {
+                    Spacer(Modifier.width(7.dp))
+                    LobbyRoleBadge("COMPUTER", Color(0xFFD6C9FF), leadingIcon = Icons.Default.SmartToy)
                 }
-                Spacer(Modifier.height(12.dp))
             }
+            if (player.isComputer) {
+                Text(
+                    "Picks songs and votes automatically.",
+                    modifier = Modifier.padding(top = 4.dp),
+                    color = PostJoinPalette.Muted,
+                    fontSize = 16.sp,
+                    lineHeight = 22.sp
+                )
+            } else {
+                Row(
+                    modifier = Modifier.padding(top = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box(
+                        Modifier.size(9.dp).clip(CircleShape)
+                            .background(if (player.connected) Color(0xFF79DF58) else Color(0xFFFF6A68))
+                    )
+                    Spacer(Modifier.width(7.dp))
+                    Text(
+                        if (player.connected) "Connected" else "Reconnecting…",
+                        color = PostJoinPalette.Muted,
+                        fontSize = 14.sp
+                    )
+                }
+            }
+        }
+        if (onRemove != null) {
+            TextButton(
+                onClick = onRemove,
+                contentPadding = PaddingValues(horizontal = 3.dp, vertical = 6.dp)
+            ) {
+                Text("Remove", color = Color(0xFFFF6267), fontWeight = FontWeight.Bold, fontSize = 14.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun LobbyAvatarTile(player: Player) {
+    val avatarColor = avatarOption(
+        AvatarCustomization.normalize(player.avatarCustomization, player.avatarId).colorId
+    ).color
+    val tileColor = if (player.isComputer) {
+        Color(0xFFFEEDCF)
+    } else {
+        Color(
+            red = 0.70f + avatarColor.red * 0.30f,
+            green = 0.70f + avatarColor.green * 0.30f,
+            blue = 0.70f + avatarColor.blue * 0.30f
+        )
+    }
+    Surface(
+        modifier = Modifier.size(62.dp),
+        color = tileColor,
+        shape = RoundedCornerShape(18.dp)
+    ) {
+        PostJoinHeroCharacter(
+            player.avatarId,
+            modifier = Modifier.padding(6.dp),
+            customization = player.avatarCustomization,
+            heroPose = false
+        )
+    }
+}
+
+@Composable
+private fun LobbyRoleBadge(label: String, color: Color, leadingIcon: ImageVector? = null, crown: Boolean = false) {
+    val isComputerBadge = label == "COMPUTER"
+    Surface(color = color, shape = CircleShape) {
+        Row(
+            modifier = Modifier.padding(
+                horizontal = when {
+                    isComputerBadge -> 10.5.dp
+                    leadingIcon == null && !crown -> 9.dp
+                    else -> 8.dp
+                },
+                vertical = 5.dp
+            ),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            if (crown) LobbyCrownIcon(Modifier.size(14.dp))
+            leadingIcon?.let {
+                Icon(it, contentDescription = null, tint = Color(0xFF17161A), modifier = Modifier.size(if (isComputerBadge) 16.dp else 13.dp))
+            }
+            Text(
+                label,
+                color = Color(0xFF17161A),
+                fontSize = if (isComputerBadge) 12.sp else 10.sp,
+                lineHeight = if (isComputerBadge) 14.sp else 12.sp,
+                fontWeight = FontWeight.Black,
+                maxLines = 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun LobbyCrownIcon(modifier: Modifier = Modifier) {
+    Canvas(modifier) {
+        val ink = Color(0xFF17161A)
+        val crown = androidx.compose.ui.graphics.Path().apply {
+            moveTo(size.width * 0.12f, size.height * 0.31f)
+            lineTo(size.width * 0.34f, size.height * 0.48f)
+            lineTo(size.width * 0.49f, size.height * 0.12f)
+            lineTo(size.width * 0.66f, size.height * 0.48f)
+            lineTo(size.width * 0.89f, size.height * 0.29f)
+            lineTo(size.width * 0.80f, size.height * 0.76f)
+            lineTo(size.width * 0.20f, size.height * 0.76f)
+            close()
+        }
+        drawPath(crown, ink)
+        drawRoundRect(
+            ink,
+            topLeft = androidx.compose.ui.geometry.Offset(size.width * 0.18f, size.height * 0.79f),
+            size = androidx.compose.ui.geometry.Size(size.width * 0.64f, size.height * 0.12f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(size.height * 0.04f)
+        )
+        listOf(0.12f to 0.25f, 0.49f to 0.06f, 0.89f to 0.23f).forEach { (x, y) ->
+            drawCircle(ink, size.height * 0.075f, androidx.compose.ui.geometry.Offset(size.width * x, size.height * y))
         }
     }
 }
@@ -366,36 +645,43 @@ private fun GameSettingsSummary(
     votingSeconds: Int,
     playerLimit: Int
 ) {
+    val isLightSurface = PostJoinPalette.Background.luminance() > 0.5f
     Surface(
-        modifier = Modifier.fillMaxWidth(),
-        color = PostJoinPalette.Surface,
+        modifier = Modifier.fillMaxWidth().padding(start = 1.dp, end = 0.5.dp)
+            .offset(y = if (isLightSurface) 0.dp else (-1).dp),
+        color = if (isLightSurface) Color(0xFFF9F6EF) else PostJoinPalette.Surface.copy(alpha = 0.85f),
         shape = RoundedCornerShape(24.dp),
-        border = BorderStroke(1.dp, PostJoinPalette.Outline)
+        border = if (isLightSurface) BorderStroke(0.5.dp, Color(0xFFF9F6EF)) else BorderStroke(1.dp, PostJoinPalette.Outline)
     ) {
         Row(
-            modifier = Modifier.padding(vertical = 16.dp),
+            modifier = Modifier.padding(horizontal = 3.dp, vertical = 19.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             val values = listOf(
-                Triple("♫", "Game mode", if (mode == GameMode.SPOTIFY_RECENT) "Recently played" else "Manual picks"),
-                Triple("▱", "Total rounds", "$rounds"),
-                Triple("◷", "Voting time", "${votingSeconds}s"),
-                Triple("♟", "Player limit", "$playerLimit")
+                Triple(Icons.Default.MusicNote, "Game mode", if (mode == GameMode.SPOTIFY_RECENT) "Recently played" else "Manual picks"),
+                Triple(Icons.Default.Layers, "Total rounds", "$rounds"),
+                Triple(Icons.Default.AccessTime, "Voting time", "${votingSeconds}s"),
+                Triple(Icons.Default.Groups, "Player limit", "$playerLimit")
             )
             values.forEachIndexed { index, (icon, label, value) ->
-                if (index > 0) Spacer(Modifier.width(1.dp).height(72.dp).background(PostJoinPalette.Outline))
+                if (index > 0) {
+                    Spacer(
+                        Modifier.offset(x = 4.5.dp).width(1.dp).height(80.dp)
+                            .background(PostJoinPalette.Outline)
+                    )
+                }
                 Column(
-                    modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
+                    modifier = Modifier.weight(1f).padding(horizontal = 3.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                    verticalArrangement = Arrangement.spacedBy(5.dp)
                 ) {
-                    Text(icon, color = when (index) {
+                    Icon(icon, contentDescription = null, tint = when (index) {
                         1 -> Color(0xFFFFB82E)
                         2 -> Color(0xFFFF7049)
                         else -> MaterialTheme.colorScheme.primary
-                    }, fontSize = 24.sp, fontWeight = FontWeight.Black)
-                    Text(label, color = PostJoinPalette.Muted, fontSize = 11.sp, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    Text(value, color = PostJoinPalette.Ink, fontSize = 12.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    }, modifier = Modifier.size(35.dp))
+                    Text(label, color = PostJoinPalette.Muted, fontSize = 12.sp, lineHeight = 16.sp, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(value, color = PostJoinPalette.Ink, fontSize = 14.sp, lineHeight = 18.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
             }
         }
@@ -699,6 +985,7 @@ internal fun LobbySettingsSheet(
     onConnectSpotify: () -> Unit,
     onDisconnectSpotify: () -> Unit,
     onLinkGoogle: () -> Unit,
+    onDisconnectGoogle: () -> Unit,
     onDismiss: () -> Unit,
     onSave: (String, AvatarCustomization, RoomSettings) -> Unit
 ) {
@@ -715,12 +1002,6 @@ internal fun LobbySettingsSheet(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text("Settings", style = MaterialTheme.typography.headlineSmall, color = PostJoinPalette.Ink)
-            Text(
-                "Update your player and connections.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = PostJoinPalette.Ink.copy(alpha = 0.66f),
-                modifier = Modifier.padding(bottom = 2.dp)
-            )
 
             val appearanceSettings = LocalAppearanceSettings.current
             AppearanceModePicker(
@@ -752,20 +1033,19 @@ internal fun LobbySettingsSheet(
             ) {
                 SpotifyMark()
                 Spacer(Modifier.width(10.dp))
-                Text(if (isSpotifyConnected) "Spotify connected · Disconnect" else "Connect Spotify")
+                Text(if (isSpotifyConnected) "Disconnect" else "Connect Spotify")
             }
             OutlinedButton(
-                onClick = onLinkGoogle,
-                enabled = !isAccountLinked,
+                onClick = if (isAccountLinked) onDisconnectGoogle else onLinkGoogle,
                 modifier = Modifier.fillMaxWidth().height(52.dp),
                 shape = RoundedCornerShape(15.dp),
                 border = BorderStroke(1.dp, PostJoinPalette.Ink.copy(alpha = 0.14f))
             ) {
                 GoogleGMark()
                 Spacer(Modifier.width(10.dp))
-                Text(if (isAccountLinked) "Google account linked" else "Link Google account")
+                Text(if (isAccountLinked) "Disconnect" else "Connect Google")
             }
-            accountStatus?.let { message ->
+            accountStatus?.takeIf { accountStatusIsError }?.let { message ->
                 Text(
                     message,
                     color = if (accountStatusIsError) MaterialTheme.colorScheme.error else Color(0xFF32805A),
@@ -776,7 +1056,6 @@ internal fun LobbySettingsSheet(
             if (isHost) {
                 androidx.compose.material3.HorizontalDivider(color = PostJoinPalette.Ink.copy(alpha = 0.12f))
                 Text("Room settings", style = MaterialTheme.typography.titleMedium, color = PostJoinPalette.Ink, fontWeight = FontWeight.Black)
-                Text("Make the round feel like your group.", style = MaterialTheme.typography.bodySmall, color = PostJoinPalette.Ink.copy(alpha = 0.66f))
 
                 Text("Game mode", style = MaterialTheme.typography.labelLarge, color = PostJoinPalette.Ink)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -792,34 +1071,12 @@ internal fun LobbySettingsSheet(
                         label = { Text("Recently Played") }
                     )
                 }
-                Text(
-                    if (hasComputerPlayer) {
-                        "Remove the computer player before switching to Recently Played."
-                    } else if (settings.gameMode == GameMode.SPOTIFY_RECENT) {
-                        "Use unique playable tracks from players’ recent Spotify history."
-                    } else {
-                        "Everyone chooses songs before the game starts."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = PostJoinPalette.Ink.copy(alpha = 0.66f)
-                )
-
                 Text("Total rounds", style = MaterialTheme.typography.labelLarge, color = PostJoinPalette.Ink)
                 RoundCountControl(
                     roundCount = settings.roundCount,
                     currentPlayerCount = currentPlayerCount,
                     onRoundCountChange = { settings = settings.copy(roundCount = it) }
                 )
-                Text(
-                    if (settings.gameMode == GameMode.SPOTIFY_RECENT) {
-                        "Choose from ${RoundCountRules.minimumForPlayerCount(currentPlayerCount)} to ${RoundCountRules.MAX_ROUNDS} rounds."
-                    } else {
-                        "Choose from ${RoundCountRules.minimumForPlayerCount(currentPlayerCount)} to ${RoundCountRules.MAX_ROUNDS}. Everyone contributes at least one song."
-                    },
-                    style = MaterialTheme.typography.bodySmall,
-                    color = PostJoinPalette.Ink.copy(alpha = 0.66f)
-                )
-
                 Text("Voting time", style = MaterialTheme.typography.labelLarge, color = PostJoinPalette.Ink)
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     listOf(10, 15, 20, 30).forEach { secs ->

@@ -8,7 +8,7 @@ import org.junit.jupiter.api.Test
 
 /**
  * Unit tests for the host reassignment logic and score engine,
- * exercised without needing a real Redis/WebSocket setup.
+ * exercised without needing a real Redis setup.
  */
 class RoomSessionLogicTest {
 
@@ -139,4 +139,3 @@ class RoomSessionLogicTest {
         assertEquals(1, allSongs.count { it.submitterId == "p2" })
     }
 }
-

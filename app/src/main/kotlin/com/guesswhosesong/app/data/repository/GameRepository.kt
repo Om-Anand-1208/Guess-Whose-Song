@@ -1,6 +1,6 @@
 package com.guesswhosesong.app.data.repository
 
-import com.guesswhosesong.app.data.network.WebSocketManager
+import com.guesswhosesong.app.data.network.RoomPollingClient
 import com.guesswhosesong.shared.dto.*
 import com.guesswhosesong.shared.models.Room
 import com.guesswhosesong.shared.models.RoomSettings
@@ -14,16 +14,16 @@ import kotlinx.coroutines.launch
 
 /**
  * Single facade that the ViewModels use for all game interactions.
- * Delegates to [WebSocketManager] for realtime operations and caches
+ * Delegates to [RoomPollingClient] for room events and caches
  * active session state across Jetpack Compose navigation boundaries.
  */
-class GameRepository(private val wsManager: WebSocketManager) {
+class GameRepository(private val roomClient: RoomPollingClient) {
 
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
-    val messages: SharedFlow<ServerMessage> = wsManager.messages
-    val connectionState = wsManager.connectionState
-    val lastError = wsManager.lastError
+    val messages: SharedFlow<ServerMessage> = roomClient.messages
+    val connectionState = roomClient.connectionState
+    val lastError = roomClient.lastError
 
     private val _currentRoom = MutableStateFlow<Room?>(null)
     val currentRoom: StateFlow<Room?> = _currentRoom.asStateFlow()
@@ -54,7 +54,7 @@ class GameRepository(private val wsManager: WebSocketManager) {
 
     init {
         scope.launch {
-            wsManager.messages.collect { message ->
+            roomClient.messages.collect { message ->
                 when (message) {
                     is RoomJoined -> {
                         _selfPlayerId.value = message.selfPlayerId
@@ -120,11 +120,11 @@ class GameRepository(private val wsManager: WebSocketManager) {
         avatarId: String,
         avatarCustomization: AvatarCustomization? = null
     ) {
-        wsManager.connect(joinCode, displayName, avatarId, avatarCustomization)
+        roomClient.connect(joinCode, displayName, avatarId, avatarCustomization)
     }
 
     fun disconnect() {
-        wsManager.disconnect()
+        roomClient.disconnect()
         _currentRoom.value = null
         _latestGameResults.value = null
         _pendingSongs.value = emptyList()
@@ -132,31 +132,30 @@ class GameRepository(private val wsManager: WebSocketManager) {
         resetRoundState()
     }
 
-    suspend fun startGame() = wsManager.send(StartGame())
-    suspend fun addComputerPlayer() = wsManager.send(AddComputerPlayer())
+    suspend fun startGame() = roomClient.send(StartGame())
+    suspend fun addComputerPlayer() = roomClient.send(AddComputerPlayer())
     suspend fun submitSong(song: SongEntry) {
         _mySubmittedSongs.value = listOf(song)
-        wsManager.send(UpdatePendingSong(song = song))
+        roomClient.send(UpdatePendingSong(song = song))
     }
-    suspend fun updatePendingSong(song: SongEntry) = wsManager.send(UpdatePendingSong(song = song))
+    suspend fun updatePendingSong(song: SongEntry) = roomClient.send(UpdatePendingSong(song = song))
     suspend fun updatePendingSongs(songs: List<SongEntry>) {
         _pendingSongs.value = songs
         _mySubmittedSongs.value = songs
-        wsManager.send(UpdatePendingSongs(songs = songs))
+        roomClient.send(UpdatePendingSongs(songs = songs))
     }
-    suspend fun lockSong() = wsManager.send(LockSong())
-    suspend fun castVote(guessedPlayerId: String) = wsManager.send(CastVote(guessedPlayerId = guessedPlayerId))
-    suspend fun sendChat(text: String) = wsManager.send(SendChat(text = text))
-    suspend fun updateSettings(settings: RoomSettings) = wsManager.send(UpdateSettings(settings = settings))
+    suspend fun lockSong() = roomClient.send(LockSong())
+    suspend fun castVote(guessedPlayerId: String) = roomClient.send(CastVote(guessedPlayerId = guessedPlayerId))
+    suspend fun updateSettings(settings: RoomSettings) = roomClient.send(UpdateSettings(settings = settings))
     suspend fun updatePlayerProfile(displayName: String, avatarCustomization: AvatarCustomization) =
-        wsManager.send(UpdatePlayerProfile(displayName = displayName, avatarCustomization = avatarCustomization))
-    suspend fun kickPlayer(targetId: String) = wsManager.send(KickPlayer(targetPlayerId = targetId))
+        roomClient.send(UpdatePlayerProfile(displayName = displayName, avatarCustomization = avatarCustomization))
+    suspend fun kickPlayer(targetId: String) = roomClient.send(KickPlayer(targetPlayerId = targetId))
     suspend fun playAgain() {
         resetRoundState()
         _pendingSongs.value = emptyList()
         _mySubmittedSongs.value = emptyList()
-        wsManager.send(PlayAgain())
+        roomClient.send(PlayAgain())
     }
-    suspend fun endRoom() = wsManager.send(EndRoom())
-    suspend fun refreshSpotify() = wsManager.send(RefreshSpotify())
+    suspend fun endRoom() = roomClient.send(EndRoom())
+    suspend fun refreshSpotify() = roomClient.send(RefreshSpotify())
 }
