@@ -10,9 +10,9 @@ The checked-in captures below show the Android flow in both themes.
 
 | Lobby | Song selection | Voting | Results |
 | --- | --- | --- | --- |
-| ![Light lobby](reports/android-ui-audit-2026-10-18/after/light-lobby.png) | ![Light song selection](reports/android-ui-audit-2026-10-18/after/add-songs-light.png) | ![Dark round](reports/android-ui-audit-2026-10-18/after/gws-dark-round-final.png) | ![Light results](reports/android-ui-audit-2026-10-18/after/light-results.png) |
+| ![Light lobby](docs/screenshots/light-lobby.png) | ![Light song selection](docs/screenshots/add-songs-light.png) | ![Dark round](docs/screenshots/dark-round.png) | ![Light results](docs/screenshots/light-results.png) |
 
-Dark-theme references: [dark lobby](reports/android-ui-audit-2026-10-18/after/gws-dark-lobby-final.png), [dark song selection](reports/android-ui-audit-2026-10-18/after/add-songs-dark.png), and [dark results](reports/android-ui-audit-2026-10-18/after/dark-results.png). The complete paired gallery is in [the Android UI audit](reports/android-ui-audit-2026-10-18/REPORT.md).
+Dark-theme references: [dark lobby](docs/screenshots/dark-lobby.png), [dark song selection](docs/screenshots/add-songs-dark.png), and [dark results](docs/screenshots/dark-results.png).
 
 ## System design
 
@@ -39,6 +39,7 @@ MusicAppProject/
 ├── server/   # Ktor backend (game engine, Redis, iTunes/Spotify/Firebase)
 ├── app/      # Android client (Jetpack Compose)
 ├── web/      # Kotlin/Wasm Compose browser client (Firebase Hosting)
+├── docs/     # Checked-in screenshots and project documentation
 └── artifacts/ # APKs intended for manual download or GitHub Releases
 ```
 
