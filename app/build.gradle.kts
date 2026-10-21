@@ -7,7 +7,7 @@ plugins {
 }
 
 val gwsApiBaseUrl = providers.gradleProperty("gwsApiBaseUrl")
-    .orElse("https://acquaint-capital-bling.ngrok-free.dev")
+    .orElse("https://guess-whose-song-server.onrender.com")
 
 // The Firebase Android config is deployment/project-specific and intentionally ignored.
 // Apply the plugin when a local/CI secret-provided config is present.

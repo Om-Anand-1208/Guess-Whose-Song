@@ -35,6 +35,24 @@ jobs:
           if [ -n "$WEB_FIREBASE_CONFIG" ]; then
             printf '%s' "$WEB_FIREBASE_CONFIG" > web/src/wasmJsMain/resources/firebase-config.js
           fi
+      - name: Set production API origin
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path("web/src/wasmJsMain/resources/firebase-config.js")
+          config = path.read_text()
+          config, replacements = re.subn(
+              r'apiBaseUrl\s*:\s*["\'][^"\']+["\']',
+              'apiBaseUrl: "https://guess-whose-song-server.onrender.com"',
+              config,
+              count=1,
+          )
+          if replacements != 1:
+              raise SystemExit("firebase-config.js must define exactly one apiBaseUrl")
+          path.write_text(config)
+          PY
       - run: ./gradlew :shared:compileKotlinJvm :server:test :app:compileDebugKotlin :web:wasmJsBrowserDistribution --no-daemon
 
   codeql:

@@ -23,11 +23,11 @@ services:
       - key: SPOTIFY_CLIENT_SECRET
         sync: false
       - key: SPOTIFY_REDIRECT_URI
-        sync: false
+        value: https://guess-whose-song-server.onrender.com/spotify/callback
       - key: SPOTIFY_WEB_REDIRECT_URI
-        sync: false
+        value: https://guess-whose-song.web.app/
       - key: WEB_ORIGINS
-        sync: false
+        value: https://guess-whose-song.web.app,https://guess-whose-song.firebaseapp.com
 
   - type: redis
     name: guess-whose-song-redis

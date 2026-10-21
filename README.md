@@ -33,6 +33,11 @@ MusicAppProject/
 - Production: set `REDIS_URL` env var (including `rediss://` for TLS where required, e.g. Render Redis add-on URL)
 
 ### 4. Server
+
+The production API is hosted at `https://guess-whose-song-server.onrender.com`.
+Spotify's registered server callback must be
+`https://guess-whose-song-server.onrender.com/spotify/callback`.
+
 ```bash
 ./gradlew :server:shadowJar
 java -jar server/build/libs/guess-whose-song-server.jar
