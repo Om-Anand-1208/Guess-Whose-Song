@@ -2,7 +2,7 @@
 
 A multiplayer party quiz app. Players submit songs anonymously. Everyone votes on who submitted each clip. Correct guesses earn points.
 
-**[⬇️ Download the Android APK](artifacts/GuessWhoseSong.apk)**
+**[Download the Android APK](artifacts/GuessWhoseSong.apk)**
 
 ## Screenshots
 
