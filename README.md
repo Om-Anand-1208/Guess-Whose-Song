@@ -36,7 +36,8 @@ MusicAppProject/
 ├── shared/   # Kotlin Multiplatform — DTOs shared between server and Android
 ├── server/   # Ktor backend (game engine, Redis, iTunes/Spotify/Firebase)
 ├── app/      # Android client (Jetpack Compose)
-└── web/      # Kotlin/Wasm Compose browser client (Firebase Hosting)
+├── web/      # Kotlin/Wasm Compose browser client (Firebase Hosting)
+└── artifacts/ # APKs intended for manual download or GitHub Releases
 ```
 
 ### Why `shared/` matters
@@ -229,7 +230,6 @@ The deployment intentionally uses one server instance because room ownership is 
 
 GitHub Actions is defined in `.github/workflows/security.yml`. It now:
 
-- scans the repository with Gitleaks;
 - injects the optional public web Firebase config;
 - compiles shared code and runs server tests;
 - builds the server fat JAR;
@@ -237,7 +237,7 @@ GitHub Actions is defined in `.github/workflows/security.yml`. It now:
 - builds the production Wasm distribution; and
 - uploads `app/build/outputs/apk/debug/app-debug.apk` as a workflow artifact.
 
-CodeQL compiles the server with `SERVER_ONLY=true`, which avoids configuring Android and Wasm modules during backend analysis. `.gitleaks.toml` excludes only the intentionally public browser Firebase config paths; server credentials and other files remain scanned.
+CodeQL compiles the server with `SERVER_ONLY=true`, which avoids configuring Android and Wasm modules during backend analysis.
 
 To run the same core checks locally:
 
@@ -252,7 +252,7 @@ To run the same core checks locally:
 
 ## APK distribution and signing
 
-The APK in `~/Downloads/GuessWhoseSong.apk` can be uploaded as a GitHub Release asset. Keep release APKs out of the source branch and do not commit keystores, passwords, `google-services.json`, Firebase Admin JSON, Spotify secrets, or Redis credentials.
+The current APK is stored at [`artifacts/GuessWhoseSong.apk`](artifacts/GuessWhoseSong.apk) and can also be uploaded as a GitHub Release asset. Keep keystores, passwords, `google-services.json`, Firebase Admin JSON, Spotify secrets, and Redis credentials out of the repository.
 
 For a production release, use Android Studio's **Build → Generate Signed Bundle / APK** with the release keystore. Back up the keystore because all future updates must use the same signing key. Register the release SHA-1 and SHA-256 fingerprints in Firebase for Google authentication. For Play Store builds, also register the Play App Signing certificate fingerprints.
 
