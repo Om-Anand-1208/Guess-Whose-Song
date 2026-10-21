@@ -57,6 +57,11 @@ class LockSong : ClientMessage() {
     override fun hashCode(): Int = 1
 }
 
+/** Mark the current preview as heard; voting opens early once every listener skips. */
+@Serializable
+@SerialName("SKIP_PREVIEW")
+data class SkipPreview(val roundIndex: Int) : ClientMessage()
+
 @Serializable
 @SerialName("CAST_VOTE")
 data class CastVote(

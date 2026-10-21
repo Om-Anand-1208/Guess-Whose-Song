@@ -7,7 +7,7 @@ A multiplayer party quiz app. Players submit songs anonymously. Everyone votes o
 ```
 MusicAppProject/
 ├── shared/   # Kotlin Multiplatform — DTOs shared between server and Android
-├── server/   # Ktor backend (game engine, Redis, Deezer/Spotify/Firebase)
+├── server/   # Ktor backend (game engine, Redis, iTunes/Spotify/Firebase)
 ├── app/      # Android client (Jetpack Compose)
 └── web/      # Kotlin/Wasm Compose browser client (Firebase Hosting)
 ```
@@ -89,7 +89,7 @@ CI can inject the complete public `firebase-config.js` contents through the `WEB
 
 - **Transport**: Authenticated Ktor REST actions with long-poll room events
 - **State**: Redis (ephemeral, TTL-based cleanup)
-- **Audio**: Deezer public API (30-second preview clips, keyless)
+- **Music and artwork**: iTunes Search API (preview clips and album artwork)
 - **Identity**: Firebase Anonymous Auth
 - **Recovery**: optional Google account linking through Firebase Auth
 - **Notifications**: Firebase Cloud Messaging

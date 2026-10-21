@@ -13,17 +13,21 @@
         android:networkSecurityConfig="@xml/network_security_config"
         android:theme="@style/Theme.GuessWhoseSong">
 
-        <meta-data
-            android:name="com.google.mlkit.vision.DEPENDENCIES"
-            android:value="barcode_ui" />
-
         <activity
             android:name=".MainActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:theme="@style/Theme.GuessWhoseSong">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" android:host="guess-whose-song.web.app" android:pathPrefix="/join/" />
             </intent-filter>
 
             <!-- Spotify OAuth deep link -->

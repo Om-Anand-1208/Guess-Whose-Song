@@ -33,7 +33,12 @@ object PlayerIdentityDefaults {
         adjectives.random() + nouns.random()
 
     fun randomAvatarCustomization(): AvatarCustomization =
-        AvatarCustomization.defaultsFor(AvatarCatalog.ids.random())
+        AvatarCustomization.defaultsFor(AvatarCatalog.ids.random()).copy(
+            colorId = randomInitialColorId()
+        )
+
+    fun randomInitialColorId(excludingColorId: String? = null): String =
+        AvatarCustomizationCatalog.colorIds.filterNot { it == excludingColorId }.random()
 }
 
 /** The independently selected parts of a player's illustrated avatar. */
@@ -125,11 +130,11 @@ data class RoomSettings(
 /** Shared round-count and per-player submission rules used by every client and the server. */
 object RoundCountRules {
     const val MIN_ROUNDS = 2
-    const val MAX_ROUNDS = 20
+    const val MAX_ROUNDS = 30
     const val DEFAULT_ROUNDS = 10
 
     fun minimumForPlayerCount(playerCount: Int): Int =
-        maxOf(MIN_ROUNDS, playerCount.coerceAtLeast(0))
+        maxOf(MIN_ROUNDS, playerCount.coerceAtLeast(0) + if (playerCount == 2) 1 else 0)
 
     fun isValid(roundCount: Int, playerCount: Int): Boolean =
         roundCount in MIN_ROUNDS..MAX_ROUNDS && roundCount >= minimumForPlayerCount(playerCount)
@@ -147,7 +152,6 @@ data class SongEntry(
     val title: String,
     val artist: String,
     val albumArtUrl: String = "",
-    val deezerPreviewUrl: String = "",
     val previewUrl: String,
     /** NEVER sent to clients until reveal phase */
     val submitterId: String = ""
@@ -213,15 +217,25 @@ data class ScoreDelta(
     val newTotal: Int
 )
 
-/** Spotify suggestion (title + artist only, no playback) */
+/** Spotify suggestion metadata; playback is resolved separately through iTunes. */
 @Serializable
 data class SpotifySuggestion(
     val title: String,
     val artist: String,
     val albumArtUrl: String = "",
     val category: SpotifyCategory,
-    val spotifyTrackId: String? = null
+    val spotifyTrackId: String? = null,
+    val albumTitle: String = ""
 )
+
+/** A stable client-side ID for Spotify suggestions that the server accepts. */
+object SpotifySongId {
+    fun from(title: String, artist: String): String =
+        "spotify-$title-$artist"
+            .lowercase()
+            .replace(Regex("[^a-z0-9:_-]"), "-")
+            .take(200)
+}
 
 @Serializable
 enum class SpotifyCategory {
@@ -230,12 +244,14 @@ enum class SpotifyCategory {
     PLAYLIST
 }
 
-/** Search result returned by the backend proxy (Deezer first, then iTunes fallback). */
+/** Search result returned by the backend iTunes catalog proxy. */
 @Serializable
 data class TrackSearchResult(
     val id: String,
     val title: String,
     val artist: String,
     val albumArtUrl: String,
-    val previewUrl: String
+    val previewUrl: String,
+    val genreName: String = "",
+    val albumTitle: String = ""
 )

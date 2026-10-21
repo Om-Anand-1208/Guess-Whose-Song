@@ -59,7 +59,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.guesswhosesong.app.ui.components.AvatarCharacter
 import com.guesswhosesong.app.ui.components.AvatarOptions
-import com.guesswhosesong.app.ui.components.GuessWhoseSongWordmark
 import com.guesswhosesong.app.ui.components.avatarOption
 import com.guesswhosesong.shared.models.AvatarCustomization
 import com.guesswhosesong.shared.models.AvatarCustomizationCatalog
@@ -97,11 +96,7 @@ internal fun CharacterEditorPage(
             modifier = Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            GuessWhoseSongWordmark(
-                modifier = Modifier.weight(1f),
-                fontSize = 25.5.sp,
-                lineHeight = 29.5.sp
-            )
+            Spacer(Modifier.weight(1f))
             androidx.compose.material3.TextButton(onClick = onCancel) {
                 androidx.compose.material3.Icon(
                     Icons.Default.ArrowBack,

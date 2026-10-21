@@ -33,7 +33,7 @@ object ScoreEngine {
             }
 
             val isSubmitter = (voter.id == songEntry.submitterId)
-            // Self-guessing is correct only in Recently Played mode.
+            // Self-guessing is allowed in automatic Spotify modes.
             val isCorrect = guessedId == songEntry.submitterId &&
                 (!isSubmitter || allowSubmitterSelfGuess)
 

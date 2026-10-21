@@ -3,6 +3,7 @@ package com.guesswhosesong.server.engine
 import com.guesswhosesong.server.music.MusicService
 import com.guesswhosesong.server.redis.RedisClient
 import com.guesswhosesong.server.redis.RoomRepository
+import com.guesswhosesong.server.redis.RoomChatRepository
 import com.guesswhosesong.server.redis.RoomRuntime
 import com.guesswhosesong.server.redis.RoomRuntimeRepository
 import com.guesswhosesong.server.security.InputValidation
@@ -25,6 +26,31 @@ private const val REVEAL_HOLD_MS = 5_000L          // 5 seconds hold on reveal s
 private const val MIN_PLAYERS_TO_START = 2
 private const val SUBMISSION_TIMEOUT_MS = 120_000L // 2 minutes for submission phase
 
+enum class RoomJoinRejection { ROOM_FULL, GAME_ALREADY_STARTED }
+
+class RoomJoinRejectedException(val reason: RoomJoinRejection) : Exception(reason.name)
+
+internal fun Room.joinRejectionFor(playerId: String): RoomJoinRejection? {
+    if (players.any { it.id == playerId }) return null
+    if (players.size >= minOf(settings.playerLimit, 10)) return RoomJoinRejection.ROOM_FULL
+    if (state != RoomState.LOBBY) return RoomJoinRejection.GAME_ALREADY_STARTED
+    return null
+}
+
+internal fun allListenersSkipped(players: List<Player>, skippedPlayerIds: Set<String>): Boolean {
+    val listeners = players.filter { it.connected && !it.isComputer }
+    return listeners.isNotEmpty() && listeners.all { it.id in skippedPlayerIds }
+}
+
+internal fun Room.resetForReplay(): Room = copy(
+    state = RoomState.LOBBY,
+    songPool = emptyList(),
+    currentRoundIndex = 0,
+    players = players.map { player ->
+        player.copy(score = 0, pendingSong = null, pendingSongs = emptyList(), songLocked = false)
+    }
+)
+
 /**
  * Manages all state and coroutine-based phase transitions for a single room.
  *
@@ -43,6 +69,7 @@ class RoomSession(
     private val scope = CoroutineScope(Dispatchers.Default + SupervisorJob())
 
     private val repository = RoomRepository(redisClient)
+    private val chatRepository = RoomChatRepository(redisClient)
     private val runtimeRepository = RoomRuntimeRepository(redisClient)
     private val ended = AtomicBoolean(false)
     private var gameJob: Job? = null
@@ -51,6 +78,8 @@ class RoomSession(
     private var currentRoundPhase: RoundPhase = runCatching { RoundPhase.valueOf(runtime.phase) }
         .getOrDefault(RoundPhase.PLAYING_PREVIEW)
     private var currentVotingDeadline: Long = runtime.deadlineEpochMillis
+    private val skippedPreviewPlayers = ConcurrentHashMap.newKeySet<String>()
+    private var allSkippedSignal = CompletableDeferred<Unit>()
 
     @Volatile
     var room: Room = initialRoom
@@ -71,12 +100,10 @@ class RoomSession(
         avatarId: String,
         avatarCustomization: AvatarCustomization? = null
     ) {
-        eventQueues.put(playerId, Channel(capacity = 256, onBufferOverflow = BufferOverflow.DROP_OLDEST))?.close()
-        markPlayerActive(playerId)
-
         val hasSpotify = redisClient.get("spotify_token:$playerId") != null
 
         mutex.withLock {
+            room.joinRejectionFor(playerId)?.let { throw RoomJoinRejectedException(it) }
             val existingPlayer = room.players.find { it.id == playerId }
             val playerCustomization = AvatarCustomization.normalize(
                 avatarCustomization ?: existingPlayer?.avatarCustomization,
@@ -106,6 +133,8 @@ class RoomSession(
                 room.copy(players = room.players + newPlayer)
             }
             persist()
+            eventQueues.put(playerId, Channel(capacity = 256, onBufferOverflow = BufferOverflow.DROP_OLDEST))?.close()
+            markPlayerActive(playerId)
         }
 
         // Send full room state to the joining player
@@ -141,7 +170,10 @@ class RoomSession(
                         VotingStarted(
                             roundIndex = room.currentRoundIndex,
                             players = players,
-                            votingDeadlineEpochMillis = currentVotingDeadline
+                            votingDeadlineEpochMillis = currentVotingDeadline,
+                            eligibleOwnerIds = if (room.settings.gameMode.isAutomaticSpotifyMode) {
+                                room.songPool.map { it.submitterId }.distinct()
+                            } else emptyList()
                         )
                     )
                 }
@@ -186,6 +218,8 @@ class RoomSession(
     private fun markPlayerActive(playerId: String) {
         if (!eventQueues.containsKey(playerId)) return
         lastActivity[playerId] = System.currentTimeMillis()
+        repository.refreshTtl(room.joinCode)
+        chatRepository.refreshTtl(room.joinCode)
         disconnectJobs.remove(playerId)?.cancel()
         scheduleGraceExpiry(playerId)
     }
@@ -222,6 +256,23 @@ class RoomSession(
     }
 
     fun hasPlayerConnection(playerId: String): Boolean = eventQueues.containsKey(playerId)
+
+    fun chatMessages(beforeId: String? = null): List<RoomChatMessage> =
+        chatRepository.recent(room.joinCode, beforeId)
+
+    suspend fun postChatMessage(playerId: String, text: String): RoomChatMessage? = mutex.withLock {
+        val sender = room.players.firstOrNull { it.id == playerId } ?: return@withLock null
+        persist()
+        val message = RoomChatMessage(
+            id = UUID.randomUUID().toString(),
+            senderId = playerId,
+            senderName = sender.displayName,
+            text = text.trim(),
+            sentAtEpochMillis = System.currentTimeMillis()
+        )
+        chatRepository.append(room.joinCode, message)
+        message
+    }
 
     private suspend fun handleGraceExpired(playerId: String) {
         disconnectJobs.remove(playerId)
@@ -281,6 +332,7 @@ class RoomSession(
             is UpdatePendingSong -> handleUpdatePendingSong(playerId, message.song)
             is UpdatePendingSongs -> handleUpdatePendingSongs(playerId, message.songs)
             is LockSong -> handleLockSong(playerId)
+            is SkipPreview -> handleSkipPreview(playerId, message.roundIndex)
             is CastVote -> handleCastVote(playerId, message.guessedPlayerId)
             is PlayAgain -> handlePlayAgain(playerId)
             is EndRoom -> handleEndRoom(playerId)
@@ -301,10 +353,10 @@ class RoomSession(
                 !host.isHost -> error = ErrorMessage("NOT_HOST", "Only the host can add a computer player")
                 room.state != RoomState.LOBBY -> error = ErrorMessage("WRONG_STATE", "Computer players can only join from the lobby")
                 room.settings.gameMode != GameMode.MANUAL -> {
-                    error = ErrorMessage("COMPUTER_UNAVAILABLE", "Computer players are only available in Manual picks mode")
+                    error = ErrorMessage("COMPUTER_UNAVAILABLE", "Computer players are only available in Manual mode")
                 }
                 room.players.any { it.isComputer } -> error = ErrorMessage("COMPUTER_ALREADY_ADDED", "A computer player is already in the room")
-                room.players.size >= room.settings.playerLimit -> error = ErrorMessage("ROOM_FULL", "There are no open player spots")
+                room.players.size >= minOf(room.settings.playerLimit, 10) -> error = ErrorMessage("ROOM_FULL", "There are no open player spots")
                 else -> {
                     val computer = Player(
                         id = "computer-${UUID.randomUUID()}",
@@ -337,7 +389,7 @@ class RoomSession(
                 !RoundCountRules.isValid(room.settings.roundCount, room.players.size) -> {
                     error = ErrorMessage(
                         "INVALID_SETTINGS",
-                        "Choose at least ${room.players.size} rounds for the current room roster"
+                        "Choose at least ${RoundCountRules.minimumForPlayerCount(room.players.size)} rounds for the current room roster"
                     )
                 }
                 gameJob?.isActive == true -> Unit
@@ -362,17 +414,17 @@ class RoomSession(
             sendToPlayer(playerId, ErrorMessage("INVALID_SETTINGS", "Invalid round count, player limit, or voting timer"))
             return
         }
-        if (settings.gameMode == GameMode.SPOTIFY_RECENT && room.players.any { it.isComputer }) {
+        if (settings.gameMode.isAutomaticSpotifyMode && room.players.any { it.isComputer }) {
             sendToPlayer(playerId, ErrorMessage(
                 "COMPUTER_UNAVAILABLE",
-                "Remove the computer player before switching to Recently Played"
+                "Remove the computer player before switching to a Spotify game mode"
             ))
             return
         }
         if (!RoundCountRules.isValid(settings.roundCount, room.players.size)) {
             sendToPlayer(
                 playerId,
-                ErrorMessage("INVALID_SETTINGS", "Choose at least ${room.players.size} rounds for the current room roster")
+                ErrorMessage("INVALID_SETTINGS", "Choose at least ${RoundCountRules.minimumForPlayerCount(room.players.size)} rounds for the current room roster")
             )
             return
         }
@@ -538,6 +590,32 @@ class RoomSession(
     private val currentVotes = ConcurrentHashMap<String, String>() // voterId -> guessedPlayerId
     private var allVotedSignal = CompletableDeferred<Unit>()
 
+    private suspend fun handleSkipPreview(playerId: String, roundIndex: Int) {
+        if (room.state != RoomState.PLAYING || currentRoundPhase != RoundPhase.PLAYING_PREVIEW ||
+            room.currentRoundIndex != roundIndex
+        ) return
+        val listener = room.players.find { it.id == playerId && it.connected && !it.isComputer } ?: return
+        skippedPreviewPlayers.add(listener.id)
+        sendToPlayer(
+            playerId,
+            VotingStarted(
+                roundIndex = roundIndex,
+                players = room.players.map { it.copy(pendingSong = null, pendingSongs = emptyList()) },
+                votingDeadlineEpochMillis = runtime.deadlineEpochMillis + room.settings.votingTimerSeconds * 1000L,
+                eligibleOwnerIds = if (room.settings.gameMode.isAutomaticSpotifyMode) {
+                    room.songPool.map { it.submitterId }.distinct()
+                } else emptyList()
+            )
+        )
+        sendToPlayer(
+            playerId,
+            VoteCountUpdated(currentVotes.size, room.players.count { it.connected })
+        )
+        if (allListenersSkipped(room.players, skippedPreviewPlayers)) {
+            allSkippedSignal.complete(Unit)
+        }
+    }
+
     /** Rehydrates only the server-side state machine; public room data remains sanitized. */
     fun resumeAfterRestart() {
         if (room.state == RoomState.SUBMISSION) {
@@ -557,18 +635,20 @@ class RoomSession(
             return
         }
         val currentRound = getCurrentRound() ?: return
-        if (currentRound.phase != RoundPhase.VOTING) {
-            logger.warn("[${room.joinCode}] Vote rejected: not in VOTING phase (current: ${currentRound.phase})")
+        val earlyVote = currentRound.phase == RoundPhase.PLAYING_PREVIEW && voterId in skippedPreviewPlayers
+        if (currentRound.phase != RoundPhase.VOTING && !earlyVote) {
+            logger.warn("[${room.joinCode}] Vote rejected: not in voting (current: ${currentRound.phase})")
             return
         }
         if (currentVotes.containsKey(voterId)) {
             logger.warn("[${room.joinCode}] Duplicate vote ignored")
             return
         }
-        val validTarget = if (room.settings.gameMode == GameMode.SPOTIFY_RECENT) {
+        val validTarget = if (room.settings.gameMode.isAutomaticSpotifyMode) {
             room.songPool.any { it.submitterId == guessedPlayerId }
         } else {
-            guessedPlayerId == ScoreEngine.DECOY_ID || room.players.any { it.id == guessedPlayerId }
+            (room.players.size == 2 && guessedPlayerId == ScoreEngine.DECOY_ID) ||
+                room.players.any { it.id == guessedPlayerId }
         }
         if (!validTarget || guessedPlayerId.length > 128) {
             sendToPlayer(voterId, ErrorMessage("INVALID_VOTE", "Unknown vote target"))
@@ -582,7 +662,7 @@ class RoomSession(
         logger.info("[${room.joinCode}] Vote cast ($votedCount/$totalCount)")
         broadcastAll(VoteCountUpdated(votedCount = votedCount, totalCount = totalCount))
 
-        if (votedCount >= totalCount) {
+        if (!earlyVote && votedCount >= totalCount) {
             allVotedSignal.complete(Unit)
         }
     }
@@ -594,22 +674,14 @@ class RoomSession(
         if (!player.isHost) return
         if (room.state != RoomState.RESULTS) return
 
+        gameJob?.cancel()
+        gameJob = null
         mutex.withLock {
-            room = room.copy(
-                state = RoomState.SUBMISSION,
-                songPool = emptyList(),
-                currentRoundIndex = 0,
-                players = room.players.map { p ->
-                    p.copy(score = 0, pendingSong = null, pendingSongs = emptyList(), songLocked = false)
-                }
-            )
+            room = room.resetForReplay()
             persist()
         }
-        currentRoundPhase = RoundPhase.PLAYING_PREVIEW
+        persistRuntime(RoomRuntime())
         broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
-        mutex.withLock {
-            if (gameJob?.isActive != true) gameJob = scope.launch { runSubmissionPhase() }
-        }
     }
 
     private suspend fun handleEndRoom(playerId: String) {
@@ -687,8 +759,8 @@ class RoomSession(
     }
 
     private suspend fun runSubmissionPhase() {
-        if (room.settings.gameMode == GameMode.SPOTIFY_RECENT) {
-            runRecentlyPlayedPhase()
+        if (room.settings.gameMode.isAutomaticSpotifyMode) {
+            runSpotifyTracksPhase(room.settings.gameMode)
             return
         }
 
@@ -741,6 +813,7 @@ class RoomSession(
         // generated tracks can follow the language/style represented in the pool.
         logger.info("[${room.joinCode}] Resolving song preview URLs...")
         val resolvedEntries = mutableListOf<SongEntry>()
+        val seedGenres = mutableListOf<String>()
         room.players.filter { it.songLocked && !it.isComputer }.forEach { player ->
             val songsToResolve = if (player.pendingSongs.isNotEmpty()) {
                 player.pendingSongs
@@ -748,9 +821,10 @@ class RoomSession(
                 listOfNotNull(player.pendingSong)
             }
             songsToResolve.forEach { pending ->
-                val resolved = musicService.resolveEntry(pending)
-                if (resolved != null && resolved.previewUrl.isNotBlank()) {
-                    resolvedEntries.add(resolved.copy(submitterId = player.id))
+                val resolved = musicService.resolveEntryWithGenre(pending)
+                if (resolved != null && resolved.song.previewUrl.isNotBlank()) {
+                    resolvedEntries.add(resolved.song.copy(submitterId = player.id))
+                    seedGenres.add(resolved.genreName)
                 } else {
                     logger.warn("[${room.joinCode}] A submitted song could not be resolved")
                     // Song is dropped from the pool (player chose an unresolvable song)
@@ -766,12 +840,11 @@ class RoomSession(
         }
         broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
 
-        // Add up to two decoy tracks; the pool builder applies the selected round cap.
-        try {
-            val numDecoys = if (resolvedEntries.size <= 4) 1 else 2
-            val contextualTracks = musicService.getContextualTracks(resolvedEntries, numDecoys)
+        // Two-player rooms can add genre-matched Nobody candidates.
+        if (room.players.size == 2) try {
+            val genreTracks = musicService.getGenreMatchedTracks(resolvedEntries, seedGenres.shuffled().take(4))
 
-            for (track in contextualTracks) {
+            for (track in genreTracks) {
                 val decoyEntry = SongEntry(
                     songId = track.id,
                     title = track.title,
@@ -787,10 +860,10 @@ class RoomSession(
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (e: Exception) {
-            logger.warn("[${room.joinCode}] Could not inject decoy tracks")
+            logger.warn("[${room.joinCode}] Could not inject genre-matched decoy tracks")
         }
 
-        val pool = RoundPoolBuilder.build(
+        val pool = RoundPoolBuilder.buildGenreMatched(
             playerSongs = resolvedEntries,
             decoySongs = resolvedEntries.filter { it.submitterId == GameConstants.DECOY_ID },
             playerIds = room.players.map { it.id },
@@ -804,7 +877,7 @@ class RoomSession(
         startPlayingWithPool(pool)
     }
 
-    private suspend fun runRecentlyPlayedPhase() {
+    private suspend fun runSpotifyTracksPhase(mode: GameMode) {
         mutex.withLock {
             room = room.copy(state = RoomState.SUBMISSION)
             persist()
@@ -822,7 +895,11 @@ class RoomSession(
             } ?: return@forEach
 
             val recentTracks = try {
-                spotifyClient.getRecentlyPlayed(token, limit = 50)
+                when (mode) {
+                    GameMode.SPOTIFY_RECENT -> spotifyClient.getRecentlyPlayed(token, limit = 50)
+                    GameMode.SPOTIFY_TOP -> spotifyClient.getTopTracks(token, limit = 50)
+                    GameMode.MANUAL -> emptyList()
+                }
             } catch (_: SpotifyClient.UnauthorizedException) {
                 try { redisClient.del("spotify_token:${player.id}") } catch (_: Exception) { }
                 emptyList()
@@ -837,49 +914,47 @@ class RoomSession(
         val uniqueTracks = RecentTrackDeduplicator.uniqueToOnePlayer(playedTracks)
         val tracksByPlayer = uniqueTracks.groupBy { it.playerId }
         val resolvedSongs = mutableListOf<SongEntry>()
+        val seedGenres = mutableListOf<String>()
         val candidateOwners = room.players.map { it.id }.filter { !tracksByPlayer[it].isNullOrEmpty() }
         val candidateOffsets = ConcurrentHashMap<String, Int>().apply {
             candidateOwners.forEach { put(it, 0) }
         }
 
-        suspend fun resolveNextPlayable(playerId: String): SongEntry? {
+        suspend fun resolveNextPlayable(playerId: String): com.guesswhosesong.server.music.ResolvedSong? {
             val candidates = tracksByPlayer[playerId].orEmpty()
             while (candidateOffsets.getValue(playerId) < candidates.size) {
                 val index = candidateOffsets.getValue(playerId)
                 candidateOffsets[playerId] = index + 1
                 val track = candidates[index].track
-                val pending = SongEntry(
-                    songId = "recent-${track.spotifyTrackId?.takeIf(String::isNotBlank) ?: "$playerId-$index"}",
-                    title = track.title,
-                    artist = track.artist,
-                    albumArtUrl = track.albumArtUrl,
-                    previewUrl = "",
-                    submitterId = playerId
-                )
                 val resolved = try {
-                    musicService.resolveEntry(pending)
+                    musicService.resolveSpotifyTrackWithGenre(track)
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (_: Exception) {
                     null
                 }
-                if (resolved != null && resolved.previewUrl.isNotBlank()) {
-                    return resolved.copy(submitterId = playerId)
+                if (resolved != null && resolved.song.previewUrl.isNotBlank()) {
+                    return resolved.copy(song = resolved.song.copy(submitterId = playerId))
                 }
             }
             return null
         }
 
-        var recentPool: RecentPlayedPool? = null
+        var provisionalPool: RecentPlayedPool? = null
         while (candidateOwners.isNotEmpty()) {
             // Resolve in fair passes so a full pool does not require catalog-searching
             // every track in every player's 50-item Spotify history.
             val resolvedThisPass = coroutineScope {
                 candidateOwners.map { ownerId -> async { resolveNextPlayable(ownerId) } }.awaitAll()
             }
-            resolvedSongs += resolvedThisPass.filterNotNull()
-            recentPool = RecentPlayedPoolBuilder.build(resolvedSongs, room.settings.roundCount)
-            if (recentPool?.songs?.size == room.settings.roundCount) break
+            resolvedThisPass.filterNotNull().forEach { resolved ->
+                resolvedSongs += resolved.song
+                seedGenres += resolved.genreName
+            }
+            provisionalPool = RecentPlayedPoolBuilder.build(resolvedSongs, room.settings.roundCount)
+            if (provisionalPool != null &&
+                provisionalPool.songs.size >= room.settings.roundCount - (if (room.players.size == 2) 1 else 0)
+            ) break
 
             val hasMoreCandidates = candidateOwners.any { ownerId ->
                 candidateOffsets.getValue(ownerId) < tracksByPlayer[ownerId].orEmpty().size
@@ -887,7 +962,30 @@ class RoomSession(
             if (!hasMoreCandidates) break
         }
 
-        if (recentPool == null) {
+        val decoySongs = if (provisionalPool != null && room.players.size == 2) {
+            try {
+                musicService.getGenreMatchedTracks(resolvedSongs, seedGenres.shuffled().take(4))
+                    .map { track ->
+                        SongEntry(
+                            songId = track.id,
+                            title = track.title,
+                            artist = track.artist,
+                            albumArtUrl = track.albumArtUrl,
+                            previewUrl = track.previewUrl,
+                            submitterId = GameConstants.DECOY_ID
+                        )
+                    }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                logger.warn("[${room.joinCode}] Could not find a genre-matched Spotify-mode decoy: ${error.message}")
+                emptyList()
+            }
+        } else emptyList()
+        val recentPool = RecentPlayedPoolBuilder.build(resolvedSongs, room.settings.roundCount, decoySongs)
+
+        if (recentPool == null ||
+            (room.players.size == 2 && recentPool.songs.none { it.submitterId == GameConstants.DECOY_ID })) {
             mutex.withLock {
                 room = room.copy(
                     state = RoomState.LOBBY,
@@ -901,8 +999,8 @@ class RoomSession(
             broadcastAll(RoomUpdated(room = sanitizedRoomForBroadcast()))
             broadcastAll(
                 ErrorMessage(
-                    "RECENT_TRACKS_UNAVAILABLE",
-                    "Recently Played mode needs unique playable tracks from at least two players. The game is still in the lobby."
+                    if (mode == GameMode.SPOTIFY_TOP) "TOP_TRACKS_UNAVAILABLE" else "RECENT_TRACKS_UNAVAILABLE",
+                    "${if (mode == GameMode.SPOTIFY_TOP) "Top tracks" else "Recently Played"} needs matching playable tracks from at least two players${if (room.players.size == 2) " and a distinct decoy" else ""}. The game is still in the lobby."
                 )
             )
             return
@@ -945,6 +1043,9 @@ class RoomSession(
 
         // ── Phase 1: PLAYING_PREVIEW ──────────────────────────────────────────
         currentRoundPhase = RoundPhase.PLAYING_PREVIEW
+        skippedPreviewPlayers.clear()
+        allSkippedSignal = CompletableDeferred()
+        currentVotes.clear()
         persistRuntime(runtime.copy(
             phase = RoundPhase.PLAYING_PREVIEW.name,
             roundIndex = index,
@@ -963,12 +1064,12 @@ class RoomSession(
                 previewDurationMs = 30_000L
             )
         )
-        // Wait for the clip to finish (~30s + small buffer)
-        delay(31_000L)
+        // A listener may stop their local preview early. Voting opens as soon as
+        // everyone has skipped, or once the normal preview window has elapsed.
+        withTimeoutOrNull(31_000L) { allSkippedSignal.await() }
 
         // ── Phase 2: VOTING ───────────────────────────────────────────────────
         currentRoundPhase = RoundPhase.VOTING
-        currentVotes.clear()
         allVotedSignal = CompletableDeferred()
 
         val votingDeadline = System.currentTimeMillis() + room.settings.votingTimerSeconds * 1000L
@@ -987,7 +1088,7 @@ class RoomSession(
                 roundIndex = index,
                 players = players,
                 votingDeadlineEpochMillis = votingDeadline,
-                eligibleOwnerIds = if (room.settings.gameMode == GameMode.SPOTIFY_RECENT) {
+                eligibleOwnerIds = if (room.settings.gameMode.isAutomaticSpotifyMode) {
                     room.songPool.map { it.submitterId }.distinct()
                 } else {
                     emptyList()
@@ -997,10 +1098,11 @@ class RoomSession(
 
         val computerPlayers = room.players.filter { it.isComputer }
         if (computerPlayers.isNotEmpty()) {
-            val choices = if (room.settings.gameMode == GameMode.SPOTIFY_RECENT) {
+            val choices = if (room.settings.gameMode.isAutomaticSpotifyMode) {
                 room.songPool.map { it.submitterId }.distinct()
             } else {
-                room.players.map { it.id } + GameConstants.DECOY_ID
+                room.players.map { it.id } +
+                    (if (room.players.size == 2) listOf(GameConstants.DECOY_ID) else emptyList())
             }
             computerPlayers.forEach { computer ->
                 currentVotes[computer.id] = choices.randomOrNull() ?: ""
@@ -1010,6 +1112,10 @@ class RoomSession(
             broadcastAll(VoteCountUpdated(votedCount = currentVotes.size, totalCount = totalVotes))
             if (currentVotes.size >= totalVotes) allVotedSignal.complete(Unit)
         }
+
+        val totalVotes = room.players.count { it.connected }
+        broadcastAll(VoteCountUpdated(votedCount = currentVotes.size, totalCount = totalVotes))
+        if (currentVotes.size >= totalVotes) allVotedSignal.complete(Unit)
 
         // Wait for all votes OR timer
         withTimeoutOrNull(room.settings.votingTimerSeconds * 1000L) {
@@ -1034,7 +1140,7 @@ class RoomSession(
             song,
             finalVotes,
             room.players,
-            allowSubmitterSelfGuess = room.settings.gameMode == GameMode.SPOTIFY_RECENT
+            allowSubmitterSelfGuess = room.settings.gameMode.isAutomaticSpotifyMode
         )
 
         mutex.withLock {
@@ -1089,6 +1195,7 @@ class RoomSession(
         queues.forEach { it.close() }
         // Delete from Redis immediately
         repository.delete(room.joinCode)
+        chatRepository.delete(room.joinCode)
         runtimeRepository.delete(room.joinCode)
         disconnectJobs.values.forEach { it.cancel() }
         disconnectJobs.clear()
@@ -1128,6 +1235,7 @@ class RoomSession(
 
     private fun persist() {
         repository.save(room)
+        chatRepository.refreshTtl(room.joinCode)
     }
 
     private fun persistRuntime(value: RoomRuntime) {

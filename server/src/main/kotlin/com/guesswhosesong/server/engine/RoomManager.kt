@@ -2,6 +2,7 @@ package com.guesswhosesong.server.engine
 
 import com.guesswhosesong.server.redis.RedisClient
 import com.guesswhosesong.server.redis.RoomRepository
+import com.guesswhosesong.server.redis.RoomChatRepository
 import com.guesswhosesong.server.music.MusicService
 import com.guesswhosesong.shared.models.*
 import com.guesswhosesong.server.spotify.SpotifyClient
@@ -22,6 +23,7 @@ class RoomManager(
     private val logger = LoggerFactory.getLogger(RoomManager::class.java)
     private val sessions = ConcurrentHashMap<String, RoomSession>()
     private val repository = RoomRepository(redisClient)
+    private val chatRepository = RoomChatRepository(redisClient)
     private val random = SecureRandom()
 
     /**
@@ -72,6 +74,7 @@ class RoomManager(
     fun deleteRoom(joinCode: String) {
         sessions.remove(joinCode)
         repository.delete(joinCode)
+        chatRepository.delete(joinCode)
         logger.info("Room deleted: $joinCode")
     }
 

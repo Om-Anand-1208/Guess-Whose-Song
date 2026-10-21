@@ -117,11 +117,22 @@ class JoinViewModel @Inject constructor(
             _uiState.update { it.copy(error = "Enter a name with 1 to 24 characters") }
             return false
         }
-        val normalized = AvatarCustomization.normalize(customization, _uiState.value.avatarId)
-        saveAvatarCustomization(normalized)
+        val current = _uiState.value
+        val normalized = AvatarCustomization.normalize(customization, current.avatarId)
+        val updatedCustomization = if (name != current.displayName.trim()) {
+            normalized.copy(colorId = PlayerIdentityDefaults.randomInitialColorId(excludingColorId = normalized.colorId))
+        } else {
+            normalized
+        }
+        saveAvatarCustomization(updatedCustomization)
         avatarPreferences.edit().putString("displayName", name).apply()
         _uiState.update {
-            it.copy(displayName = name, avatarId = normalized.shapeId, avatarCustomization = normalized, error = null)
+            it.copy(
+                displayName = name,
+                avatarId = updatedCustomization.shapeId,
+                avatarCustomization = updatedCustomization,
+                error = null
+            )
         }
         return true
     }
@@ -175,12 +186,12 @@ class JoinViewModel @Inject constructor(
                     onSuccess = { response ->
                         _events.emit(JoinEvent.NavigateToLobby(response.joinCode, name, customization))
                     },
-                    onFailure = { e ->
-                        _uiState.update { it.copy(error = "Failed to create room: ${e.message}") }
+                    onFailure = { _ ->
+                        _uiState.update { it.copy(error = "Can't connect to server") }
                     }
                 )
-            } catch (e: Exception) {
-                _uiState.update { it.copy(error = "Error: ${e.message}") }
+            } catch (_: Exception) {
+                _uiState.update { it.copy(error = "Can't connect to server") }
             } finally {
                 _uiState.update { it.copy(isLoading = false) }
             }
@@ -204,8 +215,8 @@ class JoinViewModel @Inject constructor(
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
                 _events.emit(JoinEvent.NavigateToLobby(code, name, customization))
-            } catch (e: Exception) {
-                _uiState.update { it.copy(error = "Error: ${e.message}") }
+            } catch (_: Exception) {
+                _uiState.update { it.copy(error = "Can't connect to server") }
             } finally {
                 _uiState.update { it.copy(isLoading = false) }
             }
@@ -217,7 +228,7 @@ class JoinViewModel @Inject constructor(
     fun linkGoogle(data: Intent) {
         viewModelScope.launch {
             _uiState.update { it.copy(accountStatus = null, accountStatusIsError = false) }
-            when (val result = playerIdentityManager.linkGoogle(data)) {
+            when (val result = playerIdentityManager.linkGoogle(data, signInOnCollision = true)) {
                 AccountLinkResult.Linked -> _uiState.update {
                     it.copy(isAccountLinked = true, accountStatus = null, accountStatusIsError = false)
                 }
@@ -225,7 +236,7 @@ class JoinViewModel @Inject constructor(
                     it.copy(isAccountLinked = true, accountStatus = null, accountStatusIsError = false)
                 }
                 AccountLinkResult.Collision -> _uiState.update {
-                    it.copy(accountStatus = "That Google account belongs to another player. Log in to the existing account below.", accountStatusIsError = true)
+                    it.copy(accountStatus = "That Google account belongs to another player. Try connecting it again.", accountStatusIsError = true)
                 }
                 is AccountLinkResult.Failed -> _uiState.update {
                     it.copy(
@@ -233,27 +244,6 @@ class JoinViewModel @Inject constructor(
                         accountStatus = result.message,
                         accountStatusIsError = true
                     )
-                }
-            }
-        }
-    }
-
-    fun recoverWithGoogle(data: Intent) {
-        viewModelScope.launch {
-            _uiState.update { it.copy(accountStatus = null, accountStatusIsError = false) }
-            when (val result = playerIdentityManager.signInWithGoogle(data)) {
-                AccountLinkResult.SignedIn -> _uiState.update {
-                    it.copy(isAccountLinked = true, accountStatus = null, accountStatusIsError = false)
-                }
-                else -> {
-                    val message = (result as? AccountLinkResult.Failed)?.message ?: "Google sign-in failed"
-                    _uiState.update {
-                        it.copy(
-                            isAccountLinked = playerIdentityManager.isAccountLinked(),
-                            accountStatus = message,
-                            accountStatusIsError = true
-                        )
-                    }
                 }
             }
         }
@@ -274,8 +264,14 @@ class JoinViewModel @Inject constructor(
             ),
             shapeId
         )
-        saveAvatarCustomization(normalized)
-        return normalized
+        val profileColor = if (avatarPreferences.getBoolean("initialColorAssigned", false)) {
+            normalized
+        } else {
+            normalized.copy(colorId = PlayerIdentityDefaults.randomInitialColorId())
+        }
+        saveAvatarCustomization(profileColor)
+        avatarPreferences.edit().putBoolean("initialColorAssigned", true).apply()
+        return profileColor
     }
 
     private fun loadPlayerName(): String = avatarPreferences.getString("displayName", null)

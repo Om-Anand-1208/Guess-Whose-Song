@@ -16,42 +16,39 @@ import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
-import com.guesswhosesong.app.ui.components.EmptyAvatarBadge
-import com.guesswhosesong.app.ui.components.AppearanceToggleButton
-import com.guesswhosesong.app.ui.components.GuessWhoseSongWordmark
-import com.guesswhosesong.app.ui.theme.GwsPalette
+import com.guesswhosesong.app.ui.components.PlayerInitialBadge
 import com.guesswhosesong.app.ui.theme.PostJoinPalette
 import com.guesswhosesong.shared.models.Player
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ResultsScreen(
     viewModel: ResultsViewModel = hiltViewModel(),
+    onNavigateToLobby: (LobbyDestination) -> Unit,
     onNavigateToSubmission: () -> Unit,
     onNavigateToJoin: () -> Unit
 ) {
     val uiState by viewModel.uiState.collectAsState()
+
+    LaunchedEffect(uiState.lobbyDestination) {
+        uiState.lobbyDestination?.let(onNavigateToLobby)
+    }
 
     LaunchedEffect(Unit) {
         viewModel.events.collect { event ->
@@ -63,26 +60,14 @@ fun ResultsScreen(
     }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        topBar = {
-            TopAppBar(
-                title = {
-                    GuessWhoseSongWordmark(
-                        fontSize = 18.sp,
-                        lineHeight = 20.sp
-                    )
-                },
-                actions = { AppearanceToggleButton() },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
-            )
-        }
+        containerColor = MaterialTheme.colorScheme.background
     ) { padding ->
         Column(
             modifier = Modifier.fillMaxSize().padding(padding).navigationBarsPadding().padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
             Text(
-                "Final scores 🏆",
+                "Final scores",
                 modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
                 style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Black,
@@ -102,8 +87,9 @@ fun ResultsScreen(
                         )
                     }
                 }
-                itemsIndexed(uiState.players, key = { _, player -> player.id }) { index, player ->
-                    ScoreboardItem(rank = index + 1, player = player, isSelf = player.id == uiState.selfPlayerId)
+                itemsIndexed(uiState.players, key = { _, player -> player.id }) { _, player ->
+                    val rank = uiState.players.indexOfFirst { it.score == player.score } + 1
+                    ScoreboardItem(rank = rank, player = player, isSelf = player.id == uiState.selfPlayerId)
                 }
             }
             Spacer(Modifier.height(16.dp))
@@ -123,7 +109,7 @@ fun ResultsActions(isHost: Boolean, onPlayAgain: () -> Unit, onEndGame: () -> Un
             onClick = onPlayAgain,
             colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondary, contentColor = MaterialTheme.colorScheme.onSecondary),
             modifier = Modifier.fillMaxWidth().height(52.dp)
-        ) { Text("Play Again 🎵", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        ) { Text("Play Again", fontSize = 16.sp, fontWeight = FontWeight.Bold) }
         Spacer(Modifier.height(8.dp))
         OutlinedButton(onClick = onEndGame, modifier = Modifier.fillMaxWidth().height(52.dp)) {
             Text("End Game")
@@ -150,11 +136,13 @@ fun ScoreboardItem(rank: Int, player: Player, isSelf: Boolean) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
-                if (rank <= 3) listOf("🥇", "🥈", "🥉")[rank - 1] else "#$rank",
-                modifier = Modifier.width(40.dp),
-                fontSize = 20.sp
+                ordinalRank(rank),
+                modifier = Modifier.width(42.dp),
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
             )
-            EmptyAvatarBadge(player.avatarId, size = 38.dp, selected = isSelf, customization = player.avatarCustomization)
+            PlayerInitialBadge(player.displayName, player.avatarCustomization, size = 38.dp)
             Spacer(Modifier.width(10.dp))
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -171,4 +159,14 @@ fun ScoreboardItem(rank: Int, player: Player, isSelf: Boolean) {
             }
         }
     }
+}
+
+private fun ordinalRank(rank: Int): String {
+    val suffix = if (rank % 100 in 11..13) "th" else when (rank % 10) {
+        1 -> "st"
+        2 -> "nd"
+        3 -> "rd"
+        else -> "th"
+    }
+    return "$rank$suffix"
 }

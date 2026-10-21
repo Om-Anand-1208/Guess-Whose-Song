@@ -40,7 +40,7 @@ dependencies {
     implementation(libs.ktor.server.call.logging)
     implementation(libs.ktor.serialization.kotlinx.json)
 
-    // Ktor client (for Deezer + Spotify calls)
+    // Ktor client (for iTunes + Spotify calls)
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.content.negotiation)

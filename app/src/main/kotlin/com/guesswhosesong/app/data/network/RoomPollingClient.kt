@@ -95,7 +95,7 @@ class RoomPollingClient(
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (error: Exception) {
-                    _lastError.value = error.message ?: "Room connection failed"
+                    _lastError.value = "Can't connect to server"
                     if (error is HttpStatusException && error.status in setOf(401, 403, 409)) {
                         intentionallyDisconnected = true
                         _connectionState.value = ConnectionState.DISCONNECTED
@@ -110,8 +110,8 @@ class RoomPollingClient(
         }
     }
 
-    suspend fun send(message: ClientMessage) {
-        val code = currentJoinCode ?: return
+    suspend fun send(message: ClientMessage): Boolean {
+        val code = currentJoinCode ?: return false
         val response = httpClient.post("$baseUrl/rooms/$code/actions") {
             bearerAuth(identityManager.getIdToken())
             contentType(ContentType.Application.Json)
@@ -120,6 +120,7 @@ class RoomPollingClient(
         if (!response.status.isSuccess()) {
             throw HttpStatusException(response.status.value, response.bodyAsText())
         }
+        return true
     }
 
     fun disconnect() {

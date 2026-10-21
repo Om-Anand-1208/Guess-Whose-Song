@@ -3,8 +3,11 @@ package com.guesswhosesong.app.data.player
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import com.google.android.gms.auth.api.signin.GoogleSignIn
 import com.google.android.gms.auth.api.signin.GoogleSignInOptions
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.CommonStatusCodes
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthUserCollisionException
 import com.google.firebase.auth.FirebaseUser
@@ -66,16 +69,33 @@ class PlayerIdentityManager @Inject constructor(
         return GoogleSignIn.getClient(activity, options).signInIntent
     }
 
-    /** Links Google to the current anonymous Firebase user; it never merges users. */
-    suspend fun linkGoogle(data: Intent): AccountLinkResult {
+    /** Links Google to this player, or signs into the matching player on standalone settings. */
+    suspend fun linkGoogle(data: Intent, signInOnCollision: Boolean = false): AccountLinkResult {
         return try {
             val account = GoogleSignIn.getSignedInAccountFromIntent(data).await()
             val idToken = account.idToken ?: return AccountLinkResult.Failed("Google did not return an ID token")
+            if (isAccountLinked()) return AccountLinkResult.Failed("Google is already connected to this player")
+            val credential = GoogleAuthProvider.getCredential(idToken, null)
             val user = ensureSignedIn()
-            user.linkWithCredential(GoogleAuthProvider.getCredential(idToken, null)).await()
-            AccountLinkResult.Linked
+            try {
+                user.linkWithCredential(credential).await()
+                AccountLinkResult.Linked
+            } catch (_: FirebaseAuthUserCollisionException) {
+                if (!signInOnCollision) return AccountLinkResult.Collision
+                auth.signInWithCredential(credential).await()
+                AccountLinkResult.SignedIn
+            }
         } catch (_: FirebaseAuthUserCollisionException) {
             AccountLinkResult.Collision
+        } catch (error: ApiException) {
+            Log.e("PlayerIdentityManager", "Google sign-in failed with status ${error.statusCode}", error)
+            AccountLinkResult.Failed(
+                if (error.statusCode == CommonStatusCodes.DEVELOPER_ERROR) {
+                    "Google sign-in is not configured for this app build."
+                } else {
+                    "Google sign-in failed. Please try again."
+                }
+            )
         } catch (e: Exception) {
             AccountLinkResult.Failed(e.message ?: "Google linking failed")
         }
@@ -86,26 +106,4 @@ class PlayerIdentityManager @Inject constructor(
         user.unlink(GoogleAuthProvider.PROVIDER_ID).await()
     }
 
-    /** Signs in only when the Google credential already belongs to another Firebase player. */
-    suspend fun signInWithGoogle(data: Intent): AccountLinkResult {
-        return try {
-            val account = GoogleSignIn.getSignedInAccountFromIntent(data).await()
-            val idToken = account.idToken ?: return AccountLinkResult.Failed("Google did not return an ID token")
-            val credential = GoogleAuthProvider.getCredential(idToken, null)
-            if (isAccountLinked()) {
-                return AccountLinkResult.Failed("Google is already connected to this player")
-            }
-            val currentUser = ensureSignedIn()
-            try {
-                currentUser.linkWithCredential(credential).await()
-                currentUser.unlink(GoogleAuthProvider.PROVIDER_ID).await()
-                AccountLinkResult.Failed("No existing player is linked to this Google account")
-            } catch (_: FirebaseAuthUserCollisionException) {
-                auth.signInWithCredential(credential).await()
-                AccountLinkResult.SignedIn
-            }
-        } catch (e: Exception) {
-            AccountLinkResult.Failed(e.message ?: "Google sign-in failed")
-        }
-    }
 }

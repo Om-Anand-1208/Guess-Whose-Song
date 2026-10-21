@@ -11,11 +11,29 @@ import kotlinx.serialization.decodeFromString
 class SerializationTest {
 
     @Test
+    fun `room chat wire message round trips`() {
+        val message = RoomChatMessage("msg-1", "player-1", "Alice", "Hello room", 1234L)
+        val json = GWSJson.encodeToString(RoomChatMessage.serializer(), message)
+        assertEquals(message, GWSJson.decodeFromString<RoomChatMessage>(json))
+    }
+
+    @Test
     fun `round count defaults old saved settings to ten`() {
         val decoded = GWSJson.decodeFromString<RoomSettings>("""{"roundLengthPreset":"STANDARD"}""")
         assertEquals(10, decoded.roundCount)
         assertEquals(10, RoomSettings().roundCount)
         assertEquals(GameMode.MANUAL, decoded.gameMode)
+    }
+
+    @Test
+    fun `top tracks mode survives room settings serialization`() {
+        val settings = RoomSettings(gameMode = GameMode.SPOTIFY_TOP)
+        val decoded = GWSJson.decodeFromString<RoomSettings>(GWSJson.encodeToString(RoomSettings.serializer(), settings))
+
+        assertEquals(GameMode.SPOTIFY_TOP, decoded.gameMode)
+        assertTrue(decoded.gameMode.isAutomaticSpotifyMode)
+        assertTrue(GameMode.SPOTIFY_RECENT.isAutomaticSpotifyMode)
+        assertFalse(GameMode.MANUAL.isAutomaticSpotifyMode)
     }
 
     @Test
@@ -28,10 +46,13 @@ class SerializationTest {
 
     @Test
     fun `round count rules bound settings and song submissions`() {
-        assertTrue(RoundCountRules.isValid(2, 2))
+        assertFalse(RoundCountRules.isValid(2, 2))
+        assertTrue(RoundCountRules.isValid(3, 2))
+        assertEquals(3, RoundCountRules.minimumForPlayerCount(2))
         assertTrue(RoundCountRules.isValid(20, 20))
+        assertTrue(RoundCountRules.isValid(30, 10))
         assertFalse(RoundCountRules.isValid(1, 2))
-        assertFalse(RoundCountRules.isValid(21, 2))
+        assertFalse(RoundCountRules.isValid(31, 2))
         assertFalse(RoundCountRules.isValid(4, 5))
         assertEquals(4, RoundCountRules.maxSongsPerPlayer(10, 3))
         assertEquals(1, RoundCountRules.maxSongsPerPlayer(10, 20))
@@ -61,12 +82,17 @@ class SerializationTest {
     }
 
     @Test
+    fun `skip preview round trips with its round index`() {
+        val message: ClientMessage = SkipPreview(roundIndex = 4)
+        assertEquals(message, message.toJson().toClientMessage())
+    }
+
+    @Test
     fun testRoundTripRoundRevealed() {
         val song = SongEntry(
             songId = "123",
             title = "Blinding Lights",
             artist = "The Weeknd",
-            deezerPreviewUrl = "https://example.com/preview.mp3",
             previewUrl = "https://example.com/preview.mp3",
             submitterId = "player1"
         )

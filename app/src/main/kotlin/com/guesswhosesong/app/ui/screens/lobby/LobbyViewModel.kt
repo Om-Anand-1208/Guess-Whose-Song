@@ -3,6 +3,7 @@ package com.guesswhosesong.app.ui.screens.lobby
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 import com.guesswhosesong.app.data.player.AccountLinkResult
 import com.guesswhosesong.app.data.player.PlayerIdentityManager
 import androidx.lifecycle.ViewModel
@@ -14,6 +15,7 @@ import com.guesswhosesong.shared.dto.*
 import com.guesswhosesong.shared.models.*
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -69,8 +71,8 @@ class LobbyViewModel @Inject constructor(
                     avatarCustomization
                 )
                 observeMessages()
-            } catch (e: Exception) {
-                _uiState.update { it.copy(error = "Connection failed: ${e.message}") }
+            } catch (_: Exception) {
+                _uiState.update { it.copy(error = "Can't connect to server") }
             }
         }
     }
@@ -126,10 +128,18 @@ class LobbyViewModel @Inject constructor(
             }
         }
         viewModelScope.launch {
-            spotifyAuthManager.isConnected.collect { connected ->
-                if (connected) {
-                    _uiState.update { it.copy(isSpotifyConnected = true) }
-                    gameRepository.refreshSpotify()
+            combine(spotifyAuthManager.isConnected, gameRepository.connectionState) { spotifyConnected, roomState ->
+                spotifyConnected to roomState
+            }.collect { (spotifyConnected, roomState) ->
+                _uiState.update { it.copy(isSpotifyConnected = spotifyConnected) }
+                if (spotifyConnected && roomState == RoomPollingClient.ConnectionState.CONNECTED) {
+                    try {
+                        gameRepository.refreshSpotify()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        Log.w("LobbyViewModel", "Spotify refresh failed", error)
+                    }
                 }
             }
         }
@@ -141,6 +151,10 @@ class LobbyViewModel @Inject constructor(
 
     fun disconnectSpotify() {
         spotifyAuthManager.disconnect()
+    }
+
+    fun refreshSpotifyStatus() {
+        spotifyAuthManager.refreshStatus()
     }
 
     fun disconnectGoogle() {
@@ -192,34 +206,53 @@ class LobbyViewModel @Inject constructor(
         }
     }
 
-    fun updatePlayerProfile(displayName: String, avatarCustomization: AvatarCustomization): Boolean {
+    suspend fun updatePlayerProfile(displayName: String, avatarCustomization: AvatarCustomization): Boolean {
         val name = displayName.trim()
         if (name.isBlank() || name.length > 24 || name.any(Char::isISOControl)) {
             _uiState.update { it.copy(error = "Enter a name with 1 to 24 characters") }
             return false
         }
+        val current = _uiState.value
+        val currentPlayer = current.room?.players?.firstOrNull { it.id == current.selfPlayerId }
         val normalized = AvatarCustomization.normalize(avatarCustomization, avatarCustomization.shapeId)
-        playerPreferences.edit()
-            .putString("displayName", name)
-            .putString("shapeId", normalized.shapeId)
-            .putString("colorId", normalized.colorId)
-            .putString("eyesId", normalized.eyesId)
-            .putString("mouthId", normalized.mouthId)
-            .putString("accessoryId", normalized.accessoryId)
-            .apply()
-        viewModelScope.launch {
-            runCatching { gameRepository.updatePlayerProfile(name, normalized) }
-                .onFailure { _uiState.update { current -> current.copy(error = it.message ?: "Could not update your player") } }
+        val updatedCustomization = if (name != currentPlayer?.displayName?.trim()) {
+            normalized.copy(colorId = PlayerIdentityDefaults.randomInitialColorId(excludingColorId = normalized.colorId))
+        } else {
+            normalized
         }
-        return true
+        return try {
+            if (!gameRepository.updatePlayerProfile(name, updatedCustomization)) {
+                _uiState.update { it.copy(error = "Room connection is unavailable") }
+                false
+            } else {
+                playerPreferences.edit()
+                    .putString("displayName", name)
+                    .putString("shapeId", updatedCustomization.shapeId)
+                    .putString("colorId", updatedCustomization.colorId)
+                    .putString("eyesId", updatedCustomization.eyesId)
+                    .putString("mouthId", updatedCustomization.mouthId)
+                    .putString("accessoryId", updatedCustomization.accessoryId)
+                    .apply()
+                _uiState.update { state ->
+                    val room = state.room?.copy(players = state.room.players.map { player ->
+                        if (player.id == state.selfPlayerId) player.copy(
+                            displayName = name,
+                            avatarId = updatedCustomization.shapeId,
+                            avatarCustomization = updatedCustomization
+                        ) else player
+                    })
+                    state.copy(room = room, error = null)
+                }
+                true
+            }
+        } catch (error: Exception) {
+            _uiState.update { it.copy(error = error.message ?: "Could not update your player") }
+            false
+        }
     }
 
     fun startGame() {
         viewModelScope.launch { gameRepository.startGame() }
-    }
-
-    fun addComputerPlayer() {
-        viewModelScope.launch { gameRepository.addComputerPlayer() }
     }
 
     fun updateSettings(settings: RoomSettings) {

@@ -1,16 +1,17 @@
 package com.guesswhosesong.server.music
 
-import com.guesswhosesong.server.deezer.DeezerClient
 import com.guesswhosesong.server.itunes.ItunesClient
 import com.guesswhosesong.shared.models.SongEntry
+import com.guesswhosesong.shared.models.SpotifySuggestion
 import com.guesswhosesong.shared.models.TrackSearchResult
 
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.sync.withPermit
 
-/** Prefer Deezer for tracks and previews, with iTunes as the fallback catalog. */
+internal data class ResolvedSong(val song: SongEntry, val genreName: String)
+
+/** Uses iTunes as the catalog and source for track previews and artwork. */
 class MusicService(
-    private val deezerClient: MusicCatalogClient = DeezerClient(),
     private val itunesClient: MusicCatalogClient = ItunesClient()
 ) {
 
@@ -29,6 +30,7 @@ class MusicService(
             val cacheKey = "${query.trim().lowercase()}_$limit"
             searchCache[cacheKey]?.let { return@withPermit it }
 
+            // A catalog failure throws, so only real search responses enter the cache.
             searchCatalog(query, limit).also { searchCache[cacheKey] = it }
         }
     }
@@ -67,10 +69,6 @@ class MusicService(
             val artistKey = normalize(artist)
             val artistResults = searchCatalog(artist, maxOf(limit * 6, 20))
             val exactArtistResults = artistResults.filter { normalize(it.artist) == artistKey }
-                .ifEmpty {
-                    itunesClient.search(artist, maxOf(limit * 6, 20))
-                        .filter { normalize(it.artist) == artistKey }
-                }
             exactArtistResults
                 .asSequence()
                 .filterNot { trackKey(it.title, it.artist) in existingTracks }
@@ -81,45 +79,107 @@ class MusicService(
         candidates.distinctBy { trackKey(it.title, it.artist) }.shuffled().take(limit)
     }
 
+    /** Find one different-artist, playable candidate for each submitted song's iTunes genre. */
+    internal suspend fun getGenreMatchedTracks(
+        submittedSongs: List<SongEntry>,
+        seedGenres: List<String>
+    ): List<TrackSearchResult> {
+        val genres = seedGenres.map(String::trim).filter(String::isNotBlank)
+        if (genres.isEmpty()) return emptyList()
+
+        val usedTrackIds = submittedSongs.mapTo(mutableSetOf()) { it.songId }
+        val usedTrackKeys = submittedSongs.mapTo(mutableSetOf()) { trackKey(it.title, it.artist) }
+        val submittedArtists = submittedSongs.mapTo(mutableSetOf()) { normalize(it.artist) }
+        val candidatesByGenre = mutableMapOf<String, List<TrackSearchResult>>()
+
+        for (genre in genres.distinctBy(::normalize)) {
+            val genreKey = normalize(genre)
+            val searchTerm = genre.substringBefore('/').trim()
+            fun List<TrackSearchResult>.matchingGenre() = filter { track ->
+                normalize(track.genreName) == genreKey &&
+                    track.previewUrl.isNotBlank() &&
+                    normalize(track.artist) !in submittedArtists
+            }
+            var candidates = search(searchTerm, 100).matchingGenre()
+            if (candidates.isEmpty() && searchTerm != genre) {
+                candidates = search(genre, 100).matchingGenre()
+            }
+            candidatesByGenre[genreKey] = candidates.shuffled()
+        }
+
+        val selected = mutableListOf<TrackSearchResult>()
+        for (genre in genres.shuffled()) {
+            val next = candidatesByGenre[normalize(genre)].orEmpty().firstOrNull { track ->
+                track.id !in usedTrackIds && trackKey(track.title, track.artist) !in usedTrackKeys
+            } ?: continue
+            selected += next
+            usedTrackIds += next.id
+            usedTrackKeys += trackKey(next.title, next.artist)
+        }
+        return selected
+    }
+
     /**
      * Resolve a [SongEntry] that already has title+artist, filling in the previewUrl.
      * Returns null if resolution fails (caller should reject the song).
      */
-    suspend fun resolveEntry(entry: SongEntry): SongEntry? = externalRequestLimit.withPermit {
+    suspend fun resolveEntry(entry: SongEntry): SongEntry? = resolveEntryWithGenre(entry)?.song
+
+    /** Automatic Spotify modes require an exact title, artist, and album match in iTunes. */
+    internal suspend fun resolveSpotifyTrackWithGenre(track: SpotifySuggestion): ResolvedSong? =
+        externalRequestLimit.withPermit {
+            if (track.title.isBlank() || track.artist.isBlank() || track.albumTitle.isBlank()) {
+                return@withPermit null
+            }
+            val results = try {
+                itunesClient.search("${track.title} ${track.artist}", 50)
+            } catch (_: MusicCatalogUnavailableException) {
+                return@withPermit null
+            }
+            val match = results.firstOrNull { result ->
+                result.previewUrl.isNotBlank() &&
+                    sameMetadata(result.title, track.title) &&
+                    sameMetadata(result.artist, track.artist) &&
+                    sameMetadata(result.albumTitle, track.albumTitle)
+            } ?: return@withPermit null
+
+            ResolvedSong(
+                song = SongEntry(
+                    songId = match.id,
+                    title = match.title,
+                    artist = match.artist,
+                    albumArtUrl = track.albumArtUrl.ifBlank { match.albumArtUrl },
+                    previewUrl = match.previewUrl
+                ),
+                genreName = match.genreName
+            )
+        }
+
+    internal suspend fun resolveEntryWithGenre(entry: SongEntry): ResolvedSong? = externalRequestLimit.withPermit {
         val query = "${entry.title.trim()} ${entry.artist.trim()}".trim()
 
-        val deezerMatch = findBestMatch(deezerClient.search(query, 10), query)
-        val itunesMatch = if (deezerMatch == null || deezerMatch.albumArtUrl.isBlank()) {
-            findBestMatch(itunesClient.search(query, 10), query)
-        } else null
-        val bestMatch = deezerMatch ?: itunesMatch ?: return@withPermit null
+        val results = try {
+            itunesClient.search(query, 10)
+        } catch (unavailable: MusicCatalogUnavailableException) {
+            return@withPermit null
+        }
+        val bestMatch = findBestMatch(results, query) ?: return@withPermit null
 
-        entry.copy(
-            songId = bestMatch.id,
-            title = bestMatch.title,
-            artist = bestMatch.artist,
-            albumArtUrl = entry.albumArtUrl.takeIf { it.isNotBlank() }
-                ?: deezerMatch?.albumArtUrl?.takeIf { it.isNotBlank() }
-                ?: itunesMatch?.albumArtUrl.orEmpty(),
-            previewUrl = bestMatch.previewUrl
+        ResolvedSong(
+            song = entry.copy(
+                songId = bestMatch.id,
+                title = bestMatch.title,
+                artist = bestMatch.artist,
+                albumArtUrl = entry.albumArtUrl.takeIf { it.isNotBlank() }
+                    ?: bestMatch.albumArtUrl,
+                previewUrl = bestMatch.previewUrl
+            ),
+            genreName = bestMatch.genreName
         )
     }
 
-    private suspend fun searchCatalog(query: String, limit: Int): List<TrackSearchResult> {
-        val deezerResults = deezerClient.search(query, limit)
-        if (deezerResults.isEmpty()) return itunesClient.search(query, limit)
-        if (deezerResults.none { it.albumArtUrl.isBlank() }) return deezerResults
-
-        val itunesResults = itunesClient.search(query, limit.coerceAtLeast(deezerResults.size))
-        return deezerResults.map { deezerTrack ->
-            if (deezerTrack.albumArtUrl.isNotBlank()) {
-                deezerTrack
-            } else {
-                val match = findBestMatch(itunesResults, "${deezerTrack.title} ${deezerTrack.artist}")
-                deezerTrack.copy(albumArtUrl = match?.albumArtUrl?.takeIf { it.isNotBlank() }.orEmpty())
-            }
-        }
-    }
+    private suspend fun searchCatalog(query: String, limit: Int): List<TrackSearchResult> =
+        itunesClient.search(query, limit)
 
     private fun trackKey(title: String, artist: String): String =
         "${normalize(title)}|${normalize(artist)}"
@@ -145,6 +205,10 @@ class MusicService(
     private fun normalize(s: String): String =
         s.lowercase().replace(Regex("[^\\p{L}\\p{N} ]"), "").trim()
 
+    private fun sameMetadata(first: String, second: String): Boolean =
+        first.isNotBlank() && second.isNotBlank() &&
+            normalize(first).replace(" ", "") == normalize(second).replace(" ", "")
+
     /** Standard iterative Levenshtein distance */
     private fun levenshtein(a: String, b: String): Int {
         val dp = Array(a.length + 1) { IntArray(b.length + 1) }
@@ -164,7 +228,6 @@ class MusicService(
     }
 
     fun close() {
-        deezerClient.close()
         itunesClient.close()
     }
 }

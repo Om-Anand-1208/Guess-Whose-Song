@@ -3,6 +3,7 @@ package com.guesswhosesong.app.data.repository
 import com.guesswhosesong.app.data.network.RoomPollingClient
 import com.guesswhosesong.shared.dto.*
 import com.guesswhosesong.shared.models.Room
+import com.guesswhosesong.shared.models.RoomState
 import com.guesswhosesong.shared.models.RoomSettings
 import com.guesswhosesong.shared.models.SongEntry
 import com.guesswhosesong.shared.models.AvatarCustomization
@@ -64,18 +65,21 @@ class GameRepository(private val roomClient: RoomPollingClient) {
                     }
                     is RoomUpdated -> {
                         _currentRoom.value = message.room
-                        if (message.room.state == com.guesswhosesong.shared.models.RoomState.SUBMISSION) {
+                        if (message.room.state == RoomState.LOBBY || message.room.state == RoomState.SUBMISSION) {
                             _recentPlayedFailure.value = null
                             resetRoundState()
                             _mySubmittedSongs.value = emptyList()
                             _pendingSongs.value = emptyList()
+                            if (message.room.state == RoomState.LOBBY) _latestGameResults.value = null
                         }
                     }
-                    is ErrorMessage -> if (message.code == "RECENT_TRACKS_UNAVAILABLE") {
+                    is ErrorMessage -> if (message.code == "RECENT_TRACKS_UNAVAILABLE" ||
+                        message.code == "TOP_TRACKS_UNAVAILABLE") {
                         _recentPlayedFailure.value = message.message
                     }
                     is RoundPreviewStarted -> {
                         _currentRoundPreview.value = message
+                        _currentVotingStarted.value = null
                         _currentRoundRevealed.value = null
                     }
                     is VotingStarted -> {
@@ -133,7 +137,6 @@ class GameRepository(private val roomClient: RoomPollingClient) {
     }
 
     suspend fun startGame() = roomClient.send(StartGame())
-    suspend fun addComputerPlayer() = roomClient.send(AddComputerPlayer())
     suspend fun submitSong(song: SongEntry) {
         _mySubmittedSongs.value = listOf(song)
         roomClient.send(UpdatePendingSong(song = song))
@@ -145,7 +148,16 @@ class GameRepository(private val roomClient: RoomPollingClient) {
         roomClient.send(UpdatePendingSongs(songs = songs))
     }
     suspend fun lockSong() = roomClient.send(LockSong())
-    suspend fun castVote(guessedPlayerId: String) = roomClient.send(CastVote(guessedPlayerId = guessedPlayerId))
+    suspend fun skipPreview(roundIndex: Int) {
+        if (!roomClient.send(SkipPreview(roundIndex))) {
+            throw IllegalStateException("Room connection is unavailable")
+        }
+    }
+    suspend fun castVote(guessedPlayerId: String) {
+        if (!roomClient.send(CastVote(guessedPlayerId = guessedPlayerId))) {
+            throw IllegalStateException("Room connection is unavailable")
+        }
+    }
     suspend fun updateSettings(settings: RoomSettings) = roomClient.send(UpdateSettings(settings = settings))
     suspend fun updatePlayerProfile(displayName: String, avatarCustomization: AvatarCustomization) =
         roomClient.send(UpdatePlayerProfile(displayName = displayName, avatarCustomization = avatarCustomization))

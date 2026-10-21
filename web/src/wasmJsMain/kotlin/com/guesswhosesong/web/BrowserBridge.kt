@@ -170,7 +170,7 @@ internal suspend fun firebaseIdToken(forceRefresh: Boolean): String = suspendCan
 }
 
 private fun firebaseGoogleOperation(
-    mode: String,
+    allowExistingAccountLogin: Boolean,
     resolve: (String) -> Unit,
     reject: (String) -> Unit
 ) {
@@ -190,32 +190,17 @@ private fun firebaseGoogleOperation(
             const auth = window.firebase.auth();
             const provider = new window.firebase.auth.GoogleAuthProvider();
             const currentUser = auth.currentUser;
-            if ((mode === 'link' || mode === 'recover') && !currentUser) throw new Error('Firebase user is not available');
-            if (mode === 'recover' && (currentUser.providerData || []).some(profile => profile.providerId === 'google.com')) {
-                throw new Error('Google is already connected to this player');
-            }
-            let operation;
-            if (mode === 'link') {
-                operation = currentUser.linkWithPopup(provider);
-            } else if (mode === 'recover') {
-                operation = currentUser.linkWithPopup(provider).then(() =>
-                    currentUser.unlink(provider.providerId).then(
-                        () => Promise.reject(new Error('No existing player is linked to this Google account')),
-                        error => Promise.reject(new Error('No existing player was found. The temporary Google link could not be removed: ' + errorMessage(error)))
-                    )
-                ).catch(error => {
-                    if (![
-                        'auth/credential-already-in-use',
-                        'auth/email-already-in-use',
-                        'auth/account-exists-with-different-credential'
-                    ].includes(error && error.code)) throw error;
-                    const credential = window.firebase.auth.GoogleAuthProvider.credentialFromError(error);
-                    if (!credential) throw error;
-                    return auth.signInWithCredential(credential);
-                });
-            } else {
-                operation = auth.signInWithPopup(provider);
-            }
+            if (!currentUser) throw new Error('Firebase user is not available');
+            const operation = currentUser.linkWithPopup(provider).catch(error => {
+                if (!allowExistingAccountLogin || ![
+                    'auth/credential-already-in-use',
+                    'auth/email-already-in-use',
+                    'auth/account-exists-with-different-credential'
+                ].includes(error && error.code)) throw error;
+                const credential = window.firebase.auth.GoogleAuthProvider.credentialFromError(error);
+                if (!credential) throw error;
+                return auth.signInWithCredential(credential);
+            });
             operation.then(result => {
                 const user = result.user || result;
                 resolve(encodeUser(user));
@@ -226,11 +211,11 @@ private fun firebaseGoogleOperation(
     """)
 }
 
-internal fun firebaseLinkGoogle(resolve: (String) -> Unit, reject: (String) -> Unit) =
-    firebaseGoogleOperation("link", resolve, reject)
-
-internal fun firebaseRecoverGoogle(resolve: (String) -> Unit, reject: (String) -> Unit) =
-    firebaseGoogleOperation("recover", resolve, reject)
+internal fun firebaseLinkGoogle(
+    allowExistingAccountLogin: Boolean,
+    resolve: (String) -> Unit,
+    reject: (String) -> Unit
+) = firebaseGoogleOperation(allowExistingAccountLogin, resolve, reject)
 
 internal fun firebaseDisconnectGoogle(resolve: (String) -> Unit, reject: (String) -> Unit) {
     js("""

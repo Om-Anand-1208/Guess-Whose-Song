@@ -3,7 +3,6 @@ package com.guesswhosesong.web
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -64,18 +63,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.graphics.drawscope.DrawScope
-import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.geometry.CornerRadius
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.role
-import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.font.FontFamily
@@ -88,14 +79,15 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.ComposeViewport
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DarkMode
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material.icons.filled.WbSunny
 import coil3.compose.AsyncImage
 import coil3.compose.AsyncImagePainter
 import com.guesswhosesong.shared.models.Player
 import com.guesswhosesong.shared.models.RoomSettings
 import com.guesswhosesong.shared.models.AvatarCustomization
-import com.guesswhosesong.shared.models.AvatarCustomizationCatalog
 import com.guesswhosesong.shared.models.GameConstants
 import com.guesswhosesong.shared.models.GameMode
 import com.guesswhosesong.shared.models.RoundCountRules
@@ -111,11 +103,6 @@ import org.jetbrains.compose.resources.painterResource
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import org.w3c.dom.HTMLElement
-import kotlinx.browser.document
-import kotlin.math.cos
-import kotlin.math.PI
-import kotlin.math.sin
 
 private val WebColorScheme = lightColorScheme(
     primary = Color(0xFF2980B9),
@@ -200,7 +187,6 @@ private val LocalWebAppearanceControls = staticCompositionLocalOf {
 
 @OptIn(ExperimentalComposeUiApi::class)
 fun main() {
-    (document.getElementById("loader-container") as? HTMLElement)?.remove()
     ComposeViewport(viewportContainerId = "ComposeTarget") { WebApp() }
 }
 
@@ -252,18 +238,17 @@ private fun WebApp() {
                     )
                 ) {
                     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                        if (settingsPageOpen) {
-                            PlayerSettingsPage(
-                                store = store,
-                                state = state,
-                                status = authStatus,
-                                user = user,
-                                onBackToGame = { settingsPageOpen = false },
-                                appearanceMode = appearanceMode,
-                                onAppearanceChange = updateAppearance
-                            )
-                        } else {
+                        Box(Modifier.fillMaxSize()) {
                             JoinPage(store, state, onSettings = { settingsPageOpen = true })
+                            if (settingsPageOpen) {
+                                PlayerSettingsPage(
+                                    store = store,
+                                    state = state,
+                                    status = authStatus,
+                                    user = user,
+                                    onBackToGame = { settingsPageOpen = false }
+                                )
+                            }
                         }
                     }
                 }
@@ -277,29 +262,20 @@ private fun WebApp() {
                     )
                 ) {
                     Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                        when (state.page) {
-                            WebPage.JOIN -> Unit
-                            WebPage.LOBBY -> if (settingsPageOpen) {
+                        Box(Modifier.fillMaxSize()) {
+                            when (state.page) {
+                                WebPage.JOIN -> Unit
+                                WebPage.LOBBY -> LobbyPage(store, state, onSettings = { settingsPageOpen = true })
+                                WebPage.SUBMISSION -> SubmissionPage(store, state, onSettings = { settingsPageOpen = true })
+                                WebPage.GAME -> GamePage(store, state, onSettings = { settingsPageOpen = true })
+                                WebPage.RESULTS -> ResultsPage(store, state)
+                            }
+                            if (settingsPageOpen && state.page in setOf(WebPage.LOBBY, WebPage.SUBMISSION, WebPage.GAME)) {
                                 PlayerSettingsPage(
                                     store, state, authStatus, user,
-                                    onBackToGame = { settingsPageOpen = false },
-                                    appearanceMode = appearanceMode,
-                                    onAppearanceChange = updateAppearance
+                                    onBackToGame = { settingsPageOpen = false }
                                 )
-                            } else {
-                                LobbyPage(store, state, onSettings = { settingsPageOpen = true })
                             }
-                            WebPage.SUBMISSION -> if (settingsPageOpen) {
-                                PlayerSettingsPage(store, state, authStatus, user, { settingsPageOpen = false }, appearanceMode, updateAppearance)
-                            } else {
-                                SubmissionPage(store, state, onSettings = { settingsPageOpen = true })
-                            }
-                            WebPage.GAME -> if (settingsPageOpen) {
-                                PlayerSettingsPage(store, state, authStatus, user, { settingsPageOpen = false }, appearanceMode, updateAppearance)
-                            } else {
-                                GamePage(store, state, onSettings = { settingsPageOpen = true })
-                            }
-                            WebPage.RESULTS -> ResultsPage(store, state)
                         }
                     }
                 }
@@ -847,129 +823,110 @@ private fun PlayerSettingsPage(
     state: WebUiState,
     status: AuthStatus,
     user: WebUser?,
-    onBackToGame: () -> Unit,
-    appearanceMode: WebAppearanceMode = WebAppearanceMode.SYSTEM,
-    onAppearanceChange: (WebAppearanceMode) -> Unit = {}
+    onBackToGame: () -> Unit
 ) {
     var draftName by remember(state.displayName) { mutableStateOf(state.displayName) }
     var nameError by remember { mutableStateOf<String?>(null) }
-    var characterEditorOpen by remember { mutableStateOf(false) }
+    var nameSaved by remember { mutableStateOf(false) }
     val isGoogleLinked = user?.isGoogleLinked == true
     val isHost = state.room?.hostId == state.selfPlayerId
 
-    if (characterEditorOpen) {
-        CharacterEditorPage(
-            state = state,
-            status = status,
-            user = user,
-            onLinkGoogle = store::linkGoogle,
-            onBackToSettings = { characterEditorOpen = false },
-            onSaveCharacter = { customization ->
-                store.savePlayerProfile(state.displayName, customization)
-                characterEditorOpen = false
+    fun saveDraftName(): Boolean {
+        val cleanName = draftName.trim()
+        if (cleanName.isBlank() || cleanName.length > 24 || cleanName.any(Char::isISOControl)) {
+            nameError = "Enter a name with 1 to 24 characters"
+            nameSaved = false
+            return false
+        }
+        if (cleanName == state.displayName.trim()) {
+            nameError = null
+            return true
+        }
+        store.savePlayerProfile(cleanName, state.avatarCustomization)
+        nameError = null
+        nameSaved = true
+        return true
+    }
+
+    LaunchedEffect(draftName, state.avatarCustomization) {
+        val cleanName = draftName.trim()
+        if (cleanName.isBlank() || cleanName.length > 24 || cleanName.any(Char::isISOControl)) {
+            nameError = "Enter a name with 1 to 24 characters"
+            nameSaved = false
+            return@LaunchedEffect
+        }
+        if (cleanName == state.displayName.trim()) {
+            nameError = null
+            return@LaunchedEffect
+        }
+        delay(450)
+        saveDraftName()
+    }
+
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.52f))
+            .clickable { },
+        contentAlignment = Alignment.Center
+    ) {
+        val compact = maxWidth < 520.dp || maxHeight < 680.dp
+        val popupMaxHeight = (maxHeight * 0.86f).coerceAtMost(720.dp)
+        Surface(
+            modifier = Modifier.fillMaxWidth().widthIn(max = 600.dp)
+                .heightIn(max = popupMaxHeight)
+                .padding(horizontal = 16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shape = RoundedCornerShape(28.dp),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+            shadowElevation = 20.dp
+        ) {
+          Column(
+            modifier = Modifier.fillMaxWidth()
+                .heightIn(max = popupMaxHeight)
+                .verticalScroll(rememberScrollState())
+                .padding(if (compact) 14.dp else 20.dp),
+            verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 16.dp)
+          ) {
+            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    "Player settings",
+                    modifier = Modifier.weight(1f),
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+                TextButton(onClick = { saveDraftName(); onBackToGame() }) { Text("Done") }
             }
-        )
-    } else {
-        FrontPageFrame(
-            state,
-            isSavePlayer = true,
-            onHeaderAction = onBackToGame,
-            wrapContent = false,
-            footer = {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedButton(onClick = onBackToGame, modifier = Modifier.weight(1f).height(48.dp)) { Text("Cancel") }
-                    Button(
-                        onClick = {
-                            val cleanName = draftName.trim()
-                            if (cleanName.isBlank() || cleanName.length > 24 || cleanName.any(Char::isISOControl)) {
-                                nameError = "Enter a name with 1 to 24 characters"
-                            } else {
-                                store.savePlayerProfile(cleanName, state.avatarCustomization)
-                                onBackToGame()
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF983D), contentColor = Color(0xFF17161A)),
-                        modifier = Modifier.weight(1f).height(48.dp)
-                    ) { Text("Save settings", fontWeight = FontWeight.Black) }
-                }
-            }
-        ) { compact, wide ->
-            Column(verticalArrangement = Arrangement.spacedBy(if (compact) 12.dp else 14.dp)) {
-                if (state.page in setOf(WebPage.LOBBY, WebPage.SUBMISSION, WebPage.GAME)) {
-                    GamePanel("Appearance") {
-                        SettingChoices("Theme", listOf("System", "Light", "Dark"), appearanceMode.label) { selected ->
-                            onAppearanceChange(WebAppearanceMode.entries.first { it.label == selected })
-                        }
-                    }
-                }
-                if (wide) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(18.dp),
-                        verticalAlignment = Alignment.Top
-                    ) {
-                        Box(Modifier.weight(1f)) {
-                            PlayerIdentityPanel(
-                                state = state,
-                                draftName = draftName,
-                                nameError = nameError,
-                                compact = compact,
-                                onNameChange = { draftName = it.take(24); nameError = null },
-                                onEditCharacter = { characterEditorOpen = true }
-                            )
-                        }
-                        Box(Modifier.weight(1f)) {
-                            PlayerConnectionsPanel(
-                                status = status,
-                                isGoogleLinked = isGoogleLinked,
-                                allowRecovery = state.room == null,
-                                spotifyConnected = state.spotifyConnected,
-                                compact = compact,
-                                onLinkGoogle = store::linkGoogle,
-                                onDisconnectGoogle = store::disconnectGoogle,
-                                onRecoverGoogle = store::recoverGoogle,
-                                onConnectSpotify = store::connectSpotify,
-                                onDisconnectSpotify = store::disconnectSpotify,
-                                onRefreshSpotify = store::refreshSpotify
-                            )
-                        }
-                    }
-                } else {
-                    PlayerIdentityPanel(
-                        state = state,
-                        draftName = draftName,
-                        nameError = nameError,
-                        compact = compact,
-                        onNameChange = { draftName = it.take(24); nameError = null },
-                        onEditCharacter = { characterEditorOpen = true }
-                    )
-                    PlayerConnectionsPanel(
-                        status = status,
-                        isGoogleLinked = isGoogleLinked,
-                        allowRecovery = state.room == null,
-                        spotifyConnected = state.spotifyConnected,
-                        compact = compact,
-                        onLinkGoogle = store::linkGoogle,
-                        onDisconnectGoogle = store::disconnectGoogle,
-                        onRecoverGoogle = store::recoverGoogle,
-                        onConnectSpotify = store::connectSpotify,
-                        onDisconnectSpotify = store::disconnectSpotify,
-                        onRefreshSpotify = store::refreshSpotify
+            PlayerIdentityPanel(
+                state = state,
+                draftName = draftName,
+                nameError = nameError,
+                nameSaved = nameSaved,
+                compact = compact,
+                onNameChange = { draftName = it.take(24); nameError = null; nameSaved = false }
+            )
+            PlayerConnectionsPanel(
+                status = status,
+                isGoogleLinked = isGoogleLinked,
+                spotifyConnected = state.spotifyConnected,
+                compact = compact,
+                onLinkGoogle = store::linkGoogle,
+                onDisconnectGoogle = store::disconnectGoogle,
+                onConnectSpotify = store::connectSpotify,
+                onDisconnectSpotify = store::disconnectSpotify,
+                onRefreshSpotify = store::refreshSpotify
+            )
+
+            if (isHost) {
+                GamePanel("Room settings") {
+                    LobbySettings(
+                        store,
+                        state.room.settings,
+                        state.room.players.size,
+                        state.room.players.any { it.isComputer }
                     )
                 }
-
-                if (isHost) {
-                    GamePanel("Room settings") {
-                        LobbySettings(
-                            store,
-                            state.room.settings,
-                            state.room.players.size,
-                            state.room.players.any { it.isComputer }
-                        )
-                    }
-                }
-
             }
+          }
         }
     }
 }
@@ -979,35 +936,34 @@ private fun PlayerIdentityPanel(
     state: WebUiState,
     draftName: String,
     nameError: String?,
+    nameSaved: Boolean,
     compact: Boolean,
-    onNameChange: (String) -> Unit,
-    onEditCharacter: () -> Unit
+    onNameChange: (String) -> Unit
 ) {
-    GamePanel("Your player") {
-        OutlinedTextField(
-            value = draftName,
-            onValueChange = onNameChange,
-            label = { Text("Display name") },
-            placeholder = { Text("dashingbuilder") },
-            singleLine = true,
-            modifier = Modifier.fillMaxWidth()
-        )
-        nameError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-            Surface(
-                modifier = Modifier.size(if (compact) 60.dp else 78.dp),
-                shape = RoundedCornerShape(20.dp),
-                color = Color(0xFFFFF8EC),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    WebAvatarCharacter(state.avatarCustomization, Modifier.fillMaxSize().padding(if (compact) 4.dp else 6.dp))
-                }
-            }
-            OutlinedButton(onClick = onEditCharacter, modifier = Modifier.weight(1f).height(if (compact) 44.dp else 52.dp)) {
-                Text("Edit character")
-            }
+    GamePanel("") {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            WebAvatarSwatch(
+                displayName = draftName,
+                avatarId = state.avatarId,
+                customization = state.avatarCustomization,
+                size = if (compact) 44.dp else 60.dp
+            )
+            OutlinedTextField(
+                value = draftName,
+                onValueChange = onNameChange,
+                placeholder = { Text("Display name") },
+                singleLine = true,
+                shape = RoundedCornerShape(16.dp),
+                trailingIcon = if (nameSaved) {
+                    { Icon(Icons.Default.Check, contentDescription = "Name saved", tint = Color(0xFF35C76F)) }
+                } else null,
+                modifier = Modifier.weight(1f).widthIn(min = 0.dp)
+            )
         }
+        nameError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
     }
 }
 
@@ -1015,17 +971,16 @@ private fun PlayerIdentityPanel(
 private fun PlayerConnectionsPanel(
     status: AuthStatus,
     isGoogleLinked: Boolean,
-    allowRecovery: Boolean,
     spotifyConnected: Boolean,
     compact: Boolean,
     onLinkGoogle: () -> Unit,
     onDisconnectGoogle: () -> Unit,
-    onRecoverGoogle: () -> Unit,
     onConnectSpotify: () -> Unit,
     onDisconnectSpotify: () -> Unit,
     onRefreshSpotify: () -> Unit
 ) {
-    GamePanel("Connections") {
+    GamePanel("") {
+      Column(verticalArrangement = Arrangement.spacedBy(if (compact) 10.dp else 14.dp)) {
         when (status) {
             AuthStatus.LOADING -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 CircularProgressIndicator(modifier = Modifier.width(20.dp).height(20.dp), strokeWidth = 2.dp)
@@ -1042,23 +997,29 @@ private fun PlayerConnectionsPanel(
                     Spacer(Modifier.width(10.dp))
                     Text(if (isGoogleLinked) "Disconnect" else "Connect Google")
                 }
-                if (!isGoogleLinked && allowRecovery) TextButton(onClick = onRecoverGoogle, modifier = Modifier.fillMaxWidth().height(if (compact) 40.dp else 48.dp)) {
-                    Text("Log in to existing account")
-                }
             }
         }
-        OutlinedButton(
-            onClick = if (spotifyConnected) onDisconnectSpotify else onConnectSpotify,
-            modifier = Modifier.fillMaxWidth().height(if (compact) 46.dp else 52.dp),
-            border = BorderStroke(1.dp, Color(0xFF1DB954))
-        ) {
-            SpotifyMark()
-            Spacer(Modifier.width(12.dp))
-            Text(if (spotifyConnected) "Disconnect" else "Connect Spotify")
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+            OutlinedButton(
+                onClick = if (spotifyConnected) onDisconnectSpotify else onConnectSpotify,
+                modifier = Modifier.weight(1f).height(if (compact) 46.dp else 52.dp),
+                border = BorderStroke(1.dp, Color(0xFF1DB954))
+            ) {
+                SpotifyMark()
+                Spacer(Modifier.width(12.dp))
+                Text(if (spotifyConnected) "Disconnect" else "Connect Spotify")
+            }
+            IconButton(
+                onClick = onRefreshSpotify,
+                modifier = Modifier.size(if (compact) 46.dp else 52.dp)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, CircleShape)
+                    .clip(CircleShape)
+                    .semantics { contentDescription = "Sync Spotify status" }
+            ) {
+                Icon(Icons.Default.Sync, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            }
         }
-        Box(Modifier.fillMaxWidth().height(if (compact) 32.dp else 40.dp), contentAlignment = Alignment.CenterEnd) {
-            TextButton(onClick = onRefreshSpotify) { Text("Refresh Spotify status") }
-        }
+      }
     }
 }
 
@@ -1074,251 +1035,12 @@ private fun GoogleGMark() {
 
 @Composable
 private fun SpotifyMark() {
-    Image(
+    Icon(
         painter = painterResource(Res.drawable.spotify_official_icon),
         contentDescription = null,
-        contentScale = ContentScale.Fit,
+        tint = Color(0xFF1DB954),
         modifier = Modifier.size(24.dp)
     )
-}
-
-private enum class AvatarEditorPart(val title: String) {
-    SHAPE("Shape"), COLOR("Color"), EYES("Eyes"), MOUTH("Mouth"), ACCESSORY("Accessory")
-}
-
-@Composable
-private fun CharacterEditorPage(
-    state: WebUiState,
-    status: AuthStatus,
-    user: WebUser?,
-    onLinkGoogle: () -> Unit,
-    onBackToSettings: () -> Unit,
-    onSaveCharacter: (AvatarCustomization) -> Unit
-) {
-    var customization by remember(state.avatarCustomization) { mutableStateOf(state.avatarCustomization) }
-    var selectedPart by remember { mutableStateOf(AvatarEditorPart.SHAPE) }
-    val isGoogleLinked = user?.isGoogleLinked == true
-
-    FrontPageFrame(state, isSavePlayer = true, onHeaderAction = onBackToSettings) { _, _ ->
-        if (isGoogleLinked) {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("Character editor", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                Surface(
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 142.dp, max = 190.dp),
-                    color = Color.White,
-                    shape = RoundedCornerShape(22.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
-                ) {
-                    Box(contentAlignment = Alignment.Center) {
-                        WebAvatarCharacter(customization, Modifier.size(142.dp).padding(8.dp))
-                    }
-                }
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    AvatarEditorPart.values().forEach { part ->
-                        AvatarEditorPartButton(
-                            part = part,
-                            selected = part == selectedPart,
-                            customization = customization,
-                            onClick = { selectedPart = part }
-                        )
-                    }
-                }
-                AvatarOptionsGrid(
-                    part = selectedPart,
-                    customization = customization,
-                    onSelected = { customization = it }
-                )
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    OutlinedButton(onClick = onBackToSettings, modifier = Modifier.weight(1f).height(52.dp)) {
-                        Text("Cancel")
-                    }
-                    Button(
-                        onClick = { onSaveCharacter(customization) },
-                        modifier = Modifier.weight(1f).height(52.dp)
-                    ) { Text("Save character", fontWeight = FontWeight.Bold) }
-                }
-            }
-        } else {
-            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                Text("Character editor", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Black)
-                when (status) {
-                    AuthStatus.LOADING -> Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
-                    }
-                    AuthStatus.ERROR -> Text("Google sign-in is unavailable.", color = MaterialTheme.colorScheme.error)
-                    AuthStatus.READY -> OutlinedButton(
-                        onClick = onLinkGoogle,
-                        colors = ButtonDefaults.outlinedButtonColors(containerColor = Color.White),
-                        modifier = Modifier.fillMaxWidth().height(54.dp)
-                    ) {
-                        GoogleGMark()
-                        Spacer(Modifier.width(10.dp))
-                        Text("Sign in with Google")
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AvatarEditorPartButton(
-    part: AvatarEditorPart,
-    selected: Boolean,
-    customization: AvatarCustomization,
-    onClick: () -> Unit
-) {
-    Box(
-        modifier = Modifier.size(52.dp)
-            .clip(RoundedCornerShape(16.dp))
-            .background(if (selected) MaterialTheme.colorScheme.primaryContainer else Color(0xFFFFF8EC))
-            .border(
-                width = if (selected) 2.dp else 1.dp,
-                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                shape = RoundedCornerShape(16.dp)
-            )
-            .clickable(onClick = onClick)
-            .semantics {
-                contentDescription = "${part.title} options${if (selected) ", selected" else ""}"
-                role = Role.RadioButton
-                this.selected = selected
-            },
-        contentAlignment = Alignment.Center
-    ) {
-        if (part == AvatarEditorPart.SHAPE) {
-            WebAvatarCharacter(customization, Modifier.size(32.dp))
-        } else {
-            Canvas(Modifier.size(25.dp)) {
-                val ink = Color(0xFF17161A)
-                val strokeWidth = 2.2.dp.toPx()
-                when (part) {
-                    AvatarEditorPart.SHAPE -> Unit
-                    AvatarEditorPart.COLOR -> {
-                        val radius = size.minDimension * 0.19f
-                        listOf(
-                            Color(0xFFFFAA3D), Color(0xFFB8F45D),
-                            Color(0xFF9B8CFF), Color(0xFF8FD8F2)
-                        ).forEachIndexed { index, color ->
-                            val x = if (index % 2 == 0) 0.34f else 0.66f
-                            val y = if (index < 2) 0.34f else 0.66f
-                            drawCircle(color, radius, Offset(size.width * x, size.height * y))
-                        }
-                    }
-                    AvatarEditorPart.EYES -> {
-                        drawCircle(ink, size.minDimension * 0.105f, Offset(size.width * 0.34f, size.height * 0.45f))
-                        drawCircle(ink, size.minDimension * 0.105f, Offset(size.width * 0.66f, size.height * 0.45f))
-                    }
-                    AvatarEditorPart.MOUTH -> {
-                        val path = Path().apply {
-                            moveTo(size.width * 0.22f, size.height * 0.45f)
-                            quadraticTo(size.width * 0.5f, size.height * 0.78f, size.width * 0.78f, size.height * 0.45f)
-                        }
-                        drawPath(path, ink, style = Stroke(width = strokeWidth, cap = StrokeCap.Round))
-                    }
-                    AvatarEditorPart.ACCESSORY -> {
-                        val path = Path().apply {
-                            moveTo(size.width * 0.18f, size.height * 0.62f)
-                            cubicTo(size.width * 0.2f, size.height * 0.15f, size.width * 0.8f, size.height * 0.15f, size.width * 0.82f, size.height * 0.62f)
-                        }
-                        drawPath(path, ink, style = Stroke(width = strokeWidth, cap = StrokeCap.Round))
-                        drawRoundRect(ink, Offset(size.width * 0.1f, size.height * 0.5f), Size(size.width * 0.18f, size.height * 0.34f), CornerRadius(strokeWidth))
-                        drawRoundRect(ink, Offset(size.width * 0.72f, size.height * 0.5f), Size(size.width * 0.18f, size.height * 0.34f), CornerRadius(strokeWidth))
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AvatarOptionsGrid(
-    part: AvatarEditorPart,
-    customization: AvatarCustomization,
-    onSelected: (AvatarCustomization) -> Unit
-) {
-    val options = when (part) {
-        AvatarEditorPart.SHAPE -> AvatarCustomizationCatalog.shapeIds
-        AvatarEditorPart.COLOR -> AvatarCustomizationCatalog.colorIds
-        AvatarEditorPart.EYES -> AvatarCustomizationCatalog.eyesIds
-        AvatarEditorPart.MOUTH -> AvatarCustomizationCatalog.mouthIds
-        AvatarEditorPart.ACCESSORY -> AvatarCustomizationCatalog.accessoryIds
-    }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        options.chunked(4).forEach { rowOptions ->
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                rowOptions.forEach { option ->
-                    val selected = when (part) {
-                        AvatarEditorPart.SHAPE -> customization.shapeId == option
-                        AvatarEditorPart.COLOR -> customization.colorId == option
-                        AvatarEditorPart.EYES -> customization.eyesId == option
-                        AvatarEditorPart.MOUTH -> customization.mouthId == option
-                        AvatarEditorPart.ACCESSORY -> customization.accessoryId == option
-                    }
-                    val appearance = when (part) {
-                        AvatarEditorPart.SHAPE -> if (selected) customization else AvatarCustomization.defaultsFor(option)
-                        AvatarEditorPart.COLOR -> customization.copy(colorId = option)
-                        AvatarEditorPart.EYES -> customization.copy(eyesId = option)
-                        AvatarEditorPart.MOUTH -> customization.copy(mouthId = option)
-                        AvatarEditorPart.ACCESSORY -> customization.copy(accessoryId = option)
-                    }
-                    val accessibleName = when (part) {
-                        AvatarEditorPart.SHAPE -> option.avatarShapeLabel()
-                        AvatarEditorPart.COLOR -> option.optionLabel("Color")
-                        else -> option.avatarLabel()
-                    }
-                    Box(
-                        modifier = Modifier.weight(1f).aspectRatio(1f)
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(Color(0xFFFFF8EC))
-                            .border(
-                                width = if (selected) 2.5.dp else 1.dp,
-                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                                shape = RoundedCornerShape(18.dp)
-                            )
-                            .clickable { onSelected(appearance) }
-                            .semantics {
-                                contentDescription = "$accessibleName${if (selected) ", selected" else ""}"
-                                role = Role.RadioButton
-                                this.selected = selected
-                            }
-                            .padding(5.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        WebAvatarCharacter(appearance, Modifier.fillMaxSize())
-                    }
-                }
-                repeat(4 - rowOptions.size) { Spacer(Modifier.weight(1f)) }
-            }
-        }
-    }
-}
-
-private fun String.avatarLabel(): String = replaceFirstChar { it.uppercase() }
-
-private fun String.avatarShapeLabel(): String = when (this) {
-    "violet" -> "Triangle"
-    "tangerine" -> "Honey"
-    "berry" -> "Diamond"
-    "mint" -> "Heart"
-    else -> avatarLabel()
-}
-
-private fun String.optionLabel(group: String): String = when (group) {
-    "Shape" -> avatarShapeLabel()
-    "Color" -> when (this) {
-        "sunny" -> "Orange"
-        "violet" -> "Lavender"
-        "cloud" -> "Sky blue"
-        "star" -> "Yellow"
-        "tangerine" -> "Coral"
-        "berry" -> "Pink"
-        "mint" -> "Mint"
-        else -> "Lime"
-    }
-    else -> avatarLabel()
 }
 
 @Composable
@@ -1340,21 +1062,6 @@ private fun LobbyPage(store: WebGameStore, state: WebUiState, onSettings: () -> 
                     OutlinedButton(onClick = store::leaveRoom) { Text("Cancel") }
                 }
             } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 86.dp).padding(bottom = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        WebAvatarCharacter(
-                            AvatarCustomization.defaultsFor("lime").copy(mouthId = "open"),
-                            Modifier.size(70.dp)
-                        )
-                        WebAvatarCharacter(
-                            AvatarCustomization.defaultsFor("sunny").copy(eyesId = "sleepy", mouthId = "open", accessoryId = "headphones"),
-                            Modifier.size(74.dp)
-                        )
-                    }
-                }
                 Row(modifier = Modifier.fillMaxWidth().padding(bottom = 9.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Players", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Black, modifier = Modifier.padding(end = 10.dp))
                     Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = RoundedCornerShape(50)) {
@@ -1513,7 +1220,7 @@ private fun SettingChoices(title: String, choices: List<String>, selectedValue: 
 @Composable
 private fun PlayerRow(player: Player, isSelf: Boolean, canKick: Boolean, onKick: () -> Unit) {
     Row(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        WebAvatarSwatch(player.avatarId, customization = player.avatarCustomization)
+        WebAvatarSwatch(player.displayName, player.avatarId, customization = player.avatarCustomization)
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1538,295 +1245,41 @@ private fun PlayerRow(player: Player, isSelf: Boolean, canKick: Boolean, onKick:
     }
 }
 
-@Composable
-private fun WebAvatarSwatch(
-    avatarId: String,
-    selected: Boolean = false,
-    customization: AvatarCustomization? = null,
-    size: Dp = 46.dp
-) {
-    val appearance = AvatarCustomization.normalize(customization, avatarId)
-    val fillColor = webAvatarFill(appearance.colorId)
-    Box(
-        modifier = Modifier.size(size)
-            .clip(RoundedCornerShape(15.dp))
-            .background(fillColor.copy(alpha = 0.19f))
-            .border(if (selected) 2.dp else 1.dp, if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(15.dp))
-    ) {
-        WebAvatarCharacter(appearance, Modifier.fillMaxSize().padding(size / 10f))
-    }
-}
-
-@Composable
-private fun WebAvatarCharacter(customization: AvatarCustomization, modifier: Modifier = Modifier) {
-    val appearance = AvatarCustomization.normalize(customization, customization.shapeId)
-    Canvas(modifier = modifier.aspectRatio(1f)) { drawWebAvatar(appearance) }
-}
-
 private val WebAvatarColors = mapOf(
     "sunny" to Color(0xFFFFAE29), "lime" to Color(0xFFB6F45B), "violet" to Color(0xFFA394F1),
     "tangerine" to Color(0xFFEF9387), "cloud" to Color(0xFFAED5F4), "star" to Color(0xFFFFD43B),
     "berry" to Color(0xFFF17FAC), "mint" to Color(0xFF73D9CA)
 )
 
-private val WebAvatarAccents = mapOf(
-    "sunny" to Color(0xFFEF8F18), "lime" to Color(0xFF77C945), "violet" to Color(0xFF7060C8),
-    "tangerine" to Color(0xFFCD675D), "cloud" to Color(0xFF79ACD7), "star" to Color(0xFFD49E22),
-    "berry" to Color(0xFFC94C78), "mint" to Color(0xFF39AD9B)
-)
-
 private fun webAvatarFill(colorId: String): Color = WebAvatarColors[colorId] ?: WebAvatarColors.getValue("sunny")
 
-private fun DrawScope.drawWebAvatar(customization: AvatarCustomization) {
-    val s = size.minDimension
-    val x = (size.width - s) / 2f
-    val y = (size.height - s) / 2f
-    val ink = Color(0xFF17161A)
-    val fill = webAvatarFill(customization.colorId)
-    val accent = WebAvatarAccents[customization.colorId] ?: Color(0xFFFFD56D)
-    val stroke = (s * 0.034f).coerceAtLeast(1.1f)
-    val outline = Stroke(width = stroke, cap = StrokeCap.Round, join = StrokeJoin.Round)
-    fun p(nx: Float, ny: Float) = Offset(x + s * nx, y + s * ny)
-
-    fun drawBody(path: Path) {
-        drawPath(path, fill)
-        drawPath(path, ink, style = outline)
+@Composable
+private fun WebAvatarSwatch(
+    displayName: String,
+    avatarId: String,
+    customization: AvatarCustomization? = null,
+    size: Dp = 46.dp,
+    isDecoy: Boolean = false
+) {
+    val appearance = AvatarCustomization.normalize(customization, avatarId)
+    val initial = if (isDecoy) "?" else displayName.trim().firstOrNull()?.uppercase().orEmpty().ifEmpty { "?" }
+    Box(
+        modifier = Modifier.size(size)
+            .clip(CircleShape)
+            .background(webAvatarFill(appearance.colorId))
+            .border(1.5.dp, Color(0xFF17161A).copy(alpha = 0.15f), CircleShape)
+            .semantics { contentDescription = if (isDecoy) "Decoy" else "$displayName initial" },
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            initial,
+            color = Color(0xFF17161A),
+            fontSize = (size.value * 0.42f).sp,
+            fontWeight = FontWeight.Black,
+            textAlign = TextAlign.Center,
+            maxLines = 1
+        )
     }
-
-    fun drawLegs(leftX: Float, rightX: Float, startY: Float) {
-        drawLine(ink, p(leftX, startY), p(leftX - 0.02f, 0.93f), strokeWidth = stroke * 0.9f, cap = StrokeCap.Round)
-        drawLine(ink, p(rightX, startY), p(rightX + 0.02f, 0.93f), strokeWidth = stroke * 0.9f, cap = StrokeCap.Round)
-        drawOval(ink, p(leftX - 0.055f, 0.92f), Size(s * 0.09f, s * 0.035f))
-        drawOval(ink, p(rightX - 0.035f, 0.92f), Size(s * 0.09f, s * 0.035f))
-    }
-
-    fun drawArms(leftX: Float, rightX: Float, armY: Float, leftHandY: Float, rightHandY: Float) {
-        val leftHand = p(leftX - 0.12f, leftHandY)
-        val rightHand = p(rightX + 0.12f, rightHandY)
-        drawLine(ink, p(leftX, armY), leftHand, strokeWidth = stroke * 0.85f, cap = StrokeCap.Round)
-        drawLine(ink, p(rightX, armY), rightHand, strokeWidth = stroke * 0.85f, cap = StrokeCap.Round)
-        listOf(leftHand, rightHand).forEach { hand ->
-            drawCircle(Color(0xFFFFFBF3), s * 0.023f, hand)
-            drawCircle(ink, s * 0.023f, hand, style = Stroke(stroke * 0.55f))
-        }
-    }
-
-    when (customization.shapeId) {
-        "lime" -> { drawArms(0.22f, 0.78f, 0.55f, 0.56f, 0.56f); drawLegs(0.42f, 0.58f, 0.73f) }
-        "violet" -> { drawArms(0.25f, 0.75f, 0.58f, 0.65f, 0.36f); drawLegs(0.42f, 0.58f, 0.75f) }
-        "tangerine" -> { drawArms(0.24f, 0.76f, 0.56f, 0.59f, 0.59f); drawLegs(0.42f, 0.58f, 0.75f) }
-        "berry" -> { drawArms(0.29f, 0.71f, 0.53f, 0.61f, 0.40f); drawLegs(0.44f, 0.56f, 0.79f) }
-        "cloud" -> drawLegs(0.42f, 0.58f, 0.70f)
-        "star" -> drawLegs(0.43f, 0.57f, 0.76f)
-        "mint" -> drawLegs(0.43f, 0.57f, 0.77f)
-        else -> drawLegs(0.43f, 0.57f, 0.75f)
-    }
-
-    when (customization.shapeId) {
-        "sunny" -> {
-            drawCircle(fill, s * 0.30f, p(0.5f, 0.48f))
-            drawCircle(ink, s * 0.30f, p(0.5f, 0.48f), style = outline)
-        }
-        "lime" -> {
-            val square = Size(s * 0.56f, s * 0.52f)
-            drawRoundRect(fill, p(0.22f, 0.23f), square, CornerRadius(s * 0.055f))
-            drawRoundRect(ink, p(0.22f, 0.23f), square, CornerRadius(s * 0.055f), style = outline)
-            drawLine(accent, p(0.28f, 0.29f), p(0.72f, 0.29f), strokeWidth = stroke * 1.35f, cap = StrokeCap.Round)
-        }
-        "violet" -> {
-            val triangle = Path().apply {
-                val top = p(0.5f, 0.17f); moveTo(top.x, top.y)
-                val right = p(0.83f, 0.77f); lineTo(right.x, right.y)
-                val left = p(0.17f, 0.77f); lineTo(left.x, left.y)
-                close()
-            }
-            drawBody(triangle)
-        }
-        "cloud" -> {
-            val cloud = Path().apply {
-                val start = p(0.14f, 0.62f); moveTo(start.x, start.y)
-                cubicTo(p(0.10f, 0.53f).x, p(0.10f, 0.53f).y, p(0.18f, 0.43f).x, p(0.18f, 0.43f).y, p(0.32f, 0.46f).x, p(0.32f, 0.46f).y)
-                cubicTo(p(0.34f, 0.29f).x, p(0.34f, 0.29f).y, p(0.51f, 0.25f).x, p(0.51f, 0.25f).y, p(0.59f, 0.41f).x, p(0.59f, 0.41f).y)
-                cubicTo(p(0.73f, 0.34f).x, p(0.73f, 0.34f).y, p(0.87f, 0.44f).x, p(0.87f, 0.44f).y, p(0.84f, 0.56f).x, p(0.84f, 0.56f).y)
-                cubicTo(p(0.91f, 0.64f).x, p(0.91f, 0.64f).y, p(0.83f, 0.73f).x, p(0.83f, 0.73f).y, p(0.70f, 0.72f).x, p(0.70f, 0.72f).y)
-                lineTo(p(0.28f, 0.72f).x, p(0.28f, 0.72f).y)
-                cubicTo(p(0.15f, 0.74f).x, p(0.15f, 0.74f).y, p(0.10f, 0.68f).x, p(0.10f, 0.68f).y, p(0.14f, 0.62f).x, p(0.14f, 0.62f).y)
-                close()
-            }
-            drawBody(cloud)
-        }
-        "star" -> {
-            val star = Path()
-            repeat(10) { index ->
-                val angle = (-PI / 2.0 + index * PI / 5.0).toFloat()
-                val radius = if (index % 2 == 0) 0.39f else 0.18f
-                val point = p(0.5f + cos(angle) * radius, 0.51f + sin(angle) * radius)
-                if (index == 0) star.moveTo(point.x, point.y) else star.lineTo(point.x, point.y)
-            }
-            star.close()
-            drawBody(star)
-        }
-        "tangerine" -> {
-            val honeycomb = Path().apply {
-                listOf(0.35f to 0.29f, 0.65f to 0.29f, 0.78f to 0.42f, 0.78f to 0.61f,
-                    0.65f to 0.75f, 0.35f to 0.75f, 0.22f to 0.61f, 0.22f to 0.42f).forEachIndexed { index, point ->
-                    val at = p(point.first, point.second)
-                    if (index == 0) moveTo(at.x, at.y) else lineTo(at.x, at.y)
-                }
-                close()
-            }
-            drawBody(honeycomb)
-        }
-        "berry" -> {
-            val diamond = Path().apply {
-                val top = p(0.50f, 0.16f); moveTo(top.x, top.y)
-                cubicTo(p(0.59f, 0.27f).x, p(0.59f, 0.27f).y, p(0.73f, 0.42f).x, p(0.73f, 0.42f).y, p(0.80f, 0.50f).x, p(0.80f, 0.50f).y)
-                cubicTo(p(0.71f, 0.60f).x, p(0.71f, 0.60f).y, p(0.58f, 0.76f).x, p(0.58f, 0.76f).y, p(0.50f, 0.82f).x, p(0.50f, 0.82f).y)
-                cubicTo(p(0.42f, 0.76f).x, p(0.42f, 0.76f).y, p(0.29f, 0.60f).x, p(0.29f, 0.60f).y, p(0.20f, 0.50f).x, p(0.20f, 0.50f).y)
-                cubicTo(p(0.27f, 0.42f).x, p(0.27f, 0.42f).y, p(0.41f, 0.27f).x, p(0.41f, 0.27f).y, p(0.50f, 0.16f).x, p(0.50f, 0.16f).y)
-                close()
-            }
-            drawBody(diamond)
-        }
-        else -> {
-            val heart = Path().apply {
-                val tip = p(0.50f, 0.78f); moveTo(tip.x, tip.y)
-                cubicTo(p(0.43f, 0.72f).x, p(0.43f, 0.72f).y, p(0.19f, 0.54f).x, p(0.19f, 0.54f).y, p(0.19f, 0.40f).x, p(0.19f, 0.40f).y)
-                cubicTo(p(0.19f, 0.24f).x, p(0.19f, 0.24f).y, p(0.36f, 0.22f).x, p(0.36f, 0.22f).y, p(0.50f, 0.36f).x, p(0.50f, 0.36f).y)
-                cubicTo(p(0.64f, 0.22f).x, p(0.64f, 0.22f).y, p(0.81f, 0.24f).x, p(0.81f, 0.24f).y, p(0.81f, 0.40f).x, p(0.81f, 0.40f).y)
-                cubicTo(p(0.81f, 0.54f).x, p(0.81f, 0.54f).y, p(0.57f, 0.72f).x, p(0.57f, 0.72f).y, p(0.50f, 0.78f).x, p(0.50f, 0.78f).y)
-                close()
-            }
-            drawBody(heart)
-        }
-    }
-
-    if (customization.accessoryId == "headphones") {
-        val band = Path().apply {
-            val left = p(0.23f, 0.46f); moveTo(left.x, left.y)
-            cubicTo(p(0.20f, 0.11f).x, p(0.20f, 0.11f).y, p(0.80f, 0.11f).x, p(0.80f, 0.11f).y, p(0.77f, 0.46f).x, p(0.77f, 0.46f).y)
-        }
-        drawPath(band, ink, style = Stroke(stroke * 1.7f, cap = StrokeCap.Round))
-        drawRoundRect(ink, p(0.14f, 0.40f), Size(s * 0.12f, s * 0.19f), CornerRadius(s * 0.045f))
-        drawRoundRect(Color(0xFF466EE6), p(0.17f, 0.43f), Size(s * 0.055f, s * 0.12f), CornerRadius(s * 0.025f))
-        drawRoundRect(ink, p(0.74f, 0.40f), Size(s * 0.12f, s * 0.19f), CornerRadius(s * 0.045f))
-        drawRoundRect(Color(0xFF466EE6), p(0.77f, 0.43f), Size(s * 0.055f, s * 0.12f), CornerRadius(s * 0.025f))
-    }
-    if (customization.accessoryId == "cap") drawWebCap(x, y, s, ink, stroke)
-
-    val faceY = when (customization.shapeId) {
-        "cloud" -> 0.54f
-        "star" -> 0.51f
-        "tangerine" -> 0.53f
-        "berry" -> 0.49f
-        "mint" -> 0.48f
-        else -> 0.49f
-    }
-    val faceScale = 0.82f
-    val eyeY = faceY - 0.045f * faceScale
-    val eyeOffset = s * 0.115f * faceScale
-    drawWebEyes(customization.eyesId, p(0.5f, eyeY).x - eyeOffset, p(0.5f, eyeY).x + eyeOffset, p(0.5f, eyeY).y, ink, stroke, s)
-    drawWebMouth(customization.mouthId, p(0.5f, faceY + 0.075f).x, p(0.5f, faceY + 0.075f).y, ink, stroke, s)
-    if (customization.accessoryId == "glasses") drawWebGlasses(p(0.5f, eyeY).x, p(0.5f, eyeY).y, eyeOffset, s, ink, stroke)
-    if (customization.accessoryId == "bow") drawWebBow(x, y, s, ink, accent, stroke)
-    if (customization.accessoryId == "flower") drawWebFlower(x, y, s, ink, accent, stroke)
-}
-
-private fun DrawScope.drawWebEyes(eyesId: String, leftX: Float, rightX: Float, y: Float, ink: Color, stroke: Float, s: Float) {
-    when (eyesId) {
-        "happy" -> listOf(leftX, rightX).forEach { x ->
-            val eye = Path().apply {
-                moveTo(x - s * 0.045f, y)
-                cubicTo(x - s * 0.02f, y + s * 0.045f, x + s * 0.02f, y + s * 0.045f, x + s * 0.045f, y)
-            }
-            drawPath(eye, ink, style = Stroke(stroke * 1.2f, cap = StrokeCap.Round))
-        }
-        "sleepy" -> listOf(leftX, rightX).forEach { x ->
-            drawLine(ink, Offset(x - s * 0.04f, y), Offset(x + s * 0.04f, y + s * 0.01f), strokeWidth = stroke * 1.15f, cap = StrokeCap.Round)
-        }
-        "wink" -> {
-            drawCircle(ink, s * 0.021f, Offset(leftX, y))
-            val wink = Path().apply {
-                moveTo(rightX - s * 0.045f, y)
-                cubicTo(rightX - s * 0.02f, y + s * 0.045f, rightX + s * 0.02f, y + s * 0.045f, rightX + s * 0.045f, y)
-            }
-            drawPath(wink, ink, style = Stroke(stroke * 1.2f, cap = StrokeCap.Round))
-        }
-        "sunglasses" -> {
-            listOf(leftX, rightX).forEach { x ->
-                drawRoundRect(ink, Offset(x - s * 0.075f, y - s * 0.045f), Size(s * 0.15f, s * 0.09f), CornerRadius(s * 0.025f))
-            }
-            drawLine(ink, Offset(leftX + s * 0.07f, y), Offset(rightX - s * 0.07f, y), strokeWidth = stroke * 0.9f, cap = StrokeCap.Round)
-        }
-        else -> {
-            drawCircle(ink, s * 0.021f, Offset(leftX, y))
-            drawCircle(ink, s * 0.021f, Offset(rightX, y))
-        }
-    }
-}
-
-private fun DrawScope.drawWebMouth(mouthId: String, centerX: Float, y: Float, ink: Color, stroke: Float, s: Float) {
-    when (mouthId) {
-        "grin" -> {
-            drawOval(ink, Offset(centerX - s * 0.07f, y - s * 0.025f), Size(s * 0.14f, s * 0.12f))
-        }
-        "open", "tongue" -> {
-            drawOval(ink, Offset(centerX - s * 0.055f, y - s * 0.025f), Size(s * 0.11f, s * 0.10f))
-            if (mouthId == "tongue") drawOval(Color(0xFFEF7187), Offset(centerX - s * 0.035f, y + s * 0.025f), Size(s * 0.07f, s * 0.045f))
-        }
-        else -> {
-            val smile = Path().apply {
-                moveTo(centerX - s * 0.075f, y)
-                cubicTo(centerX - s * 0.04f, y + s * 0.065f, centerX + s * 0.04f, y + s * 0.065f, centerX + s * 0.075f, y)
-            }
-            drawPath(smile, ink, style = Stroke(stroke * 1.2f, cap = StrokeCap.Round))
-        }
-    }
-}
-
-private fun DrawScope.drawWebCap(x: Float, y: Float, s: Float, ink: Color, stroke: Float) {
-    fun p(nx: Float, ny: Float) = Offset(x + s * nx, y + s * ny)
-    val cap = Path().apply {
-        val start = p(0.29f, 0.33f); moveTo(start.x, start.y)
-        cubicTo(p(0.30f, 0.16f).x, p(0.30f, 0.16f).y, p(0.67f, 0.15f).x, p(0.67f, 0.15f).y, p(0.72f, 0.31f).x, p(0.72f, 0.31f).y)
-        lineTo(p(0.82f, 0.35f).x, p(0.82f, 0.35f).y)
-        cubicTo(p(0.72f, 0.41f).x, p(0.72f, 0.41f).y, p(0.39f, 0.41f).x, p(0.39f, 0.41f).y, p(0.27f, 0.35f).x, p(0.27f, 0.35f).y)
-        close()
-    }
-    drawPath(cap, Color(0xFF3969E8))
-    drawPath(cap, ink, style = Stroke(stroke * 0.9f, cap = StrokeCap.Round, join = StrokeJoin.Round))
-}
-
-private fun DrawScope.drawWebGlasses(centerX: Float, y: Float, offset: Float, s: Float, ink: Color, stroke: Float) {
-    listOf(centerX - offset, centerX + offset).forEach { eyeX ->
-        drawRoundRect(ink, Offset(eyeX - s * 0.075f, y - s * 0.045f), Size(s * 0.15f, s * 0.09f), CornerRadius(s * 0.025f), style = Stroke(stroke))
-    }
-    drawLine(ink, Offset(centerX - offset + s * 0.07f, y), Offset(centerX + offset - s * 0.07f, y), strokeWidth = stroke)
-}
-
-private fun DrawScope.drawWebBow(x: Float, y: Float, s: Float, ink: Color, accent: Color, stroke: Float) {
-    fun p(nx: Float, ny: Float) = Offset(x + s * nx, y + s * ny)
-    val bow = Path().apply {
-        val middle = p(0.50f, 0.24f); moveTo(middle.x, middle.y)
-        cubicTo(p(0.39f, 0.13f).x, p(0.39f, 0.13f).y, p(0.31f, 0.18f).x, p(0.31f, 0.18f).y, p(0.42f, 0.31f).x, p(0.42f, 0.31f).y)
-        cubicTo(p(0.45f, 0.34f).x, p(0.45f, 0.34f).y, p(0.48f, 0.29f).x, p(0.48f, 0.29f).y, p(0.50f, 0.24f).x, p(0.50f, 0.24f).y)
-        cubicTo(p(0.61f, 0.13f).x, p(0.61f, 0.13f).y, p(0.69f, 0.18f).x, p(0.69f, 0.18f).y, p(0.58f, 0.31f).x, p(0.58f, 0.31f).y)
-        close()
-    }
-    drawPath(bow, accent)
-    drawPath(bow, ink, style = Stroke(stroke * 0.75f))
-    drawCircle(ink, s * 0.025f, p(0.50f, 0.27f))
-}
-
-private fun DrawScope.drawWebFlower(x: Float, y: Float, s: Float, ink: Color, accent: Color, stroke: Float) {
-    fun p(nx: Float, ny: Float) = Offset(x + s * nx, y + s * ny)
-    repeat(5) { index ->
-        val angle = (-PI / 2.0 + index * 2.0 * PI / 5.0).toFloat()
-        val center = p(0.73f + cos(angle) * 0.045f, 0.27f + sin(angle) * 0.045f)
-        drawCircle(Color(0xFFFFF3F6), s * 0.045f, center)
-        drawCircle(ink, s * 0.045f, center, style = Stroke(stroke * 0.55f))
-    }
-    drawCircle(accent, s * 0.027f, p(0.73f, 0.27f))
 }
 
 @Composable
@@ -1865,30 +1318,14 @@ private fun SubmissionPage(store: WebGameStore, state: WebUiState, onSettings: (
     }
     val maxSongs = room?.let { RoundCountRules.maxSongsPerPlayer(it.settings.roundCount, it.players.size) } ?: 1
     val selfPlayer = state.room?.players?.firstOrNull { it.id == state.selfPlayerId }
-    val locked = selfPlayer?.songLocked == true
+    val locked = selfPlayer?.songLocked == true || state.picksLockedLocally
     val totalPlayers = state.room?.players?.size ?: 0
-    val lockedPlayers = state.room?.players?.count { it.songLocked } ?: 0
+    val lockedPlayers = state.submissionLockedCount ?: state.room?.players?.count { it.songLocked } ?: 0
     PostJoinFrame(
         title = "Add songs",
         state = state,
         onSettings = onSettings
     ) { wide ->
-        Row(
-            modifier = Modifier.fillMaxWidth().heightIn(min = 74.dp).padding(bottom = 10.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Spacer(Modifier.weight(1f))
-            Text("♪", color = MaterialTheme.colorScheme.primary, fontSize = 30.sp, fontWeight = FontWeight.Black)
-            WebAvatarCharacter(
-                AvatarCustomization.defaultsFor("lime").copy(mouthId = "open"),
-                Modifier.size(74.dp)
-            )
-            Text("♫", color = Color(0xFFFFB82E), fontSize = 28.sp, fontWeight = FontWeight.Black)
-            WebAvatarCharacter(
-                AvatarCustomization.defaultsFor("sunny").copy(eyesId = "sleepy", mouthId = "open", accessoryId = "headphones"),
-                Modifier.size(80.dp)
-            )
-        }
         val songColumn: @Composable () -> Unit = {
             val countLabel = "${state.pendingSongs.size} song${if (state.pendingSongs.size == 1) "" else "s"} added"
             GamePanel("Your picks", "${state.pendingSongs.size} / $maxSongs songs") {
@@ -2289,7 +1726,7 @@ private fun VoteStage(
                 )
             ) {
                 Row(modifier = Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    WebAvatarSwatch(choice.avatarId, size = 78.dp, customization = choice.avatarCustomization)
+                    WebAvatarSwatch(choice.name, choice.avatarId, customization = choice.avatarCustomization, size = 78.dp, isDecoy = choice.isDecoy)
                     Spacer(Modifier.width(14.dp))
                     Column(Modifier.weight(1f)) {
                         Text(choice.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
@@ -2395,7 +1832,7 @@ private fun GamePlayersPanel(state: WebUiState) {
     GamePanel("In this round", "${state.room?.players?.size ?: 0} players in the room.") {
         state.room?.players.orEmpty().forEach { player ->
             Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                WebAvatarSwatch(player.avatarId, customization = player.avatarCustomization)
+                WebAvatarSwatch(player.displayName, player.avatarId, customization = player.avatarCustomization)
                 Spacer(Modifier.width(10.dp))
                 Text(player.displayName, modifier = Modifier.weight(1f), fontWeight = FontWeight.Medium)
                 Text("${player.score}", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
@@ -2428,7 +1865,7 @@ private fun ResultsPage(store: WebGameStore, state: WebUiState) {
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text("${index + 1}.", modifier = Modifier.width(34.dp), color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                        WebAvatarSwatch(player.avatarId, customization = player.avatarCustomization)
+                        WebAvatarSwatch(player.displayName, player.avatarId, customization = player.avatarCustomization)
                         Spacer(Modifier.width(10.dp))
                         Text(
                             player.displayName + if (player.id == state.selfPlayerId) " (you)" else "",
@@ -2457,7 +1894,7 @@ private fun ResultPodiumCard(index: Int, player: Player, selfPlayerId: String, m
         subtitle = if (player.id == selfPlayerId) "You" else "Final score",
         modifier = modifier
     ) {
-        WebAvatarSwatch(player.avatarId, customization = player.avatarCustomization)
+        WebAvatarSwatch(player.displayName, player.avatarId, customization = player.avatarCustomization)
         Text(player.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Black)
         Text("${player.score} pts", style = MaterialTheme.typography.headlineSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
     }

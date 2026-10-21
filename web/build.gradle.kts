@@ -1,4 +1,6 @@
 import org.jetbrains.kotlin.gradle.ExperimentalWasmDsl
+import org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpack
+import org.jetbrains.kotlin.gradle.targets.js.webpack.KotlinWebpackConfig
 
 plugins {
     alias(libs.plugins.kotlin.multiplatform)
@@ -16,7 +18,16 @@ compose.resources {
 kotlin {
     @OptIn(ExperimentalWasmDsl::class)
     wasmJs {
-        browser()
+        browser {
+            commonWebpackConfig {
+                devServer = KotlinWebpackConfig.DevServer(open = false, port = 5173).apply {
+                    client = KotlinWebpackConfig.DevServer.Client(
+                        overlay = KotlinWebpackConfig.DevServer.Client.Overlay(errors = true, warnings = false)
+                    )
+                    static("kotlin", watch = true)
+                }
+            }
+        }
         binaries.executable()
     }
 
@@ -44,4 +55,12 @@ kotlin {
             }
         }
     }
+}
+
+tasks.named<KotlinWebpack>("wasmJsBrowserDevelopmentWebpack") {
+    devtool = "source-map"
+}
+
+tasks.named<KotlinWebpack>("wasmJsBrowserDevelopmentRun") {
+    devtool = "source-map"
 }

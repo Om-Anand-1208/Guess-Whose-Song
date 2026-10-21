@@ -44,8 +44,9 @@ class WebAuthManager {
         return firebaseIdToken(forceRefresh).also { check(it.isNotBlank()) }
     }
 
-    fun linkGoogle(onComplete: (Result<WebUser>) -> Unit) {
+    fun linkGoogle(allowExistingAccountLogin: Boolean, onComplete: (Result<WebUser>) -> Unit) {
         firebaseLinkGoogle(
+            allowExistingAccountLogin = allowExistingAccountLogin,
             resolve = { encoded ->
                 val result = runCatching { GWSJson.decodeFromString<WebUser>(encoded) }
                 result.onSuccess { _user.value = it }
@@ -63,21 +64,6 @@ class WebAuthManager {
                 }
                 onComplete(Result.failure(error))
             }
-        )
-    }
-
-    fun recoverGoogle(onComplete: (Result<WebUser>) -> Unit) {
-        firebaseRecoverGoogle(
-            resolve = { encoded ->
-                val result = runCatching { GWSJson.decodeFromString<WebUser>(encoded) }
-                result.onSuccess {
-                    _user.value = it
-                    _status.value = AuthStatus.READY
-                    _error.value = null
-                }
-                onComplete(result)
-            },
-            reject = { message -> onComplete(Result.failure(IllegalStateException(message))) }
         )
     }
 

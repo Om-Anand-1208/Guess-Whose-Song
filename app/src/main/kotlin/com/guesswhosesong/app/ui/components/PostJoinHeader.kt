@@ -2,14 +2,11 @@ package com.guesswhosesong.app.ui.components
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -18,48 +15,51 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
 fun PostJoinHeader(
     roomCode: String,
-    onSettings: () -> Unit,
+    leadingTitle: String? = null,
+    leadingTitleFontSize: TextUnit = 38.5.sp,
+    leadingTitleLineHeight: TextUnit = 45.sp,
     modifier: Modifier = Modifier,
-    trailingControlsOffsetY: Dp = 0.dp,
     roomOffsetY: Dp = 0.dp,
     roomHorizontalPadding: Dp = 11.dp,
     roomVerticalPadding: Dp = 6.dp
 ) {
-    BoxWithConstraints(modifier = modifier.fillMaxWidth().padding(vertical = 8.dp)) {
-        val compact = maxWidth < 390.dp
-        val wordmarkSize = if (compact) 18.sp else 22.sp
-        Column(verticalArrangement = Arrangement.spacedBy(if (compact) 3.dp else 0.dp)) {
+    Box(modifier = modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+        if (leadingTitle.isNullOrBlank()) {
+            RoomCodeBadge(
+                roomCode,
+                roomHorizontalPadding,
+                roomVerticalPadding,
+                roomOffsetY,
+                Modifier.align(Alignment.CenterEnd)
+            )
+        } else {
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(7.dp)
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                GuessWhoseSongWordmark(
-                    modifier = Modifier.weight(1f).widthIn(max = 320.dp).offset(y = if (compact) 0.dp else (-1).dp),
-                    fontSize = wordmarkSize,
-                    lineHeight = wordmarkSize * 1.12f
+                Text(
+                    leadingTitle,
+                    modifier = Modifier.weight(1f),
+                    color = MaterialTheme.colorScheme.onBackground,
+                    fontSize = leadingTitleFontSize,
+                    lineHeight = leadingTitleLineHeight,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = (-0.35).sp,
+                    maxLines = 1,
+                    softWrap = false,
+                    overflow = TextOverflow.Ellipsis
                 )
-                if (!compact) RoomCodeBadge(roomCode, roomHorizontalPadding, roomVerticalPadding, roomOffsetY)
-                AppearanceToggleButton(modifier = Modifier.offset(y = trailingControlsOffsetY))
-                SettingsHeaderButton(onClick = onSettings, modifier = Modifier.offset(y = trailingControlsOffsetY))
-            }
-            if (compact) {
-                Box(Modifier.fillMaxWidth()) {
-                    RoomCodeBadge(
-                        roomCode,
-                        roomHorizontalPadding,
-                        roomVerticalPadding,
-                        roomOffsetY,
-                        Modifier.align(Alignment.CenterEnd)
-                    )
-                }
+                RoomCodeBadge(roomCode, roomHorizontalPadding, roomVerticalPadding, roomOffsetY)
             }
         }
     }

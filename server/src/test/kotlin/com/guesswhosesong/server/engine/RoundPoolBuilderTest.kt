@@ -12,6 +12,56 @@ class RoundPoolBuilderTest {
         SongEntry(id, "Song $id", "Artist $submitter", previewUrl = previewUrl, submitterId = submitter)
 
     @Test
+    fun `three rounds draw from eight candidates with both players and one genre decoy`() {
+        val submitted = listOf(
+            song("p1-rock", "p1"), song("p1-classical", "p1"),
+            song("p2-rnb", "p2"), song("p2-bollywood", "p2")
+        )
+        val genreMatches = (1..4).map { song("genre-$it", GameConstants.DECOY_ID) }
+
+        repeat(20) {
+            val pool = RoundPoolBuilder.buildGenreMatched(submitted, genreMatches, listOf("p1", "p2"), 3)
+            assertEquals(3, pool.size)
+            assertEquals(1, pool.count { it.submitterId == GameConstants.DECOY_ID })
+            assertTrue(pool.any { it.submitterId == "p1" })
+            assertTrue(pool.any { it.submitterId == "p2" })
+            assertTrue(pool.all { it in submitted || it in genreMatches })
+        }
+    }
+
+    @Test
+    fun `genre decoy falls back to another player pick when none is playable`() {
+        val submitted = listOf(song("p1-a", "p1"), song("p1-b", "p1"), song("p2-a", "p2"))
+        val pool = RoundPoolBuilder.buildGenreMatched(submitted, emptyList(), listOf("p1", "p2"), 3)
+
+        assertEquals(3, pool.size)
+        assertTrue(pool.none { it.submitterId == GameConstants.DECOY_ID })
+    }
+
+    @Test
+    fun `three or more players never receive a Nobody song`() {
+        val ids = listOf("p1", "p2", "p3")
+        val submitted = ids.flatMap { id -> (1..3).map { song("$id-$it", id) } }
+        val decoys = listOf(song("decoy", GameConstants.DECOY_ID))
+
+        val manualPool = RoundPoolBuilder.buildGenreMatched(submitted, decoys, ids, roundCount = 8)
+        val otherPool = RoundPoolBuilder.build(submitted, decoys, ids, roundCount = 8)
+
+        assertEquals(8, manualPool.size)
+        assertEquals(8, otherPool.size)
+        assertTrue((manualPool + otherPool).none { it.submitterId == GameConstants.DECOY_ID })
+    }
+
+    @Test
+    fun `thirty rounds are not truncated at the previous limit`() {
+        val ids = listOf("p1", "p2", "p3")
+        val submitted = ids.flatMap { id -> (1..10).map { song("$id-$it", id) } }
+
+        assertEquals(30, RoundPoolBuilder.buildGenreMatched(submitted, emptyList(), ids, roundCount = 30).size)
+        assertEquals(30, RoundPoolBuilder.build(submitted, emptyList(), ids, roundCount = 30).size)
+    }
+
+    @Test
     fun `first picks represent every player before extra submissions`() {
         val ids = listOf("p1", "p2", "p3")
         val submitted = ids.flatMap { playerId -> (1..4).map { song("$playerId-$it", playerId) } }

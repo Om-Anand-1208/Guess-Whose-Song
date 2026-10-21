@@ -25,7 +25,7 @@ fun Application.configureRouting(
         // Room REST and long-poll event routes
         roomRoutes(roomManager, redisClient, tokenVerifier)
 
-        // Music proxy (Deezer + iTunes fallback)
+        // Music proxy (iTunes catalog)
         musicRoutes(tokenVerifier, redisClient, roomManager.musicService)
 
         // Spotify OAuth + data routes (optional — gracefully unavailable if not configured)

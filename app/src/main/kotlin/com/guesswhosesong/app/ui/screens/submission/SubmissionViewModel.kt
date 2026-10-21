@@ -2,6 +2,7 @@ package com.guesswhosesong.app.ui.screens.submission
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.util.Log
 import com.guesswhosesong.app.data.player.PlayerIdentityManager
 import com.guesswhosesong.app.data.repository.GameRepository
 import com.guesswhosesong.app.data.spotify.SpotifyAuthManager
@@ -12,6 +13,7 @@ import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.request.*
 import io.ktor.http.*
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -22,6 +24,8 @@ data class SubmissionUiState(
     val selfPlayerId: String = "",
     val searchQuery: String = "",
     val searchResults: List<TrackSearchResult> = emptyList(),
+    val completedSearchQuery: String? = null,
+    val searchFailure: String? = null,
     val popularSuggestions: List<TrackSearchResult> = emptyList(),
     val spotifySuggestions: List<SpotifySuggestion> = emptyList(),
     val pendingSongs: List<SongEntry> = emptyList(),
@@ -57,6 +61,7 @@ class SubmissionViewModel @Inject constructor(
     val events: SharedFlow<SubmissionEvent> = _events.asSharedFlow()
 
     private val searchQueryFlow = MutableStateFlow("")
+    private var latestSearchRequest = 0
     private val baseUrl = com.guesswhosesong.app.di.NetworkModule.BASE_URL
 
     init {
@@ -95,11 +100,11 @@ class SubmissionViewModel @Inject constructor(
                 }
             }
         }
-        if (cachedRoom?.settings?.gameMode != GameMode.SPOTIFY_RECENT) {
+        if (cachedRoom?.settings?.gameMode?.isAutomaticSpotifyMode != true) {
             loadPopularSuggestions()
         }
         observeSearchQuery()
-        if (isSpotify && cachedRoom.settings.gameMode != GameMode.SPOTIFY_RECENT) {
+        if (isSpotify && !cachedRoom.settings.gameMode.isAutomaticSpotifyMode) {
             loadSpotifySuggestions()
         }
     }
@@ -144,7 +149,7 @@ class SubmissionViewModel @Inject constructor(
                                 maxSongs = maxPicks
                             )
                         }
-                        if (isSpotify && message.room.settings.gameMode != GameMode.SPOTIFY_RECENT) {
+                        if (isSpotify && !message.room.settings.gameMode.isAutomaticSpotifyMode) {
                             loadSpotifySuggestions()
                         }
                     }
@@ -162,7 +167,7 @@ class SubmissionViewModel @Inject constructor(
                                 maxSongs = maxPicks
                             )
                         }
-                        if (isSpotify && room.settings.gameMode != GameMode.SPOTIFY_RECENT &&
+                        if (isSpotify && !room.settings.gameMode.isAutomaticSpotifyMode &&
                             _uiState.value.spotifySuggestions.isEmpty()
                         ) {
                             loadSpotifySuggestions()
@@ -180,7 +185,8 @@ class SubmissionViewModel @Inject constructor(
                     is ErrorMessage -> _uiState.update {
                         it.copy(
                             error = message.message,
-                            recentPlayedFailure = if (message.code == "RECENT_TRACKS_UNAVAILABLE") {
+                            recentPlayedFailure = if (message.code == "RECENT_TRACKS_UNAVAILABLE" ||
+                                message.code == "TOP_TRACKS_UNAVAILABLE") {
                                 message.message
                             } else it.recentPlayedFailure
                         )
@@ -193,8 +199,14 @@ class SubmissionViewModel @Inject constructor(
             spotifyAuthManager.isConnected.collect { connected ->
                 if (connected) {
                     _uiState.update { it.copy(spotifyConnected = true) }
-                    gameRepository.refreshSpotify()
-                    if (_uiState.value.room?.settings?.gameMode != GameMode.SPOTIFY_RECENT) {
+                    try {
+                        gameRepository.refreshSpotify()
+                    } catch (cancelled: CancellationException) {
+                        throw cancelled
+                    } catch (error: Exception) {
+                        Log.w("SubmissionViewModel", "Spotify refresh failed", error)
+                    }
+                    if (_uiState.value.room?.settings?.gameMode?.isAutomaticSpotifyMode != true) {
                         loadSpotifySuggestions()
                     }
                 }
@@ -207,12 +219,17 @@ class SubmissionViewModel @Inject constructor(
             searchQueryFlow
                 .debounce(350)
                 .distinctUntilChanged()
-                .collect { query ->
+                .collectLatest { query ->
                     val trimmed = query.trim()
                     if (trimmed.isNotBlank()) {
                         executeSearch(trimmed)
                     } else {
-                        _uiState.update { it.copy(searchResults = emptyList(), isSearching = false) }
+                        _uiState.update { it.copy(
+                            searchResults = emptyList(),
+                            completedSearchQuery = null,
+                            searchFailure = null,
+                            isSearching = false
+                        ) }
                     }
                 }
         }
@@ -257,7 +274,14 @@ class SubmissionViewModel @Inject constructor(
     }
 
     fun onSearchQueryChanged(query: String) {
-        _uiState.update { it.copy(searchQuery = query, error = null) }
+        latestSearchRequest++
+        _uiState.update { it.copy(
+            searchQuery = query,
+            searchResults = emptyList(),
+            completedSearchQuery = null,
+            searchFailure = null,
+            error = null
+        ) }
         searchQueryFlow.value = query
     }
 
@@ -270,7 +294,8 @@ class SubmissionViewModel @Inject constructor(
     }
 
     private suspend fun executeSearch(query: String) {
-        _uiState.update { it.copy(isSearching = true, error = null) }
+        val requestId = ++latestSearchRequest
+        _uiState.update { it.copy(isSearching = true, searchFailure = null, error = null) }
         try {
             val response = httpClient.get("$baseUrl/music/search") {
                 parameter("q", query)
@@ -278,14 +303,40 @@ class SubmissionViewModel @Inject constructor(
             }
             if (response.status == HttpStatusCode.OK) {
                 val result = response.body<Map<String, List<TrackSearchResult>>>()
-                _uiState.update { it.copy(searchResults = result["tracks"] ?: emptyList()) }
+                if (requestId == latestSearchRequest) {
+                    _uiState.update { it.copy(
+                        searchResults = result["tracks"] ?: emptyList(),
+                        completedSearchQuery = query,
+                        searchFailure = null
+                    ) }
+                }
             } else {
-                _uiState.update { it.copy(error = "Search returned status ${response.status.value}") }
+                if (requestId == latestSearchRequest) {
+                    _uiState.update { it.copy(
+                        searchResults = emptyList(),
+                        completedSearchQuery = null,
+                        searchFailure = if (response.status == HttpStatusCode.TooManyRequests) {
+                            "Too many searches. Try again shortly."
+                        } else {
+                            "Music search is unavailable. Try again."
+                        }
+                    ) }
+                }
             }
-        } catch (e: Exception) {
-            _uiState.update { it.copy(error = "Search failed: ${e.message}") }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            if (requestId == latestSearchRequest) {
+                _uiState.update { it.copy(
+                    searchResults = emptyList(),
+                    completedSearchQuery = null,
+                    searchFailure = "Music search is unavailable. Try again."
+                ) }
+            }
         } finally {
-            _uiState.update { it.copy(isSearching = false) }
+            if (requestId == latestSearchRequest) {
+                _uiState.update { it.copy(isSearching = false) }
+            }
         }
     }
 
@@ -339,12 +390,8 @@ class SubmissionViewModel @Inject constructor(
         }
 
         val selfId = _uiState.value.selfPlayerId.ifBlank { gameRepository.selfPlayerId.value }
-        val safeSongId = "spotify-${suggestion.title}-${suggestion.artist}"
-            .lowercase()
-            .replace(Regex("[^a-z0-9:_-]"), "-")
-            .take(200)
         val entry = SongEntry(
-            songId = safeSongId,
+            songId = SpotifySongId.from(suggestion.title, suggestion.artist),
             title = suggestion.title,
             artist = suggestion.artist,
             albumArtUrl = suggestion.albumArtUrl,
@@ -414,7 +461,9 @@ class SubmissionViewModel @Inject constructor(
                 val topList = if (_uiState.value.popularSuggestions.isNotEmpty()) {
                     _uiState.value.popularSuggestions
                 } else {
-                    val resp = httpClient.get("$baseUrl/music/top")
+                    val resp = httpClient.get("$baseUrl/music/top") {
+                        bearerAuth(playerIdentityManager.getIdToken())
+                    }
                     if (resp.status == HttpStatusCode.OK) {
                         val result = resp.body<Map<String, List<TrackSearchResult>>>()
                         result["tracks"] ?: emptyList()
@@ -429,7 +478,7 @@ class SubmissionViewModel @Inject constructor(
                     for (cand in candidates.take(slotsNeeded)) {
                         newEntries.add(
                             SongEntry(
-                                songId = "${cand.title}_${cand.artist}",
+                                songId = SpotifySongId.from(cand.title, cand.artist),
                                 title = cand.title,
                                 artist = cand.artist,
                                 albumArtUrl = cand.albumArtUrl,
@@ -474,7 +523,6 @@ class SubmissionViewModel @Inject constructor(
                     )
                 }
                 gameRepository.updatePendingSongs(updated)
-                updated.firstOrNull()?.let { gameRepository.updatePendingSong(it) }
             } catch (e: Exception) {
                 _uiState.update { it.copy(error = "Surprise Me failed: ${e.message}") }
             } finally {

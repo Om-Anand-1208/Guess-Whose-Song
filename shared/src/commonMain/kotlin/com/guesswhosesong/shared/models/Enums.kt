@@ -14,7 +14,11 @@ enum class RoomState {
 @Serializable
 enum class GameMode {
     MANUAL,
-    SPOTIFY_RECENT
+    SPOTIFY_RECENT,
+    SPOTIFY_TOP;
+
+    val isAutomaticSpotifyMode: Boolean
+        get() = this == SPOTIFY_RECENT || this == SPOTIFY_TOP
 }
 
 @Serializable

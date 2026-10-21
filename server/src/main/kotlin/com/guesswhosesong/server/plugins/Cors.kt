@@ -39,7 +39,8 @@ fun Application.configureCors() {
                 val host = uri.host ?: return@runCatching
                 val scheme = uri.scheme?.lowercase() ?: return@runCatching
                 if (scheme in setOf("http", "https")) {
-                    allowHost(host = host, schemes = listOf(scheme))
+                    val hostWithPort = if (uri.port >= 0) "$host:${uri.port}" else host
+                    allowHost(host = hostWithPort, schemes = listOf(scheme))
                 }
             }
         }

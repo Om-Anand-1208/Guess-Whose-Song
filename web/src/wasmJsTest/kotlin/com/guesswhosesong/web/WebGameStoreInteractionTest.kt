@@ -5,6 +5,9 @@ import com.guesswhosesong.shared.dto.ClientMessage
 import com.guesswhosesong.shared.dto.EndRoom
 import com.guesswhosesong.shared.dto.LockSong
 import com.guesswhosesong.shared.dto.PlayAgain
+import com.guesswhosesong.shared.dto.ErrorMessage
+import com.guesswhosesong.shared.dto.RoundPreviewStarted
+import com.guesswhosesong.shared.dto.SubmissionProgress
 import com.guesswhosesong.shared.dto.StartGame
 import com.guesswhosesong.shared.dto.UpdatePendingSongs
 import com.guesswhosesong.shared.dto.UpdateSettings
@@ -16,6 +19,8 @@ import com.guesswhosesong.shared.models.TrackSearchResult
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 class WebGameStoreInteractionTest {
     @Test
@@ -35,6 +40,7 @@ class WebGameStoreInteractionTest {
         assertEquals(listOf("two"), store.state.value.pendingSongs.map { it.songId })
         store.lockSongs()
         assertIs<LockSong>(sent.last())
+        assertTrue(store.state.value.picksLockedLocally)
     }
 
     @Test
@@ -53,6 +59,42 @@ class WebGameStoreInteractionTest {
         assertIs<CastVote>(sent[2])
         assertIs<PlayAgain>(sent[3])
         assertIs<EndRoom>(sent[4])
+    }
+
+    @Test
+    fun submissionProgressUpdatesReadinessAndRoundStartClearsOldErrors() {
+        val store = fakeStore(mutableListOf())
+
+        store.applyMessage(SubmissionProgress(lockedCount = 1, totalCount = 2))
+        assertEquals(1, store.state.value.submissionLockedCount)
+
+        store.applyMessage(ErrorMessage("SONG_REQUIRED", "Waiting for a player"))
+        store.applyMessage(
+            RoundPreviewStarted(
+                roundIndex = 0,
+                totalRounds = 4,
+                title = "Track",
+                artist = "Artist",
+                albumArtUrl = "",
+                previewUrl = ""
+            )
+        )
+
+        assertEquals(WebPage.GAME, store.state.value.page)
+        assertEquals(null, store.state.value.error)
+    }
+
+    @Test
+    fun changingTheDisplayNameChangesTheInitialColorOnlyOncePerSave() {
+        val store = fakeStore(mutableListOf())
+        val originalColor = store.state.value.avatarCustomization.colorId
+
+        store.savePlayerProfile("Alicia", store.state.value.avatarCustomization)
+        val updatedColor = store.state.value.avatarCustomization.colorId
+
+        assertNotEquals(originalColor, updatedColor)
+        store.savePlayerProfile("Alicia", store.state.value.avatarCustomization)
+        assertEquals(updatedColor, store.state.value.avatarCustomization.colorId)
     }
 
     private fun fakeStore(sent: MutableList<ClientMessage>): WebGameStore {

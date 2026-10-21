@@ -16,6 +16,7 @@ import com.guesswhosesong.shared.dto.RoundPreviewStarted
 import com.guesswhosesong.shared.dto.RoundRevealed
 import com.guesswhosesong.shared.dto.ServerMessage
 import com.guesswhosesong.shared.dto.StartGame
+import com.guesswhosesong.shared.dto.SubmissionProgress
 import com.guesswhosesong.shared.dto.SubmissionStarted
 import com.guesswhosesong.shared.dto.UpdatePendingSongs
 import com.guesswhosesong.shared.dto.UpdatePlayerProfile
@@ -59,6 +60,8 @@ data class WebUiState(
     val room: Room? = null,
     val selfPlayerId: String = "",
     val pendingSongs: List<SongEntry> = emptyList(),
+    val submissionLockedCount: Int? = null,
+    val picksLockedLocally: Boolean = false,
     val searchQuery: String = "",
     val searchResults: List<TrackSearchResult> = emptyList(),
     val spotifySuggestions: List<SpotifySuggestion> = emptyList(),
@@ -118,7 +121,15 @@ class WebGameStore internal constructor(
             fail("Enter a name with 1 to 24 characters")
             return
         }
-        val customization = normalizeAvatarCustomization(value)
+        val currentProfile = state.value
+        val normalizedCustomization = normalizeAvatarCustomization(value)
+        val customization = if (name != currentProfile.displayName.trim()) {
+            normalizedCustomization.copy(
+                colorId = PlayerIdentityDefaults.randomInitialColorId(excludingColorId = normalizedCustomization.colorId)
+            )
+        } else {
+            normalizedCustomization
+        }
         _state.update { current ->
             val room = current.room?.let { existing ->
                 existing.copy(players = existing.players.map { player ->
@@ -278,7 +289,10 @@ class WebGameStore internal constructor(
         syncPendingSongs()
     }
 
-    fun lockSongs() = send(LockSong())
+    fun lockSongs() {
+        _state.update { it.copy(picksLockedLocally = true) }
+        send(LockSong())
+    }
 
     fun castVote(playerId: String) {
         _state.update { current ->
@@ -333,7 +347,7 @@ class WebGameStore internal constructor(
     }
 
     fun linkGoogle() {
-        auth.linkGoogle { result ->
+        auth.linkGoogle(allowExistingAccountLogin = _state.value.room == null) { result ->
             result.onSuccess { _state.update { it.copy(error = null) } }
                 .onFailure {
                     val message = it.message ?: "Google linking failed"
@@ -343,17 +357,6 @@ class WebGameStore internal constructor(
                         } else message
                     )
                 }
-        }
-    }
-
-    fun recoverGoogle() {
-        if (_state.value.room != null) {
-            fail("Leave the room to log in to an existing player")
-            return
-        }
-        auth.recoverGoogle { result ->
-            result.onSuccess { _state.update { it.copy(error = null) } }
-                .onFailure { fail(it.message ?: "Google recovery failed") }
         }
     }
 
@@ -433,7 +436,7 @@ class WebGameStore internal constructor(
         else -> "Room connection failed: $message"
     }
 
-    private fun applyMessage(message: ServerMessage) {
+    internal fun applyMessage(message: ServerMessage) {
         when (message) {
             is RoomJoined -> _state.update {
                 val self = message.room.players.find { player -> player.id == message.selfPlayerId }
@@ -459,9 +462,20 @@ class WebGameStore internal constructor(
                     page = pageFor(message.room.state)
                 )
             }
-            is SubmissionStarted -> _state.update { it.copy(page = WebPage.SUBMISSION, deadlineEpochMillis = message.deadlineEpochMillis, reveal = null, revealStartedAtEpochMillis = 0L) }
+            is SubmissionStarted -> _state.update {
+                it.copy(
+                    page = WebPage.SUBMISSION,
+                    deadlineEpochMillis = message.deadlineEpochMillis,
+                    submissionLockedCount = 0,
+                    picksLockedLocally = false,
+                    error = null,
+                    reveal = null,
+                    revealStartedAtEpochMillis = 0L
+                )
+            }
+            is SubmissionProgress -> _state.update { it.copy(submissionLockedCount = message.lockedCount) }
             is RoundPreviewStarted -> {
-                _state.update { it.copy(page = WebPage.GAME, preview = message, voting = null, votesCast = 0, totalVotes = 0, reveal = null, revealStartedAtEpochMillis = 0L) }
+                _state.update { it.copy(page = WebPage.GAME, preview = message, voting = null, votesCast = 0, totalVotes = 0, error = null, reveal = null, revealStartedAtEpochMillis = 0L) }
                 message.previewUrl.takeIf { it.isNotBlank() }?.let(::playPreview)
             }
             is VotingStarted -> {
@@ -513,8 +527,11 @@ private fun loadAvatarCustomization(avatarId: String): AvatarCustomization {
     val defaults = AvatarCustomization.defaultsFor(avatarId)
     val saved = playerPreferenceGet("gws.avatarCustomization")
         ?.let { encoded -> runCatching { GWSJson.decodeFromString<AvatarCustomization>(encoded) }.getOrNull() }
-        ?: return defaults
-    return normalizeAvatarCustomization(saved)
+    val normalized = normalizeAvatarCustomization(saved ?: defaults)
+    if (playerPreferenceGet("gws.initialColorAssigned") == "true") return normalized
+    return normalized.copy(colorId = PlayerIdentityDefaults.randomInitialColorId()).also {
+        playerPreferenceSet("gws.initialColorAssigned", "true")
+    }
 }
 
 private fun loadPlayerDisplayName(): String =

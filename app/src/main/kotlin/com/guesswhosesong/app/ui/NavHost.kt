@@ -3,22 +3,28 @@ package com.guesswhosesong.app.ui
 import android.app.Activity
 import android.widget.Toast
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.core.view.WindowCompat
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.guesswhosesong.app.ui.screens.game.GameScreen
@@ -26,6 +32,7 @@ import com.guesswhosesong.app.ui.screens.join.JoinScreen
 import com.guesswhosesong.app.ui.screens.lobby.LobbyScreen
 import com.guesswhosesong.app.ui.screens.results.ResultsScreen
 import com.guesswhosesong.app.ui.screens.submission.SubmissionScreen
+import com.guesswhosesong.app.ui.components.RoomChatOverlay
 import com.guesswhosesong.app.ui.theme.AppearanceMode
 import com.guesswhosesong.app.ui.theme.AppearanceSettings
 import com.guesswhosesong.app.ui.theme.LocalAppearanceSettings
@@ -47,8 +54,35 @@ object Routes {
 }
 
 @Composable
-fun GWSNavHost() {
+fun GWSNavHost(pendingInviteCode: String? = null, onInviteHandled: () -> Unit = {}) {
     val navController = rememberNavController()
+    val chatViewModel: RoomChatViewModel = hiltViewModel()
+    val chatState by chatViewModel.uiState.collectAsState()
+    val backStackEntry by navController.currentBackStackEntryAsState()
+    LaunchedEffect(pendingInviteCode, backStackEntry?.destination?.route) {
+        if (pendingInviteCode != null && backStackEntry != null &&
+            backStackEntry?.destination?.route != Routes.JOIN) {
+            navController.navigate(Routes.JOIN) {
+                popUpTo(0) { inclusive = true }
+                launchSingleTop = true
+            }
+        }
+    }
+    var hadActiveRoom by remember { mutableStateOf(false) }
+    LaunchedEffect(chatState.roomCode) {
+        if (chatState.roomCode != null) {
+            hadActiveRoom = true
+        } else if (hadActiveRoom) {
+            hadActiveRoom = false
+            val route = navController.currentDestination?.route
+            if (route != Routes.JOIN && route != Routes.RESULTS) {
+                navController.navigate(Routes.JOIN) {
+                    popUpTo(0) { inclusive = true }
+                    launchSingleTop = true
+                }
+            }
+        }
+    }
     val context = LocalContext.current
     val appearancePreferences = remember {
         context.getSharedPreferences("post_join_appearance", android.content.Context.MODE_PRIVATE)
@@ -79,9 +113,12 @@ fun GWSNavHost() {
            modifier = androidx.compose.ui.Modifier.fillMaxSize(),
            color = MaterialTheme.colorScheme.background
        ) {
+       Box(Modifier.fillMaxSize()) {
       NavHost(navController = navController, startDestination = Routes.JOIN) {
         composable(Routes.JOIN) {
             JoinScreen(
+                incomingInviteCode = pendingInviteCode,
+                onInviteHandled = onInviteHandled,
                 onNavigateToLobby = { joinCode, displayName, avatarCustomization ->
                     navController.navigate(Routes.lobby(joinCode, displayName, avatarCustomization)) {
                         popUpTo(Routes.JOIN) { inclusive = true }
@@ -171,6 +208,15 @@ fun GWSNavHost() {
 
         composable(Routes.RESULTS) {
             ResultsScreen(
+                onNavigateToLobby = { destination ->
+                    navController.navigate(Routes.lobby(
+                        destination.joinCode,
+                        destination.displayName,
+                        destination.avatarCustomization
+                    )) {
+                        popUpTo(Routes.RESULTS) { inclusive = true }
+                    }
+                },
                 onNavigateToSubmission = {
                     navController.navigate(Routes.SUBMISSION) {
                         popUpTo(Routes.RESULTS) { inclusive = true }
@@ -182,6 +228,17 @@ fun GWSNavHost() {
             )
         }
       }
+          if (backStackEntry?.destination?.route != Routes.JOIN && chatState.roomCode != null) {
+              RoomChatOverlay(
+                  state = chatState,
+                  onOpenChange = chatViewModel::setOpen,
+                  onDraftChange = chatViewModel::setDraft,
+                  onLoadOlder = chatViewModel::loadOlder,
+                  onEndRoom = chatViewModel::endRoom,
+                  onSend = chatViewModel::send
+              )
+          }
+       }
        }
       }
     }

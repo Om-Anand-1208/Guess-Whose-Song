@@ -2,7 +2,6 @@ package com.guesswhosesong.app.ui.screens.submission
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -14,7 +13,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.text.selection.LocalTextSelectionColors
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.BasicTextField
@@ -31,10 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.input.ImeAction
@@ -44,10 +39,7 @@ import androidx.compose.ui.unit.sp
 import androidx.hilt.lifecycle.viewmodel.compose.hiltViewModel
 import com.guesswhosesong.app.ui.components.AlbumArtwork
 import com.guesswhosesong.app.ui.components.PostJoinHeader
-import com.guesswhosesong.app.ui.components.PostJoinHeroCharacter
-import com.guesswhosesong.app.ui.components.PostJoinHeroFloorShadow
-import com.guesswhosesong.app.ui.components.PostJoinMusicNote
-import com.guesswhosesong.app.ui.theme.AppearanceSettingsSheet
+import com.guesswhosesong.app.ui.components.SpotifyMark
 import com.guesswhosesong.app.ui.theme.GwsPalette
 import com.guesswhosesong.app.ui.theme.PostJoinPalette
 import com.guesswhosesong.shared.models.GameMode
@@ -63,7 +55,6 @@ fun SubmissionScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var lobbyReturnHandled by remember { mutableStateOf(false) }
-    var showAppearanceSettings by remember { mutableStateOf(false) }
     val songs = if (uiState.pendingSongs.isNotEmpty()) uiState.pendingSongs
     else listOfNotNull(uiState.pendingSong)
 
@@ -75,9 +66,9 @@ fun SubmissionScreen(
         }
     }
 
-    val recentRoom = uiState.room?.takeIf { it.settings.gameMode == GameMode.SPOTIFY_RECENT }
-    LaunchedEffect(recentRoom?.joinCode, recentRoom?.state, uiState.recentPlayedFailure) {
-        val room = recentRoom ?: return@LaunchedEffect
+    val spotifyRoom = uiState.room?.takeIf { it.settings.gameMode.isAutomaticSpotifyMode }
+    LaunchedEffect(spotifyRoom?.joinCode, spotifyRoom?.state, uiState.recentPlayedFailure) {
+        val room = spotifyRoom ?: return@LaunchedEffect
         val failureExplanation = uiState.recentPlayedFailure
         if (room.state == com.guesswhosesong.shared.models.RoomState.LOBBY &&
             failureExplanation != null && !lobbyReturnHandled
@@ -96,7 +87,7 @@ fun SubmissionScreen(
         }
     }
 
-    if (recentRoom != null) {
+    if (spotifyRoom != null) {
         Scaffold(containerColor = PostJoinPalette.Background) { padding ->
             Column(
                 modifier = Modifier.fillMaxSize().padding(padding).padding(28.dp),
@@ -112,7 +103,11 @@ fun SubmissionScreen(
                     color = PostJoinPalette.Ink
                 )
                 Text(
-                    "Checking for unique, playable tracks in players’ recent Spotify history. Everyone can still vote, even if they have no eligible tracks.",
+                    if (spotifyRoom.settings.gameMode == GameMode.SPOTIFY_TOP) {
+                        "Checking for unique, playable tracks in each player’s Spotify Top Tracks. Everyone can still vote, even if they have no eligible tracks."
+                    } else {
+                        "Checking for unique, playable tracks in players’ recent Spotify history. Everyone can still vote, even if they have no eligible tracks."
+                    },
                     modifier = Modifier.padding(top = 8.dp),
                     style = MaterialTheme.typography.bodyMedium,
                     color = PostJoinPalette.Ink.copy(alpha = 0.72f)
@@ -140,21 +135,12 @@ fun SubmissionScreen(
             ) {
                 PostJoinHeader(
                     uiState.room?.joinCode.orEmpty(),
-                    onSettings = { showAppearanceSettings = true },
+                    leadingTitle = "Add songs",
+                    leadingTitleFontSize = 32.sp,
+                    leadingTitleLineHeight = 37.sp,
                     modifier = Modifier.padding(top = 3.dp),
                     roomHorizontalPadding = 8.5.dp
                 )
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(top = 3.dp, bottom = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Column(Modifier.weight(1f).padding(end = 21.dp)) {
-                        Text("Add songs", color = PostJoinPalette.Ink, fontWeight = FontWeight.Black, fontSize = 32.sp, lineHeight = 37.sp, letterSpacing = (-0.7).sp, maxLines = 1)
-                    }
-                    Box(Modifier.offset(x = (-5).dp, y = 6.dp)) {
-                        SubmissionHeroArtwork()
-                    }
-                }
             }
         },
         bottomBar = {
@@ -374,7 +360,7 @@ fun SubmissionScreen(
                                     )
                                 ) {
                                     Text(
-                                        "Search Spotify",
+                                        "Search",
                                         fontSize = 11.sp,
                                         letterSpacing = (-0.15).sp,
                                         fontWeight = FontWeight.Bold,
@@ -423,7 +409,9 @@ fun SubmissionScreen(
                 }
 
                 val tracks = if (uiState.searchQuery.isBlank()) uiState.popularSuggestions else uiState.searchResults
-                if (uiState.searchQuery.isNotBlank() && !uiState.isSearching && tracks.isEmpty()) {
+                if (uiState.searchQuery.isNotBlank() && !uiState.isSearching && tracks.isEmpty() &&
+                    (uiState.searchFailure != null || uiState.completedSearchQuery == uiState.searchQuery.trim())
+                ) {
                     item(key = "no-search-results") {
                         Box(
                             modifier = Modifier
@@ -432,7 +420,7 @@ fun SubmissionScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Text(
-                                "No songs found for ‘${uiState.searchQuery}’",
+                                uiState.searchFailure ?: "No songs found for ‘${uiState.searchQuery}’",
                                 color = PostJoinPalette.Ink.copy(alpha = 0.62f),
                                 style = MaterialTheme.typography.bodyMedium
                             )
@@ -467,92 +455,6 @@ fun SubmissionScreen(
             }
         }
     }
-    if (showAppearanceSettings) {
-        AppearanceSettingsSheet(onDismiss = { showAppearanceSettings = false })
-    }
-}
-
-@Composable
-private fun SubmissionHeroArtwork() {
-    val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
-    Box(Modifier.width(150.dp).height(94.dp)) {
-        PostJoinHeroFloorShadow(
-            Modifier.align(Alignment.BottomStart).padding(start = 2.dp, bottom = 1.dp).size(width = 78.dp, height = 14.dp),
-            color = if (isDark) Color(0xFF2B2E37) else Color(0xFFFFE8A1)
-        )
-        PostJoinHeroFloorShadow(
-            Modifier.align(Alignment.BottomEnd).padding(end = 1.dp, bottom = 1.dp).size(width = 79.dp, height = 14.dp),
-            color = if (isDark) Color(0xFF2B2E37) else Color(0xFFFFE8A1),
-            alternate = true
-        )
-        PostJoinMusicNote(Modifier.align(Alignment.TopStart).padding(start = 7.dp, top = 7.dp).size(27.dp), color = Color(0xFF8B69FF), double = true)
-        PostJoinMusicNote(Modifier.align(Alignment.TopCenter).padding(top = 1.dp).size(26.dp), color = Color(0xFFFFB92E), double = true)
-        PostJoinMusicNote(Modifier.align(Alignment.TopEnd).padding(end = 4.dp, top = 3.dp).size(27.dp), color = Color(0xFF8B69FF))
-        Box(
-            Modifier.align(Alignment.TopStart).padding(start = 25.dp, top = 21.dp)
-                .size(width = 3.dp, height = 9.dp).rotate(-20f)
-                .background(Color(0xFF8B69FF), RoundedCornerShape(50))
-        )
-        Box(
-            Modifier.align(Alignment.TopStart).padding(start = 34.dp, top = 27.dp)
-                .size(width = 3.dp, height = 7.dp).rotate(18f)
-                .background(Color(0xFF8B69FF), RoundedCornerShape(50))
-        )
-        Box(
-            Modifier.align(Alignment.TopEnd).padding(end = 12.dp, top = 25.dp)
-                .size(width = 3.dp, height = 9.dp).rotate(25f)
-                .background(Color(0xFFFFA536), RoundedCornerShape(50))
-        )
-        Box(
-            Modifier.align(Alignment.TopEnd).padding(end = 2.dp, top = 34.dp)
-                .size(width = 3.dp, height = 7.dp).rotate(62f)
-                .background(Color(0xFFFFA536), RoundedCornerShape(50))
-        )
-        Row(
-            modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp),
-            verticalAlignment = Alignment.Bottom,
-            horizontalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            PostJoinHeroCharacter(
-                "lime",
-                Modifier.size(77.dp),
-                contentDescription = "Lime character",
-                customization = com.guesswhosesong.shared.models.AvatarCustomization.defaultsFor("lime").copy(mouthId = "tongue"),
-                tiltBodyOnly = true
-            )
-            PostJoinHeroCharacter(
-                "sunny",
-                Modifier.size(84.dp),
-                contentDescription = "Sunny character wearing headphones",
-                customization = com.guesswhosesong.shared.models.AvatarCustomization.defaultsFor("sunny").copy(eyesId = "happy", mouthId = "tongue", accessoryId = "headphones"),
-                tiltBodyOnly = true
-            )
-        }
-    }
-}
-
-@Composable
-private fun SpotifyMark(modifier: Modifier = Modifier) {
-    Canvas(modifier) {
-        drawCircle(Color(0xFF1ED760))
-        val waveColor = Color.White
-        val waves = listOf(
-            Triple(0.27f, 0.33f, 0.31f),
-            Triple(0.31f, 0.48f, 0.43f),
-            Triple(0.37f, 0.61f, 0.56f)
-        )
-        waves.forEach { (startY, endY, controlY) ->
-            val wave = Path().apply {
-                moveTo(size.width * 0.22f, size.height * startY)
-                cubicTo(
-                    size.width * 0.37f, size.height * (startY - 0.04f),
-                    size.width * 0.60f, size.height * controlY,
-                    size.width * 0.78f, size.height * endY
-                )
-            }
-            drawPath(wave, waveColor, style = Stroke(size.width * 0.075f, cap = StrokeCap.Round))
-        }
-    }
 }
 
 @Composable
@@ -575,7 +477,11 @@ internal fun SpotifyConnectCard(onClick: () -> Unit) {
             Column(modifier = Modifier.weight(1f)) {
                 Text("Spotify", fontWeight = FontWeight.Bold)
             }
-            Text("Connect", style = MaterialTheme.typography.labelLarge, color = Color(0xFF28784E))
+            Text(
+                "Connect",
+                style = MaterialTheme.typography.labelLarge,
+                color = if (PostJoinPalette.Background.luminance() < 0.5f) Color(0xFF83EAB4) else Color(0xFF28784E)
+            )
         }
     }
 }
@@ -735,6 +641,7 @@ fun TrackListItem(track: TrackSearchResult, isAdded: Boolean, isFull: Boolean, o
                 Text(track.title, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis, fontSize = 14.sp, lineHeight = 17.sp)
                 Text(track.artist, style = MaterialTheme.typography.bodySmall.copy(fontSize = 12.sp, lineHeight = 14.sp), color = PostJoinPalette.Ink.copy(alpha = 0.62f), maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+            Spacer(Modifier.width(12.dp))
             when {
                 isAdded -> Text("ADDED", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Black)
                 isFull -> Text("FULL", style = MaterialTheme.typography.labelSmall, color = PostJoinPalette.Ink.copy(alpha = 0.38f), fontWeight = FontWeight.Bold)

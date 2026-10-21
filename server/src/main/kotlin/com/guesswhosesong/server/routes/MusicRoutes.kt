@@ -3,6 +3,7 @@ package com.guesswhosesong.server.routes
 import com.guesswhosesong.server.auth.FirebaseTokenVerifier
 import com.guesswhosesong.server.auth.requireUser
 import com.guesswhosesong.server.music.MusicService
+import com.guesswhosesong.server.music.MusicCatalogUnavailableException
 import com.guesswhosesong.server.redis.RateLimiter
 import com.guesswhosesong.server.redis.RedisClient
 import com.guesswhosesong.server.security.InputValidation
@@ -12,7 +13,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 
 /**
- * Proxy route for Deezer-first music search with iTunes fallback.
+ * Proxy route for iTunes music search, previews, and artwork.
  * Clients call this instead of music APIs directly (avoids CORS, encapsulates API).
  *
  * GET /music/search?q=<query>&limit=<n>
@@ -37,8 +38,11 @@ fun Route.musicRoutes(
                 return@get
             }
             val limit = call.request.queryParameters["limit"]?.toIntOrNull()?.coerceIn(1, 50) ?: 10
-            val results = musicService.search(query, limit)
-            call.respond(mapOf("tracks" to results))
+            try {
+                call.respond(mapOf("tracks" to musicService.search(query, limit)))
+            } catch (_: MusicCatalogUnavailableException) {
+                call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "CATALOG_UNAVAILABLE"))
+            }
         }
 
         get("/top") {
@@ -47,8 +51,11 @@ fun Route.musicRoutes(
             if (!rateLimiter.allow("music:top", user.uid, 30, 60)) {
                 return@get call.respond(HttpStatusCode.TooManyRequests, mapOf("error" to "RATE_LIMITED"))
             }
-            val results = musicService.getTopTracks()
-            call.respond(mapOf("tracks" to results))
+            try {
+                call.respond(mapOf("tracks" to musicService.getTopTracks()))
+            } catch (_: MusicCatalogUnavailableException) {
+                call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "CATALOG_UNAVAILABLE"))
+            }
         }
     }
 }

@@ -57,6 +57,7 @@ private data class SpotifyArtistItem(val name: String = "")
 
 @Serializable
 private data class SpotifyAlbumItem(
+    val name: String = "",
     val images: List<SpotifyImageItem> = emptyList()
 )
 
@@ -68,7 +69,8 @@ private fun SpotifyTrackItem.toSuggestion(category: SpotifyCategory) = SpotifySu
     artist = artists.firstOrNull()?.name ?: "",
     albumArtUrl = album.images.firstOrNull()?.url ?: "",
     category = category,
-    spotifyTrackId = id
+    spotifyTrackId = id,
+    albumTitle = album.name
 )
 
 /**
@@ -95,6 +97,8 @@ class SpotifyClient {
         } catch (e: ClientRequestException) {
             if (e.response.status == HttpStatusCode.Unauthorized) throw UnauthorizedException()
             emptyList()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) { emptyList() }
     }
 

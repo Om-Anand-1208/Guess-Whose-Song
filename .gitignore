@@ -3,6 +3,7 @@
 build/
 **/build/
 kotlin-js-store/
+.kotlin/
 *.class
 
 # IDE
@@ -26,6 +27,7 @@ service-account.json
 *.log
 firebase-adminsdk.json
 .firebase/
+.tmp-second-avd/
 
 # VSCode
 .vscode/

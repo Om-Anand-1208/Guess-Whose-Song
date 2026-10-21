@@ -4,7 +4,6 @@
     "public": "web/build/dist/wasmJs/productionExecutable",
     "ignore": [
       "firebase.json",
-      "**/.*",
       "**/node_modules/**"
     ],
     "rewrites": [

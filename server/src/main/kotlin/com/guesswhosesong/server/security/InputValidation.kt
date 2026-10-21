@@ -5,6 +5,11 @@ import com.guesswhosesong.shared.models.RoundCountRules
 import com.guesswhosesong.shared.models.SongEntry
 
 object InputValidation {
+    fun chatMessage(value: String): Boolean {
+        val trimmed = value.trim()
+        return trimmed.length in 1..280 && trimmed.none(Char::isISOControl)
+    }
+
     fun displayName(value: String): Boolean {
         val trimmed = value.trim()
         return trimmed.isNotEmpty() && trimmed.length <= 24 && trimmed.none { it.isISOControl() }
@@ -18,7 +23,7 @@ object InputValidation {
 
     fun settings(value: RoomSettings): Boolean =
         value.roundCount in RoundCountRules.MIN_ROUNDS..RoundCountRules.MAX_ROUNDS &&
-            value.playerLimit in 2..20 && value.votingTimerSeconds in setOf(10, 15, 20, 30)
+            value.playerLimit in 2..10 && value.votingTimerSeconds in setOf(10, 15, 20, 30)
 
     fun playlistId(value: String): Boolean = Regex("[A-Za-z0-9]{22}").matches(value)
 
@@ -36,7 +41,6 @@ object InputValidation {
             value.title.trim().length in 1..200 && bounded(value.title, 200) &&
             value.artist.trim().length in 1..120 && bounded(value.artist, 120) &&
             bounded(value.albumArtUrl, 2_000) && validWebUrl(value.albumArtUrl) &&
-            bounded(value.previewUrl, 2_000) && validWebUrl(value.previewUrl) &&
-            bounded(value.deezerPreviewUrl, 2_000) && validWebUrl(value.deezerPreviewUrl)
+            bounded(value.previewUrl, 2_000) && validWebUrl(value.previewUrl)
     }
 }

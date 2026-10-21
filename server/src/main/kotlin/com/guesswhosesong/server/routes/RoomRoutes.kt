@@ -4,6 +4,7 @@ import com.guesswhosesong.server.auth.AuthenticatedUser
 import com.guesswhosesong.server.auth.FirebaseTokenVerifier
 import com.guesswhosesong.server.auth.requireUser
 import com.guesswhosesong.server.engine.RoomManager
+import com.guesswhosesong.server.engine.RoomJoinRejectedException
 import com.guesswhosesong.server.plugins.RoomNotFoundException
 import com.guesswhosesong.server.plugins.UnauthorizedException
 import com.guesswhosesong.server.redis.RateLimiter
@@ -13,7 +14,6 @@ import com.guesswhosesong.shared.dto.ClientMessage
 import com.guesswhosesong.shared.dto.JoinRoom
 import com.guesswhosesong.shared.models.AvatarCatalog
 import com.guesswhosesong.shared.models.AvatarCustomization
-import com.guesswhosesong.shared.models.RoomState
 import io.ktor.http.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
@@ -38,6 +38,9 @@ private data class RoomSummaryResponse(
     val playerCount: Int,
     val playerLimit: Int
 )
+
+@Serializable
+private data class ChatPostRequest(val text: String)
 
 private suspend fun ApplicationCall.requireRoomUser(tokenVerifier: FirebaseTokenVerifier): AuthenticatedUser =
     try {
@@ -121,22 +124,17 @@ fun Route.roomRoutes(
                 call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid player profile"))
                 return@post
             }
-            val isNewPlayer = session.room.players.none { it.id == user.uid }
-            if (isNewPlayer && session.room.players.size >= session.room.settings.playerLimit) {
-                call.respond(HttpStatusCode.Conflict, mapOf("error" to "ROOM_FULL"))
+            try {
+                session.onPlayerConnect(
+                    playerId = user.uid,
+                    displayName = body.displayName.trim(),
+                    avatarId = body.avatarId,
+                    avatarCustomization = body.avatarCustomization
+                )
+            } catch (rejection: RoomJoinRejectedException) {
+                call.respond(HttpStatusCode.Conflict, mapOf("error" to rejection.reason.name))
                 return@post
             }
-            if (isNewPlayer && session.room.state != RoomState.LOBBY) {
-                call.respond(HttpStatusCode.Conflict, mapOf("error" to "GAME_ALREADY_STARTED"))
-                return@post
-            }
-
-            session.onPlayerConnect(
-                playerId = user.uid,
-                displayName = body.displayName.trim(),
-                avatarId = body.avatarId,
-                avatarCustomization = body.avatarCustomization
-            )
             call.respond(HttpStatusCode.NoContent)
         }
 
@@ -153,6 +151,55 @@ fun Route.roomRoutes(
                 return@get
             }
             call.respond(session.pollMessages(user.uid, waitMillis = 20_000L))
+        }
+
+        get("{joinCode}/chat") {
+            val user = call.requireRoomUser(tokenVerifier)
+            if (!rateLimiter.allow("rooms:chat:read", user.uid, 30, 60)) {
+                call.respond(HttpStatusCode.TooManyRequests, mapOf("error" to "Too many chat requests"))
+                return@get
+            }
+            val joinCode = call.roomJoinCode() ?: return@get
+            val beforeId = call.request.queryParameters["before"]
+            if (beforeId != null && beforeId.length !in 1..64) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid message cursor"))
+                return@get
+            }
+            val session = roomManager.findRoom(joinCode) ?: throw RoomNotFoundException(joinCode)
+            if (!session.hasPlayerConnection(user.uid)) {
+                call.respond(HttpStatusCode.Conflict, mapOf("error" to "JOIN_REQUIRED"))
+                return@get
+            }
+            call.respond(session.chatMessages(beforeId))
+        }
+
+        post("{joinCode}/chat") {
+            val user = call.requireRoomUser(tokenVerifier)
+            if (!rateLimiter.allow("rooms:chat:write", user.uid, 8, 10)) {
+                call.respond(HttpStatusCode.TooManyRequests, mapOf("error" to "Slow down before sending another message"))
+                return@post
+            }
+            if ((call.request.contentLength() ?: 0L) > 2_048L) {
+                call.respond(HttpStatusCode.PayloadTooLarge, mapOf("error" to "Message too large"))
+                return@post
+            }
+            val joinCode = call.roomJoinCode() ?: return@post
+            val session = roomManager.findRoom(joinCode) ?: throw RoomNotFoundException(joinCode)
+            if (!session.hasPlayerConnection(user.uid)) {
+                call.respond(HttpStatusCode.Conflict, mapOf("error" to "JOIN_REQUIRED"))
+                return@post
+            }
+            val body = runCatching { call.receive<ChatPostRequest>() }.getOrNull()
+            if (body == null || !InputValidation.chatMessage(body.text)) {
+                call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Message must be 1 to 280 characters"))
+                return@post
+            }
+            val message = session.postChatMessage(user.uid, body.text)
+            if (message == null) {
+                call.respond(HttpStatusCode.Conflict, mapOf("error" to "JOIN_REQUIRED"))
+                return@post
+            }
+            call.respond(HttpStatusCode.Created, message)
         }
 
         post("{joinCode}/actions") {

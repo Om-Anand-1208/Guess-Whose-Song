@@ -12,6 +12,70 @@ import org.junit.jupiter.api.Test
  */
 class RoomSessionLogicTest {
 
+    @Test
+    fun `play again restores lobby and clears previous round state`() {
+        val song = SongEntry("song", "Title", "Artist", previewUrl = "https://example.com/preview", submitterId = "host")
+        val host = Player(
+            id = "host", displayName = "Host", isHost = true, score = 3,
+            pendingSong = song, pendingSongs = listOf(song), songLocked = true
+        )
+        val guest = Player(id = "guest", displayName = "Guest", score = 2, songLocked = true)
+        val finished = Room(
+            id = "ABC234", joinCode = "ABC234", hostId = host.id,
+            state = RoomState.RESULTS, players = listOf(host, guest),
+            songPool = listOf(song), currentRoundIndex = 1
+        )
+
+        val replay = finished.resetForReplay()
+
+        assertEquals(RoomState.LOBBY, replay.state)
+        assertTrue(replay.songPool.isEmpty())
+        assertEquals(0, replay.currentRoundIndex)
+        assertTrue(replay.players.all { it.score == 0 && !it.songLocked && it.pendingSong == null && it.pendingSongs.isEmpty() })
+        assertTrue(replay.players.first().isHost)
+    }
+
+    @Test
+    fun `join admission rejects new players after capacity or game start`() {
+        val host = Player(id = "host", displayName = "Host", isHost = true)
+        val guest = Player(id = "guest", displayName = "Guest")
+        val lobby = Room(
+            id = "ABC234",
+            joinCode = "ABC234",
+            hostId = host.id,
+            settings = RoomSettings(playerLimit = 2),
+            players = listOf(host, guest)
+        )
+
+        assertEquals(RoomJoinRejection.ROOM_FULL, lobby.joinRejectionFor("new-player"))
+        assertNull(lobby.joinRejectionFor("guest"))
+        assertEquals(
+            RoomJoinRejection.GAME_ALREADY_STARTED,
+            lobby.copy(state = RoomState.SUBMISSION, players = listOf(host)).joinRejectionFor("new-player")
+        )
+    }
+
+    @Test
+    fun `a stored room setting cannot admit an eleventh player`() {
+        val players = (1..10).map { player("p$it", "Player $it") }
+        val lobby = Room(
+            id = "ABC234", joinCode = "ABC234", hostId = "p1",
+            settings = RoomSettings(playerLimit = 20), players = players
+        )
+
+        assertEquals(RoomJoinRejection.ROOM_FULL, lobby.joinRejectionFor("p11"))
+    }
+
+    @Test
+    fun `preview advances only after every connected human listener skips`() {
+        val players = listOf(player("host", "Host"), player("guest", "Guest"),
+            player("offline", "Offline", connected = false),
+            player("computer", "Computer").copy(isComputer = true))
+
+        assertFalse(allListenersSkipped(players, setOf("host")))
+        assertTrue(allListenersSkipped(players, setOf("host", "guest")))
+    }
+
     // Helper builders
     private fun player(
         id: String,

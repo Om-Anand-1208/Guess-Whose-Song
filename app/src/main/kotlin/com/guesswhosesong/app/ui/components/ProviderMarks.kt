@@ -35,20 +35,30 @@ fun GoogleGMark() {
 }
 
 @Composable
-fun SpotifyMark() {
-    Canvas(Modifier.size(27.dp)) {
-        drawCircle(Color(0xFF1DB954))
-        val stroke = size.minDimension * 0.075f
-        listOf(
-            Triple(0.27f, 0.39f, 0.74f),
-            Triple(0.31f, 0.51f, 0.68f),
-            Triple(0.36f, 0.63f, 0.58f)
-        ).forEach { (left, y, right) ->
+fun SpotifyMark(modifier: Modifier = Modifier.size(27.dp)) {
+    Canvas(modifier) {
+        val diameter = size.minDimension
+        val center = Offset(size.width / 2f, size.height / 2f)
+        val green = Color(0xFF1ED760)
+        val ink = Color(0xFF101010)
+        drawCircle(green, radius = diameter / 2f, center = center)
+
+        val lineWidth = diameter * 0.075f
+        val waves = listOf(
+            listOf(0.19f, 0.34f, 0.39f, 0.23f, 0.65f, 0.25f, 0.81f, 0.36f),
+            listOf(0.22f, 0.47f, 0.40f, 0.39f, 0.61f, 0.41f, 0.78f, 0.49f),
+            listOf(0.28f, 0.59f, 0.43f, 0.53f, 0.58f, 0.55f, 0.71f, 0.61f)
+        )
+        waves.forEach { points ->
             val wave = Path().apply {
-                moveTo(size.width * left, size.height * y)
-                quadraticTo(size.width * 0.52f, size.height * (y - 0.10f), size.width * right, size.height * y)
+                moveTo(diameter * points[0], diameter * points[1])
+                cubicTo(
+                    diameter * points[2], diameter * points[3],
+                    diameter * points[4], diameter * points[5],
+                    diameter * points[6], diameter * points[7]
+                )
             }
-            drawPath(wave, Color(0xFF101010), style = Stroke(width = stroke, cap = StrokeCap.Round))
+            drawPath(wave, ink, style = Stroke(width = lineWidth, cap = StrokeCap.Round))
         }
     }
 }

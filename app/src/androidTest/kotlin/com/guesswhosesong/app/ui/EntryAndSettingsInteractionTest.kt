@@ -1,11 +1,14 @@
 package com.guesswhosesong.app.ui
 
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -35,7 +38,6 @@ class EntryAndSettingsInteractionTest {
                     onJoinCodeChange = { joinCode.value = it.uppercase() },
                     onCreateRoom = { fake.createdRooms++ },
                     onJoinRoom = { fake.joinedRooms++ },
-                    onScanRoomCode = { fake.openedScanner++ },
                     onSettings = { fake.openedSettings++ }
                 )
             }
@@ -44,16 +46,34 @@ class EntryAndSettingsInteractionTest {
         composeRule.onNodeWithText("Create a room").performClick()
         composeRule.onNodeWithText("Room code").performTextInput("ab12cd")
         composeRule.onNodeWithText("Join room", substring = true).performClick()
-        composeRule.onNodeWithContentDescription("Scan room QR code").performClick()
+        composeRule.onAllNodesWithContentDescription("Scan room QR code").assertCountEquals(0)
         composeRule.onNodeWithContentDescription("Appearance and player settings").performClick()
 
         composeRule.runOnIdle {
             assertEquals(1, fake.createdRooms)
             assertEquals(1, fake.joinedRooms)
-            assertEquals(1, fake.openedScanner)
             assertEquals(1, fake.openedSettings)
             assertEquals("AB12CD", joinCode.value)
         }
+    }
+
+    @Test
+    fun roomCodeQrScannerIsNotAvailableInDarkMode() {
+        composeRule.setContent {
+            MaterialTheme(colorScheme = darkColorScheme()) {
+                WelcomePage(
+                    joinCode = "",
+                    isLoading = false,
+                    error = null,
+                    onJoinCodeChange = {},
+                    onCreateRoom = {},
+                    onJoinRoom = {},
+                    onSettings = {}
+                )
+            }
+        }
+
+        composeRule.onAllNodesWithContentDescription("Scan room QR code").assertCountEquals(0)
     }
 
     @Test
@@ -68,7 +88,6 @@ class EntryAndSettingsInteractionTest {
                     onJoinCodeChange = {},
                     onCreateRoom = { fake.createdRooms++ },
                     onJoinRoom = { fake.joinedRooms++ },
-                    onScanRoomCode = { fake.openedScanner++ },
                     onSettings = { fake.openedSettings++ }
                 )
             }
@@ -80,30 +99,26 @@ class EntryAndSettingsInteractionTest {
     }
 
     @Test
-    fun profileSettingsExerciseAvatarAndConnectionActions() {
+    fun profileSettingsUseInitialsAutosaveIndicatorAndSingleConnectionActions() {
         val fake = FakeEntryActions()
-        var savedName = ""
-        var savedAvatar = AvatarCustomization.defaultsFor("sunny")
         var draftName = "Guest"
         composeRule.setContent {
             MaterialTheme {
                 SavePlayerPage(
                     draftName = draftName,
                     draftAvatar = AvatarCustomization.defaultsFor("sunny"),
+                    nameSaved = true,
+                    nameError = null,
                     onNameChange = { draftName = it },
-                    onEditCharacter = { fake.editedCharacter++ },
                     isSpotifyConnected = false,
                     isAccountLinked = false,
                     statusMessage = null,
                     statusIsError = false,
-                    error = null,
                     onLinkGoogle = { fake.linkedGoogle++ },
-                    onRecoverGoogle = { fake.recoveredGoogle++ },
                     onDisconnectGoogle = {},
                     onConnectSpotify = { fake.connectedSpotify++ },
                     onDisconnectSpotify = { fake.disconnectedSpotify++ },
                     onRefreshSpotify = { fake.refreshedSpotify++ },
-                    onSaveProfile = { name, avatar -> savedName = name; savedAvatar = avatar },
                     onBackToGame = { fake.returnedFromSettings++ }
                 )
             }
@@ -111,23 +126,23 @@ class EntryAndSettingsInteractionTest {
 
         composeRule.onNode(hasSetTextAction()).performTextClearance()
         composeRule.onNode(hasSetTextAction()).performTextInput("Guest Remix")
-        composeRule.onNodeWithText("Edit character").performClick()
+        composeRule.onAllNodesWithText("Your player").assertCountEquals(0)
+        composeRule.onAllNodesWithText("Edit character").assertCountEquals(0)
+        composeRule.onAllNodesWithText("Save settings").assertCountEquals(0)
+        composeRule.onAllNodesWithText("Cancel").assertCountEquals(0)
+        composeRule.onAllNodesWithText("Connections").assertCountEquals(0)
+        composeRule.onNodeWithText("Player settings").assertExists()
         composeRule.onAllNodesWithText("Connect")[0].performClick()
-        composeRule.onNodeWithText("Recover an existing Google player").performClick()
         composeRule.onAllNodesWithText("Connect")[1].performClick()
-        composeRule.onNodeWithText("Refresh Spotify status").performClick()
-        composeRule.onNodeWithText("Back").performClick()
-        composeRule.onNodeWithText("Save settings").performClick()
+        composeRule.onNodeWithContentDescription("Sync Spotify status").performClick()
+        composeRule.onNodeWithText("Done").performClick()
 
         composeRule.runOnIdle {
             assertEquals(1, fake.connectedSpotify)
             assertEquals(1, fake.linkedGoogle)
-            assertEquals(1, fake.recoveredGoogle)
-            assertEquals(1, fake.editedCharacter)
             assertEquals(1, fake.refreshedSpotify)
             assertEquals(1, fake.returnedFromSettings)
-            assertEquals("Guest Remix", savedName)
-            assertEquals("sunny", savedAvatar.shapeId)
+            assertEquals("Guest Remix", draftName)
         }
     }
 
@@ -139,20 +154,18 @@ class EntryAndSettingsInteractionTest {
                 SavePlayerPage(
                     draftName = "Guest",
                     draftAvatar = AvatarCustomization.defaultsFor("sunny"),
+                    nameSaved = true,
+                    nameError = null,
                     onNameChange = {},
-                    onEditCharacter = {},
                     isSpotifyConnected = true,
                     isAccountLinked = true,
                     statusMessage = "Connected",
                     statusIsError = false,
-                    error = null,
                     onLinkGoogle = { fake.linkedGoogle++ },
-                    onRecoverGoogle = { fake.recoveredGoogle++ },
                     onDisconnectGoogle = { fake.disconnectedGoogle++ },
                     onConnectSpotify = { fake.connectedSpotify++ },
                     onDisconnectSpotify = { fake.disconnectedSpotify++ },
                     onRefreshSpotify = { fake.refreshedSpotify++ },
-                    onSaveProfile = { _, _ -> },
                     onBackToGame = { fake.returnedFromSettings++ }
                 )
             }
@@ -160,11 +173,10 @@ class EntryAndSettingsInteractionTest {
 
         composeRule.onAllNodesWithText("Disconnect")[1].performClick()
         composeRule.onAllNodesWithText("Disconnect")[0].performClick()
-        composeRule.onNodeWithText("Refresh Spotify status").performClick()
+        composeRule.onNodeWithContentDescription("Sync Spotify status").performClick()
         composeRule.runOnIdle {
             assertEquals(1, fake.disconnectedSpotify)
             assertEquals(1, fake.disconnectedGoogle)
-            assertEquals(0, fake.recoveredGoogle)
             assertEquals(0, fake.linkedGoogle)
             assertEquals(1, fake.refreshedSpotify)
         }
@@ -174,13 +186,10 @@ class EntryAndSettingsInteractionTest {
         var createdRooms = 0
         var joinedRooms = 0
         var openedSettings = 0
-        var openedScanner = 0
         var connectedSpotify = 0
         var disconnectedSpotify = 0
         var disconnectedGoogle = 0
         var linkedGoogle = 0
-        var recoveredGoogle = 0
-        var editedCharacter = 0
         var refreshedSpotify = 0
         var returnedFromSettings = 0
     }

@@ -10,7 +10,6 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performImeAction
-import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import com.guesswhosesong.app.ui.screens.game.VotingSection
 import com.guesswhosesong.app.ui.screens.lobby.LobbySettingsSheet
@@ -20,7 +19,6 @@ import com.guesswhosesong.app.ui.screens.submission.SearchSongsField
 import com.guesswhosesong.app.ui.screens.submission.SelectedSongCard
 import com.guesswhosesong.app.ui.screens.submission.SpotifyConnectCard
 import com.guesswhosesong.app.ui.screens.submission.TrackListItem
-import com.guesswhosesong.shared.models.AvatarCustomization
 import com.guesswhosesong.shared.models.GameMode
 import com.guesswhosesong.shared.models.Player
 import com.guesswhosesong.shared.models.RoomSettings
@@ -35,57 +33,33 @@ class FlowControlInteractionTest {
     val composeRule = createComposeRule()
 
     @Test
-    fun lobbySettingsAndPlayerActionsUpdateFakeRoomState() {
+    fun lobbyGameSettingsSaveTopTracksMode() {
         val fake = FakeFlowActions()
         val initialSettings = RoomSettings(roundCount = 10)
         composeRule.setContent {
             MaterialTheme {
                 LobbySettingsSheet(
-                    displayName = "Host",
-                    avatarCustomization = AvatarCustomization.defaultsFor("sunny"),
-                    isSpotifyConnected = false,
-                    isAccountLinked = false,
-                    accountStatus = null,
-                    accountStatusIsError = false,
                     roomSettings = initialSettings,
                     currentPlayerCount = 3,
                     hasComputerPlayer = false,
-                    isHost = true,
-                    profileError = null,
-                    onConnectSpotify = { fake.connectedSpotify++ },
-                    onDisconnectSpotify = { fake.disconnectedSpotify++ },
-                    onLinkGoogle = { fake.linkedGoogle++ },
-                    onDisconnectGoogle = {},
                     onDismiss = { fake.dismissedSettings++ },
-                    onSave = { name, avatar, settings ->
-                        fake.savedName = name
-                        fake.savedAvatar = avatar
-                        fake.savedSettings = settings
-                    }
+                    onSave = { settings -> fake.savedSettings = settings }
                 )
             }
         }
 
-        composeRule.onNodeWithText("Display name").performTextClearance()
-        composeRule.onNodeWithText("Display name").performTextInput("Host Remix")
-        composeRule.onNodeWithContentDescription("Lime avatar preset").performClick()
-        composeRule.onNodeWithText("Connect Spotify").performClick()
-        composeRule.onNodeWithText("Link Google account").performClick()
         composeRule.onNodeWithContentDescription("Increase rounds").performClick()
         listOf("10s", "15s", "20s", "30s").forEach { choice ->
             composeRule.onNodeWithText(choice).performClick()
         }
         composeRule.onNodeWithText("Recently Played").performClick()
+        composeRule.onNodeWithText("Top tracks").performClick()
         composeRule.onNodeWithText("Save changes").performClick()
 
         composeRule.runOnIdle {
-            assertEquals(1, fake.connectedSpotify)
-            assertEquals(1, fake.linkedGoogle)
-            assertEquals("Host Remix", fake.savedName)
-            assertEquals("lime", fake.savedAvatar?.shapeId)
             assertEquals(11, fake.savedSettings?.roundCount)
             assertEquals(30, fake.savedSettings?.votingTimerSeconds)
-            assertEquals(GameMode.SPOTIFY_RECENT, fake.savedSettings?.gameMode)
+            assertEquals(GameMode.SPOTIFY_TOP, fake.savedSettings?.gameMode)
         }
     }
 
@@ -180,6 +154,41 @@ class FlowControlInteractionTest {
     }
 
     @Test
+    fun failedVoteShowsAnErrorAndAllowsAnotherAttempt() {
+        val votedPlayerId = mutableStateOf<String?>("p2")
+        val voteError = mutableStateOf<String?>(null)
+        val votes = mutableListOf<String>()
+        composeRule.setContent {
+            MaterialTheme {
+                VotingSection(
+                    title = "Blue Hours",
+                    artist = "Artist",
+                    albumArtUrl = "",
+                    roundIndex = 0,
+                    totalRounds = 2,
+                    players = listOf(Player(id = "p1", displayName = "Alice"), Player(id = "p2", displayName = "Bob")),
+                    selfPlayerId = "p1",
+                    votedPlayerId = votedPlayerId.value,
+                    voteError = voteError.value,
+                    votedCount = 0,
+                    totalCount = 2,
+                    deadlineMs = System.currentTimeMillis() + 30_000L,
+                    onConfirmVote = { votes += it }
+                )
+            }
+        }
+
+        composeRule.runOnIdle {
+            votedPlayerId.value = null
+            voteError.value = "Vote could not be sent. Please try again."
+        }
+        composeRule.onNodeWithText("Vote could not be sent. Please try again.").assertExists()
+        composeRule.onNodeWithText("Bob").performClick()
+        composeRule.onNodeWithText("Confirm vote", substring = true).performClick()
+        composeRule.runOnIdle { assertEquals(listOf("p2"), votes) }
+    }
+
+    @Test
     fun fullSongSelectionAndSelfVoteStayDisabled() {
         val fake = FakeFlowActions()
         val track = TrackSearchResult("track-1", "Night Train", "Artist", "", "https://music.test/preview.mp3")
@@ -266,8 +275,8 @@ class FlowControlInteractionTest {
         var linkedGoogle = 0
         var dismissedSettings = 0
         var savedName: String? = null
-        var savedAvatar: AvatarCustomization? = null
         var savedSettings: RoomSettings? = null
+        var refreshedSpotify = 0
         var kickedPlayers = 0
         var searches = 0
         var selectedTracks = 0

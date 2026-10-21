@@ -6,6 +6,7 @@ import com.guesswhosesong.app.data.repository.GameRepository
 import com.guesswhosesong.shared.dto.*
 import com.guesswhosesong.shared.models.*
 import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -18,10 +19,13 @@ data class GameUiState(
     val artist: String = "",
     val albumArtUrl: String = "",
     val previewUrl: String = "",
+    val hasSkippedPreview: Boolean = false,
+    val skipError: String? = null,
     val players: List<Player> = emptyList(),
     val eligibleOwnerIds: List<String> = emptyList(),
     val selfPlayerId: String = "",
     val votedPlayerId: String? = null,
+    val voteError: String? = null,
     val votedCount: Int = 0,
     val totalVoters: Int = 0,
     val votingDeadlineEpochMs: Long = 0L,
@@ -106,7 +110,10 @@ class GameViewModel @Inject constructor(
                             artist = message.artist,
                             albumArtUrl = message.albumArtUrl,
                             previewUrl = message.previewUrl,
+                            hasSkippedPreview = false,
+                            skipError = null,
                             votedPlayerId = null,
+                            voteError = null,
                             votedCount = 0,
                             revealData = null,
                             isSelfSong = isSelfSong
@@ -119,7 +126,8 @@ class GameViewModel @Inject constructor(
                             players = message.players,
                             eligibleOwnerIds = message.eligibleOwnerIds,
                             votingDeadlineEpochMs = message.votingDeadlineEpochMillis,
-                            totalVoters = message.players.count { it.connected }
+                            totalVoters = message.players.count { it.connected },
+                            voteError = null
                         )
                     }
 
@@ -132,6 +140,14 @@ class GameViewModel @Inject constructor(
                     }
 
                     is GameResults -> _events.emit(GameEvent.NavigateToResults)
+
+                    is ErrorMessage -> if (message.code == "INVALID_VOTE") {
+                        _uiState.update {
+                            if (it.roundPhase == RoundPhase.VOTING) {
+                                it.copy(votedPlayerId = null, voteError = message.message)
+                            } else it
+                        }
+                    }
 
                     is RoomUpdated -> {
                         val room = message.room
@@ -154,8 +170,43 @@ class GameViewModel @Inject constructor(
     fun castVote(playerId: String) {
         if (_uiState.value.roundPhase != RoundPhase.VOTING) return
         if (_uiState.value.votedPlayerId != null) return // already voted
-        _uiState.update { it.copy(votedPlayerId = playerId) }
-        viewModelScope.launch { gameRepository.castVote(playerId) }
+        val roundIndex = _uiState.value.roundIndex
+        _uiState.update { it.copy(votedPlayerId = playerId, voteError = null) }
+        viewModelScope.launch {
+            try {
+                gameRepository.castVote(playerId)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _uiState.update { current ->
+                    if (current.roundPhase == RoundPhase.VOTING &&
+                        current.roundIndex == roundIndex && current.votedPlayerId == playerId
+                    ) {
+                        current.copy(votedPlayerId = null, voteError = "Vote could not be sent. Please try again.")
+                    } else current
+                }
+            }
+        }
+    }
+
+    fun skipPreview() {
+        val state = _uiState.value
+        if (state.roundPhase != RoundPhase.PLAYING_PREVIEW || state.hasSkippedPreview) return
+        val roundIndex = state.roundIndex
+        _uiState.update { it.copy(hasSkippedPreview = true, skipError = null) }
+        viewModelScope.launch {
+            try {
+                gameRepository.skipPreview(roundIndex)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                _uiState.update { current ->
+                    if (current.roundPhase == RoundPhase.PLAYING_PREVIEW && current.roundIndex == roundIndex) {
+                        current.copy(hasSkippedPreview = false, skipError = "Could not skip. Try again.")
+                    } else current
+                }
+            }
+        }
     }
 
     fun kickPlayer(targetId: String) {
