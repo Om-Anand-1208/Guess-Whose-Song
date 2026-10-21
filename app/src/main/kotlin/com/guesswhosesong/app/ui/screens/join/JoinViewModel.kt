@@ -24,6 +24,7 @@ data class JoinUiState(
     val avatarCustomization: AvatarCustomization = AvatarCustomization.defaultsFor(AvatarCatalog.DEFAULT_ID),
     val joinCode: String = "",
     val isLoading: Boolean = false,
+    val isServerStarting: Boolean = false,
     val error: String? = null,
     val accountStatus: String? = null,
     val accountStatusIsError: Boolean = false,
@@ -37,6 +38,8 @@ sealed class JoinEvent {
         val displayName: String,
         val avatarCustomization: AvatarCustomization
     ) : JoinEvent()
+
+    data object OpenPlayerSettings : JoinEvent()
 }
 
 @HiltViewModel
@@ -67,6 +70,17 @@ class JoinViewModel @Inject constructor(
         viewModelScope.launch {
             spotifyAuthManager.isConnected.collect { connected ->
                 _uiState.update { it.copy(isSpotifyConnected = connected) }
+            }
+        }
+        // Begin waking a sleeping deployment immediately. If the user acts
+        // before it is ready, their action joins this same in-flight check.
+        viewModelScope.launch { roomRepository.awaitServerReady() }
+    }
+
+    fun openPlayerSettings() {
+        viewModelScope.launch {
+            if (ensureServerReady()) {
+                _events.emit(JoinEvent.OpenPlayerSettings)
             }
         }
     }
@@ -178,6 +192,7 @@ class JoinViewModel @Inject constructor(
             return
         }
         viewModelScope.launch {
+            if (!ensureServerReady()) return@launch
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
                 val customization = _uiState.value.avatarCustomization
@@ -212,6 +227,7 @@ class JoinViewModel @Inject constructor(
             return
         }
         viewModelScope.launch {
+            if (!ensureServerReady()) return@launch
             _uiState.update { it.copy(isLoading = true, error = null) }
             try {
                 _events.emit(JoinEvent.NavigateToLobby(code, name, customization))
@@ -224,6 +240,22 @@ class JoinViewModel @Inject constructor(
     }
 
     fun googleSignInIntent(activity: Activity) = playerIdentityManager.googleSignInIntent(activity)
+
+    private suspend fun ensureServerReady(): Boolean {
+        _uiState.update { it.copy(isServerStarting = true, error = null) }
+        val ready = try {
+            roomRepository.awaitServerReady()
+        } catch (_: Exception) {
+            false
+        }
+        _uiState.update {
+            it.copy(
+                isServerStarting = false,
+                error = if (ready) null else "Can't connect to server"
+            )
+        }
+        return ready
+    }
 
     fun linkGoogle(data: Intent) {
         viewModelScope.launch {

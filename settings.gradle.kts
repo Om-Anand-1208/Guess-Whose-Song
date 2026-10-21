@@ -25,5 +25,11 @@ dependencyResolutionManagement {
 
 include(":shared")
 include(":server")
-include(":app")
-include(":web")
+
+// Production server images only copy the modules required to build the Ktor
+// service. Avoid configuring Android and Wasm projects that intentionally are
+// not present in that Docker build context.
+if (!System.getenv("SERVER_ONLY").equals("true", ignoreCase = true)) {
+    include(":app")
+    include(":web")
+}

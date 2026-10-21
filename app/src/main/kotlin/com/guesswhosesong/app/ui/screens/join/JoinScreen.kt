@@ -142,6 +142,14 @@ fun JoinScreen(
         viewModel.events.collect { event ->
             when (event) {
                 is JoinEvent.NavigateToLobby -> onNavigateToLobby(event.joinCode, event.displayName, event.avatarCustomization)
+                JoinEvent.OpenPlayerSettings -> {
+                    viewModel.refreshSavedProfile()
+                    profileDraftName = viewModel.uiState.value.displayName
+                    profileDraftAvatar = viewModel.uiState.value.avatarCustomization
+                    profileNameSaved = false
+                    profileNameError = null
+                    showingPlayerSettings = true
+                }
             }
         }
     }
@@ -177,7 +185,7 @@ fun JoinScreen(
 
     WelcomePage(
         joinCode = uiState.joinCode,
-        isLoading = uiState.isLoading,
+        isLoading = uiState.isLoading || uiState.isServerStarting,
         error = uiState.error,
         onJoinCodeChange = {
             viewModel.onJoinCodeChanged(it)
@@ -191,14 +199,13 @@ fun JoinScreen(
             viewModel.joinRoom()
         },
         onSettings = {
-            viewModel.refreshSavedProfile()
-            profileDraftName = viewModel.uiState.value.displayName
-            profileDraftAvatar = viewModel.uiState.value.avatarCustomization
-            profileNameSaved = false
-            profileNameError = null
-            showingPlayerSettings = true
+            viewModel.openPlayerSettings()
         }
     )
+
+    if (uiState.isServerStarting) {
+        ServerStartingDialog()
+    }
 
     if (showingPlayerSettings) {
         SavePlayerPage(
@@ -224,6 +231,47 @@ fun JoinScreen(
                 showingPlayerSettings = false
             }
         )
+    }
+}
+
+@Composable
+private fun ServerStartingDialog() {
+    Dialog(
+        onDismissRequest = {},
+        properties = DialogProperties(
+            dismissOnBackPress = false,
+            dismissOnClickOutside = false
+        )
+    ) {
+        Surface(
+            shape = RoundedCornerShape(26.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 18.dp
+        ) {
+            Column(
+                modifier = Modifier.padding(horizontal = 28.dp, vertical = 26.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(42.dp),
+                    color = MaterialTheme.colorScheme.primary,
+                    strokeWidth = 4.dp
+                )
+                Text(
+                    "Getting the game ready",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold,
+                    textAlign = TextAlign.Center
+                )
+                Text(
+                    "This can take up to a minute after the game has been idle.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
     }
 }
 
