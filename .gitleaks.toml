@@ -1,0 +1,6 @@
+[allowlist]
+description = "Firebase web configuration is intentionally public client configuration"
+paths = [
+  '''web/src/wasmJsMain/resources/firebase-config\.js$''',
+  '''web/firebase-config\.example\.js$'''
+]
