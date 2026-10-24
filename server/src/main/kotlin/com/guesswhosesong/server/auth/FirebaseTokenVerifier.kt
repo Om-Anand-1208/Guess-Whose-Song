@@ -62,7 +62,7 @@ class FirebaseTokenVerifier private constructor(
                 val projectId = System.getenv("FIREBASE_PROJECT_ID")
                     ?.trim()
                     ?.takeIf { it.isNotBlank() }
-                    ?: "guess-whose-song"
+                    ?: "guess-whose-song-om-anand-1208"
 
                 FirebaseApp.initializeApp(
                     FirebaseOptions.builder()

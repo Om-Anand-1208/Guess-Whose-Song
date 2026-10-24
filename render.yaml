@@ -10,7 +10,7 @@ services:
       - key: PORT
         value: 8080
       - key: FIREBASE_PROJECT_ID
-        value: guess-whose-song
+        value: guess-whose-song-om-anand-1208
       - key: REDIS_URL
         fromService:
           type: redis
