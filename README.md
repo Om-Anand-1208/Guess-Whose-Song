@@ -19,13 +19,11 @@ Dark-theme references: [dark lobby](docs/screenshots/dark-lobby.png), [dark song
 ```mermaid
 flowchart LR
     A[Android app<br/>Jetpack Compose] -->|Firebase ID token<br/>authenticated REST| S[Ktor server]
-    W[Web client<br/>Kotlin/Wasm + Compose] -->|Firebase ID token<br/>authenticated REST| S
     S --> R[(Redis<br/>rooms, chat, TTL)]
     S --> I[iTunes Search API<br/>previews and artwork]
     S --> P[Spotify Web API<br/>OAuth, top and recent tracks]
     S --> F[Firebase Admin<br/>token verification]
     C[shared module<br/>DTOs, models, rules] -. compile-time contract .-> A
-    C -. compile-time contract .-> W
     C -. compile-time contract .-> S
 ```
 
@@ -38,20 +36,20 @@ MusicAppProject/
 ├── shared/   # Kotlin Multiplatform — DTOs shared between server and Android
 ├── server/   # Ktor backend (game engine, Redis, iTunes/Spotify/Firebase)
 ├── app/      # Android client (Jetpack Compose)
-├── web/      # Kotlin/Wasm Compose browser client (Firebase Hosting)
+├── hosting/  # Android App Links verification, APK, and fallback page
 ├── docs/     # Checked-in screenshots and project documentation
-└── artifacts/ # APKs intended for manual download or GitHub Releases
+└── artifacts/ # APK intended for manual download or GitHub Releases
 ```
 
 ### Why `shared/` matters
 
-`shared/` is the protocol boundary. It prevents the Android client, browser client, and server from disagreeing about JSON or game state.
+`shared/` is the protocol boundary. It prevents the Android client and server from disagreeing about JSON or game state.
 
 - `models/Models.kt` defines `Room`, `Player`, `SongEntry`, `RoomSettings`, avatar data, score data, and song metadata.
 - `models/Enums.kt` defines room states, round phases, game modes, voting timers, and round-count rules.
 - `dto/ClientMessages.kt` defines actions such as `START_GAME`, `LOCK_SONG`, `CAST_VOTE`, `SKIP_PREVIEW`, `PLAY_AGAIN`, `END_ROOM`, and settings updates.
 - `dto/ServerMessages.kt` defines snapshots and events such as `ROOM_JOINED`, `ROOM_UPDATED`, `ROUND_PREVIEW_STARTED`, `VOTING_STARTED`, `ROUND_REVEALED`, `GAME_RESULTS`, and `ROOM_ENDED`.
-- `MessageSerializer.kt` keeps the discriminator format consistent across JVM and Wasm.
+- `MessageSerializer.kt` keeps the discriminator format consistent across Android and JVM.
 
 The server uses these same types for validation and serialization, so a protocol change is visible to all clients at compile time.
 
@@ -93,45 +91,32 @@ Run only one Ktor server on port 8080. If it is already running in another termi
 - Set the `gwsApiBaseUrl` Gradle property to point to your server; it defaults to `https://guess-whose-song-server.onrender.com`
 - Run on device or emulator
 
-### 6. Web
+### 6. Room invite links
 
-The browser client uses Kotlin/Wasm and Compose Multiplatform. It signs users in anonymously through Firebase, then optionally links Google without changing the Firebase UID. Copy `web/firebase-config.example.js` to `web/src/wasmJsMain/resources/firebase-config.local.js`, fill in the public Firebase web configuration and API origin, and copy it over `web/src/wasmJsMain/resources/firebase-config.js` for a local build.
+Room invites use verified Android App Links at `https://guess-whose-song-game.web.app/join/{CODE}`. On an Android device with the app installed, Android opens the invite directly in the app and joins that room. Firebase Hosting serves only the App Links verification file and a small fallback page for browsers or devices without the app; the fallback shows the room code and links to the Android APK.
 
-```bash
-./gradlew :web:wasmJsBrowserDevelopmentRun
-```
+This Firebase project is used for Hosting only. Android Authentication and server token verification continue using the existing `guess-whose-song` Firebase project.
 
-For Firebase Hosting:
-
-1. Enable Anonymous and Google providers in Firebase Authentication.
-2. Add the Firebase Hosting domain to Authentication authorized domains.
-3. Copy `.firebaserc.example` to `.firebaserc` and set the Firebase project ID.
-4. Set the production values in `web/src/wasmJsMain/resources/firebase-config.js` or inject the public config during CI.
-5. Build and deploy:
+The hosting files are in `hosting/`. To publish the fallback page, configure `.firebaserc` for the `guess-whose-song-om-anand-1208` Firebase project and run:
 
 ```bash
-./gradlew :web:wasmJsBrowserDistribution
 firebase deploy --only hosting
 ```
 
-The hosting output is `web/build/dist/wasmJs/productionExecutable`. Room connections use a six-character code and display name. Clients authenticate room joins, actions, and event polling with a Firebase bearer token; room credentials and display names are never placed in the URL. The event endpoint holds each request for up to 20 seconds and returns any queued room events.
-
-CI can inject the complete public `firebase-config.js` contents through the `WEB_FIREBASE_CONFIG` repository secret. Firebase web configuration is client-visible; Firebase Admin service-account credentials must never be placed in this file or any browser bundle.
+The SHA-256 signing certificate in `hosting/.well-known/assetlinks.json` must match the installed APK. Update it when changing from the current APK signing certificate to a release signing key.
 
 ## Environment Variables (Server)
 
 | Variable | Description |
 |---|---|
 | `PORT` | HTTP port (default 8080) |
-| `FIREBASE_PROJECT_ID` | Firebase project ID used to verify browser ID tokens (default `guess-whose-song`) |
+| `FIREBASE_PROJECT_ID` | Firebase project ID used to verify Android ID tokens (default `guess-whose-song`) |
 | `REDIS_URL` | Redis connection URL |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` | Firebase Admin service-account JSON deployment secret |
 | `FIREBASE_SERVICE_ACCOUNT_PATH` | Local-only fallback path; do not use in container images |
 | `SPOTIFY_CLIENT_ID` | Spotify app Client ID |
 | `SPOTIFY_CLIENT_SECRET` | Spotify app Client Secret |
 | `SPOTIFY_REDIRECT_URI` | Spotify OAuth redirect URI |
-| `SPOTIFY_WEB_REDIRECT_URI` | Fixed web URL returned after Spotify OAuth; never accept arbitrary redirect targets |
-| `WEB_ORIGINS` | Optional comma-separated additional browser origins; Firebase Hosting and localhost development origins are allowed by default |
 
 ## Architecture
 
@@ -141,7 +126,6 @@ CI can inject the complete public `firebase-config.js` contents through the `WEB
 - **Identity**: Firebase Anonymous Auth
 - **Recovery**: optional Google account linking through Firebase Auth
 - **Notifications**: Firebase Cloud Messaging
-- **Web**: Kotlin/Wasm + Compose Multiplatform, hosted by Firebase Hosting
 
 ### Game flow
 
@@ -165,7 +149,7 @@ The shared rules cap rooms at 10 players and 30 rounds. A two-player game requir
 
 ### Backend responsibilities
 
-- `Application.kt` starts Ktor, Redis, authentication, serialization, CORS, status handling, and shutdown hooks.
+- `Application.kt` starts Ktor, Redis, authentication, serialization, status handling, and shutdown hooks.
 - `RoomManager` owns room creation, lookup, cleanup, host reassignment, and room TTL behavior.
 - `RoomSession` is the authoritative state machine for lobby, submission, playing, results, chat, votes, timers, and room end.
 - `RoomRepository`, `RoomRuntimeRepository`, and `RoomChatRepository` persist Redis-backed state.
@@ -193,7 +177,7 @@ All routes below require `Authorization: Bearer <Firebase ID token>` unless mark
 | `POST` | `/rooms/{code}/actions` | Send a shared `ClientMessage` action |
 | `GET` | `/music/search?q=...` | Search iTunes through the server proxy |
 | `GET` | `/music/top` | Get catalog suggestions |
-| `GET` | `/spotify/auth-url?client=android\|web` | Start Spotify OAuth with server-side PKCE |
+| `GET` | `/spotify/auth-url?client=android` | Start Spotify OAuth with server-side PKCE |
 | `GET` | `/spotify/callback` | Complete Spotify OAuth |
 | `GET` | `/spotify/status` | Check the current user's Spotify connection |
 | `DELETE` | `/spotify/connection` | Remove the current user's Spotify token |
@@ -202,7 +186,7 @@ All routes below require `Authorization: Bearer <Firebase ID token>` unless mark
 | `GET` | `/spotify/playlists/{id}/tracks` | Read tracks from a Spotify playlist |
 | `POST` | `/api/logs/crash` | Submit a bounded authenticated client crash report |
 
-The Android and web clients call the same room and music routes. Spotify access tokens are kept server-side in Redis; they are never placed in a client bundle or room URL.
+The Android app calls the room and music routes. Spotify access tokens are kept server-side in Redis; they are never placed in an app bundle or room URL.
 
 ## Security and deployment notes
 
@@ -224,23 +208,14 @@ Required Render secrets are:
 | `REDIS_URL` | Render Redis connection string |
 | `SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` | Spotify OAuth |
 | `SPOTIFY_REDIRECT_URI` | Server callback URL |
-| `SPOTIFY_WEB_REDIRECT_URI` | Browser callback destination |
-| `WEB_ORIGINS` | Additional allowed browser origins |
 
 The deployment intentionally uses one server instance because room ownership is local to the instance. Distributed room ownership and Redis pub/sub would be needed before scaling horizontally.
 
 ## CI and artifacts
 
-GitHub Actions is defined in `.github/workflows/security.yml`. It now:
+GitHub Actions is defined in `.github/workflows/security.yml`. It compiles shared code, runs server tests, builds the server fat JAR, assembles the Android debug APK, and uploads `app/build/outputs/apk/debug/app-debug.apk` as a workflow artifact.
 
-- injects the optional public web Firebase config;
-- compiles shared code and runs server tests;
-- builds the server fat JAR;
-- assembles the Android debug APK;
-- builds the production Wasm distribution; and
-- uploads `app/build/outputs/apk/debug/app-debug.apk` as a workflow artifact.
-
-CodeQL compiles the server with `SERVER_ONLY=true`, which avoids configuring Android and Wasm modules during backend analysis.
+CodeQL compiles the server with `SERVER_ONLY=true`, which avoids configuring the Android module during backend analysis.
 
 To run the same core checks locally:
 
@@ -249,7 +224,6 @@ To run the same core checks locally:
   :server:test \
   :server:shadowJar \
   :app:assembleDebug \
-  :web:wasmJsBrowserDistribution \
   --no-daemon --stacktrace
 ```
 
@@ -264,7 +238,7 @@ For a production release, use Android Studio's **Build → Generate Signed Bundl
 - The iTunes Search API supplies the preview URLs and artwork. Treat its use as non-commercial in this project; obtain permission or replace the provider before a commercial launch.
 - The current Spotify developer setup is intended for a maximum of five allowlisted users. Spotify-backed features also require each tester to have Spotify Premium. Confirm Spotify's current developer and product terms before expanding access.
 - Spotify tokens are user-specific and expire. The server stores them in Redis and removes them when authorization expires or the user disconnects.
-- Firebase web configuration is public by design. Firebase Admin credentials are private and must stay in deployment secrets.
+- Keep the Android App Links association file in sync with the signing certificate used by the APK.
 - Rooms and chat are ephemeral. Ending a room deletes its Redis state and chat; inactivity cleanup also removes them after their TTL.
 
 ## License

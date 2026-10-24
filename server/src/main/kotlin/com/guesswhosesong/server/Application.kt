@@ -25,7 +25,6 @@ fun Application.module() {
 
     // Install Ktor plugins
     configureSerialization()
-    configureCors()
     configureStatusPages()
     configureCallLogging()
 

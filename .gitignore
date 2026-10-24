@@ -2,7 +2,6 @@
 .gradle/
 build/
 **/build/
-kotlin-js-store/
 .kotlin/
 *.class
 
@@ -14,8 +13,6 @@ kotlin-js-store/
 # Android
 /app/google-services.json
 local.properties
-web/firebase-config.local.js
-web/src/wasmJsMain/resources/firebase-config.local.js
 .firebaserc
 
 # Server secrets

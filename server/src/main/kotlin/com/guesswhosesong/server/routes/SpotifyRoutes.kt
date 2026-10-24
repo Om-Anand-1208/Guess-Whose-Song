@@ -21,7 +21,6 @@ private const val OAUTH_PREFIX = "spotify_oauth:"
 private const val TOKEN_TTL_SECONDS = 3600L
 private const val OAUTH_TTL_SECONDS = 600L
 private const val ANDROID_CLIENT = "android"
-private const val WEB_CLIENT = "web"
 private val spotifyOAuth = SpotifyOAuth()
 private val secureRandom = SecureRandom()
 
@@ -56,18 +55,14 @@ fun Route.spotifyRoutes(
                 return@get call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Spotify not configured"))
             }
             val client = call.request.queryParameters["client"]?.trim()?.lowercase() ?: ANDROID_CLIENT
-            if (client !in setOf(ANDROID_CLIENT, WEB_CLIENT)) {
+            if (client != ANDROID_CLIENT) {
                 return@get call.respond(HttpStatusCode.BadRequest, mapOf("error" to "Invalid OAuth client"))
-            }
-            val webRedirectUri = System.getenv("SPOTIFY_WEB_REDIRECT_URI").orEmpty()
-            if (client == WEB_CLIENT && webRedirectUri.isBlank()) {
-                return@get call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Web Spotify redirect is not configured"))
             }
             val state = randomUrlSafe(32)
             val verifier = randomUrlSafe(48)
             val encodedUid = Base64.getUrlEncoder().withoutPadding()
                 .encodeToString(user.uid.toByteArray(Charsets.UTF_8))
-            if (!redis.setIfAbsent(oauthStateKey(state), "$encodedUid:$verifier:$client", OAUTH_TTL_SECONDS)) {
+            if (!redis.setIfAbsent(oauthStateKey(state), "$encodedUid:$verifier", OAUTH_TTL_SECONDS)) {
                 return@get call.respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "Could not start Spotify authorization"))
             }
             call.respond(mapOf("authorizationUrl" to spotifyOAuth.buildAuthUrl(state, challenge(verifier))))
@@ -83,14 +78,11 @@ fun Route.spotifyRoutes(
             // Delete before exchange: a callback can only be used once, including retries.
             val rawState = redis.get(oauthStateKey(state))
             redis.del(oauthStateKey(state))
-            val parts = rawState?.split(":", limit = 3)
+            val parts = rawState?.split(":", limit = 2)
             val uid = parts?.firstOrNull()?.let {
                 runCatching { String(Base64.getUrlDecoder().decode(it), Charsets.UTF_8) }.getOrNull()
             }
-            val client = parts?.getOrNull(2)
-            if (parts == null || parts.size != 3 || uid.isNullOrBlank() || parts[1].isBlank() ||
-                client !in setOf(ANDROID_CLIENT, WEB_CLIENT)
-            ) {
+            if (parts == null || parts.size != 2 || uid.isNullOrBlank() || parts[1].isBlank()) {
                 call.respondRedirect("guesswhosesong://spotify-callback?success=false")
                 return@get
             }
@@ -98,21 +90,9 @@ fun Route.spotifyRoutes(
                 val response = spotifyOAuth.exchangeCode(code, parts[1])
                 val ttl = response.expiresIn.toLong().coerceIn(60L, TOKEN_TTL_SECONDS)
                 redis.set(tokenKey(uid), response.accessToken, ttl)
-                if (client == WEB_CLIENT) {
-                    val redirect = System.getenv("SPOTIFY_WEB_REDIRECT_URI").orEmpty()
-                    val separator = if ('?' in redirect) '&' else '?'
-                    call.respondRedirect("$redirect${separator}spotify=callback")
-                } else {
-                    call.respondRedirect("guesswhosesong://spotify-callback?success=true")
-                }
+                call.respondRedirect("guesswhosesong://spotify-callback?success=true")
             } catch (_: Exception) {
-                if (client == WEB_CLIENT) {
-                    val redirect = System.getenv("SPOTIFY_WEB_REDIRECT_URI").orEmpty()
-                    val separator = if ('?' in redirect) '&' else '?'
-                    call.respondRedirect("$redirect${separator}spotify=callback")
-                } else {
-                    call.respondRedirect("guesswhosesong://spotify-callback?success=false")
-                }
+                call.respondRedirect("guesswhosesong://spotify-callback?success=false")
             }
         }
 

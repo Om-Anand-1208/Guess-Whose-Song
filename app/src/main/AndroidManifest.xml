@@ -27,7 +27,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="guess-whose-song.web.app" android:pathPrefix="/join/" />
+                <data android:scheme="https" android:host="guess-whose-song-game.web.app" android:pathPrefix="/join/" />
             </intent-filter>
 
             <!-- Spotify OAuth deep link -->

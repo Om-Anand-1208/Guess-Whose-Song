@@ -1,0 +1,65 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #10131a;
+  color: #f5f6fa;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  min-height: 100vh;
+  margin: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(ellipse at top, #20283a 0, #10131a 58%);
+}
+
+.card {
+  width: min(100%, 440px);
+  padding: 36px;
+  text-align: center;
+  background: #191e29;
+  border: 1px solid #30394a;
+  border-radius: 24px;
+  box-shadow: 0 24px 80px #0006;
+}
+
+.brand-mark {
+  display: grid;
+  width: 54px;
+  height: 54px;
+  margin: 0 auto 22px;
+  place-items: center;
+  border-radius: 18px;
+  background: #875bff;
+  font-size: 30px;
+}
+
+.eyebrow { margin: 0 0 10px; color: #b9a4ff; font-size: 12px; font-weight: 800; letter-spacing: .14em; }
+h1 { margin: 0; font-size: clamp(26px, 7vw, 34px); line-height: 1.15; }
+#room-message { margin: 14px 0 22px; color: #b6bdca; line-height: 1.5; }
+
+.room-code-wrap {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 22px;
+  padding: 14px;
+  border: 1px solid #3a4354;
+  border-radius: 14px;
+  color: #b6bdca;
+  font-size: 13px;
+}
+
+.room-code-wrap strong { color: #fff; font-size: 24px; letter-spacing: .18em; }
+.button { display: block; padding: 14px 18px; border-radius: 12px; font-weight: 750; text-decoration: none; }
+.primary { color: #fff; background: #7954ed; }
+.primary:hover { background: #8969f2; }
+.secondary { color: #e3dafe; border: 1px solid #65539b; background: #272139; }
+.secondary:hover { background: #32294a; }
+.hint, .footer { color: #9ca5b4; font-size: 13px; line-height: 1.5; }
+.hint { margin: 18px 0 12px; }
+.footer { margin: 24px 0 0; }
+
+@media (max-width: 420px) { .card { padding: 28px 22px; } }

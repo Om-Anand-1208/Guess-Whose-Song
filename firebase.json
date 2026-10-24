@@ -1,12 +1,13 @@
 {
   "hosting": {
-    "site": "guess-whose-song",
-    "public": "web/build/dist/wasmJs/productionExecutable",
+    "site": "guess-whose-song-game",
+    "public": "hosting",
     "ignore": [
       "firebase.json",
       "**/node_modules/**"
     ],
     "rewrites": [
+      { "source": "/join/**", "destination": "/index.html" },
       { "source": "**", "destination": "/index.html" }
     ],
     "headers": [
@@ -17,7 +18,7 @@
           { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
           { "key": "X-Frame-Options", "value": "DENY" },
           { "key": "Permissions-Policy", "value": "camera=(), microphone=(), geolocation=()" },
-          { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval' https://www.gstatic.com https://apis.google.com; connect-src 'self' https:; frame-src 'self' https://guess-whose-song.firebaseapp.com https://apis.google.com; img-src 'self' https: data:; media-src 'self' https:; style-src 'self' 'unsafe-inline'" }
+          { "key": "Content-Security-Policy", "value": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; frame-ancestors 'none'; form-action 'self'" }
         ]
       },
       {
@@ -27,9 +28,9 @@
         ]
       },
       {
-        "source": "/web.js",
+        "source": "/.well-known/assetlinks.json",
         "headers": [
-          { "key": "Cache-Control", "value": "no-cache" }
+          { "key": "Cache-Control", "value": "public, max-age=3600" }
         ]
       }
     ]

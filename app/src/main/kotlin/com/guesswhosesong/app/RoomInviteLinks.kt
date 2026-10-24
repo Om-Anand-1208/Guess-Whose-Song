@@ -4,7 +4,7 @@ import android.net.Uri
 import java.util.Locale
 
 object RoomInviteLinks {
-    private const val HOST = "guess-whose-song.web.app"
+    private const val HOST = "guess-whose-song-game.web.app"
     private val codePattern = Regex("[A-Z0-9]{6}")
 
     fun urlFor(roomCode: String): String =
