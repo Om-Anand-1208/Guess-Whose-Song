@@ -1,8 +1,10 @@
 package com.guesswhosesong.app.ui
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.hasSetTextAction
@@ -90,12 +92,12 @@ class FlowControlInteractionTest {
         }
 
         composeRule.onNodeWithText("Kick").performClick()
-        composeRule.onNodeWithText("Search for a song…").performTextInput("Moonlight")
+        composeRule.onNodeWithText("Search songs to add").performTextInput("Moonlight")
         composeRule.onNode(hasSetTextAction()).performImeAction()
         composeRule.onNodeWithContentDescription("Clear search").performClick()
         composeRule.onNodeWithText("Night Train").performClick()
-        composeRule.onNodeWithText("Delete").performClick()
-        composeRule.onNodeWithText("Spotify connected?").performClick()
+        composeRule.onNodeWithContentDescription("Remove Blue Hours").performClick()
+        composeRule.onNodeWithText("Connect").performClick()
 
         composeRule.runOnIdle {
             assertEquals(1, fake.kickedPlayers)
@@ -108,7 +110,7 @@ class FlowControlInteractionTest {
     }
 
     @Test
-    fun votingAndResultsActionsReachTheFakeGameService() {
+    fun votingActionReachesTheFakeGameService() {
         val fake = FakeFlowActions()
         val players = listOf(
             Player(id = "p1", displayName = "Alice"),
@@ -131,6 +133,25 @@ class FlowControlInteractionTest {
                         deadlineMs = System.currentTimeMillis() + 30_000L,
                         onConfirmVote = { fake.vote = it }
                     )
+                }
+            }
+        }
+
+        composeRule.onNodeWithText("Confirm vote", substring = true).assertIsNotEnabled()
+        composeRule.onNodeWithText("Bob").performClick()
+        composeRule.onNodeWithText("Confirm vote", substring = true).performClick()
+
+        composeRule.runOnIdle {
+            assertEquals("p2", fake.vote)
+        }
+    }
+
+    @Test
+    fun hostResultsActionsReachTheFakeGameService() {
+        val fake = FakeFlowActions()
+        composeRule.setContent {
+            MaterialTheme {
+                Column(Modifier.fillMaxSize()) {
                     ResultsActions(
                         isHost = true,
                         onPlayAgain = { fake.playAgain++ },
@@ -139,15 +160,10 @@ class FlowControlInteractionTest {
                 }
             }
         }
-
-        composeRule.onNodeWithText("Confirm vote", substring = true).assertIsNotEnabled()
-        composeRule.onNodeWithText("Bob").performClick()
-        composeRule.onNodeWithText("Confirm vote", substring = true).performClick()
-        composeRule.onNodeWithText("Play Again 🎵").performClick()
+        composeRule.onNodeWithText("Play Again").performClick()
         composeRule.onNodeWithText("End Game").performClick()
 
         composeRule.runOnIdle {
-            assertEquals("p2", fake.vote)
             assertEquals(1, fake.playAgain)
             assertEquals(1, fake.endedGame)
         }
@@ -215,11 +231,15 @@ class FlowControlInteractionTest {
         }
 
         composeRule.onNodeWithText("Night Train").assertIsNotEnabled()
-        composeRule.onNodeWithText("Your song · choose someone else").assertExists()
+        composeRule.onNodeWithText("Alice").assertIsNotEnabled()
+        composeRule.onNodeWithText("Bob").assertExists()
+        composeRule.onNodeWithText("Nobody / Decoy").assertExists()
         composeRule.onNodeWithText("Confirm vote", substring = true).assertIsNotEnabled()
+        composeRule.onNodeWithText("Bob").performClick()
+        composeRule.onNodeWithText("Confirm vote", substring = true).performClick()
         composeRule.runOnIdle {
             assertEquals(0, fake.selectedTracks)
-            assertEquals(null, fake.vote)
+            assertEquals("p2", fake.vote)
         }
     }
 
@@ -251,7 +271,7 @@ class FlowControlInteractionTest {
         composeRule.onNodeWithText("Bob").assertDoesNotExist()
         composeRule.onNodeWithText("Nobody / Decoy").assertDoesNotExist()
         composeRule.onNodeWithText("Alice").performClick()
-        composeRule.onNodeWithText("Vote for Alice").performClick()
+        composeRule.onNodeWithText("Confirm vote", substring = true).performClick()
 
         composeRule.runOnIdle { assertEquals("p1", fake.vote) }
     }
@@ -265,7 +285,7 @@ class FlowControlInteractionTest {
         }
 
         composeRule.onNodeWithText("Waiting for host to continue…").assertExists()
-        composeRule.onNodeWithText("Play Again 🎵").assertDoesNotExist()
+        composeRule.onNodeWithText("Play Again").assertDoesNotExist()
         composeRule.onNodeWithText("End Game").assertDoesNotExist()
     }
 

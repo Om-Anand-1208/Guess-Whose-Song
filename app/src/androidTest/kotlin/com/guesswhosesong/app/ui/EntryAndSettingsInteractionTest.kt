@@ -3,10 +3,12 @@ package com.guesswhosesong.app.ui
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.hasSetTextAction
+import androidx.compose.ui.test.hasProgressBarRangeInfo
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onAllNodesWithContentDescription
 import androidx.compose.ui.test.onNodeWithContentDescription
@@ -43,7 +45,7 @@ class EntryAndSettingsInteractionTest {
             }
         }
 
-        composeRule.onNodeWithText("Create a room").performClick()
+        composeRule.onNodeWithText("Create room").performClick()
         composeRule.onNodeWithText("Room code").performTextInput("ab12cd")
         composeRule.onNodeWithText("Join room", substring = true).performClick()
         composeRule.onAllNodesWithContentDescription("Scan room QR code").assertCountEquals(0)
@@ -93,7 +95,7 @@ class EntryAndSettingsInteractionTest {
             }
         }
 
-        composeRule.onNodeWithText("Create a room").assertIsNotEnabled()
+        composeRule.onAllNodes(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate)).assertCountEquals(1)
         composeRule.onNodeWithText("Join room", substring = true).assertIsNotEnabled()
         composeRule.onNodeWithText("Room service is unavailable").assertExists()
     }
@@ -101,15 +103,15 @@ class EntryAndSettingsInteractionTest {
     @Test
     fun profileSettingsUseInitialsAutosaveIndicatorAndSingleConnectionActions() {
         val fake = FakeEntryActions()
-        var draftName = "Guest"
+        val draftName = mutableStateOf("Guest")
         composeRule.setContent {
             MaterialTheme {
                 SavePlayerPage(
-                    draftName = draftName,
+                    draftName = draftName.value,
                     draftAvatar = AvatarCustomization.defaultsFor("sunny"),
                     nameSaved = true,
                     nameError = null,
-                    onNameChange = { draftName = it },
+                    onNameChange = { draftName.value = it },
                     isSpotifyConnected = false,
                     isAccountLinked = false,
                     statusMessage = null,
@@ -142,7 +144,7 @@ class EntryAndSettingsInteractionTest {
             assertEquals(1, fake.linkedGoogle)
             assertEquals(1, fake.refreshedSpotify)
             assertEquals(1, fake.returnedFromSettings)
-            assertEquals("Guest Remix", draftName)
+            assertEquals("Guest Remix", draftName.value)
         }
     }
 

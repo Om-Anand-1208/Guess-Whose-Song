@@ -36,8 +36,8 @@ class RoundCountControlTest {
     }
 
     @Test
-    fun roundCountIsCappedAtTwenty() {
-        val selectedRounds = mutableIntStateOf(20)
+    fun roundCountIsCappedAtThirty() {
+        val selectedRounds = mutableIntStateOf(30)
         composeRule.setContent {
             MaterialTheme {
                 RoundCountControl(roundCount = selectedRounds.intValue, currentPlayerCount = 4) {
@@ -48,6 +48,6 @@ class RoundCountControlTest {
 
         composeRule.onNodeWithContentDescription("Increase rounds").assertIsNotEnabled()
         composeRule.onNodeWithContentDescription("Decrease rounds").performClick()
-        composeRule.runOnIdle { assertEquals(19, selectedRounds.intValue) }
+        composeRule.runOnIdle { assertEquals(29, selectedRounds.intValue) }
     }
 }
