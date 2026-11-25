@@ -32,6 +32,8 @@ flowchart LR
     Redis[(Render Redis)]
     Music[Music service]
     ITunes[iTunes Search API]
+    Deezer[Deezer API]
+    Audius[Audius API]
     Spotify[Spotify OAuth and Web API]
     Hosting[Firebase Hosting<br/>App Links file and browser fallback]
     Shared[shared Kotlin module<br/>models, actions, events]
@@ -42,7 +44,9 @@ flowchart LR
     Verify -->|verify signature, audience, expiry, UID| Auth
     API --> Redis
     API --> Music
-    Music -->|search, previews, artwork| ITunes
+    Music -->|primary catalog| ITunes
+    Music -->|fallback catalog| Deezer
+    Music -->|fallback catalog| Audius
     API --> Spotify
     API -. shared protocol .- Shared
     UI -. shared protocol .- Shared
@@ -69,9 +73,9 @@ The Kotlin `shared/` module defines the wire contract used by both Android and t
 
 ### Music and account connections
 
-- In manual mode, players search the server's iTunes-backed catalog and submit songs. iTunes supplies playable preview URLs, artwork, and metadata. The server resolves tracks, applies room rules, and builds the final pool.
+- In manual mode, the server searches iTunes first, then Deezer and Audius when the earlier catalog fails or has no results. Audius results are labeled with the uploader and may be covers or independent releases. The server verifies selected fallback tracks by their provider ID before gameplay.
 - Top Tracks, Recently Played, and playlist imports are optional Spotify features. The server starts a Spotify authorization flow with PKCE, keeps the one-time state and verifier in Redis, exchanges the callback code, and stores the user's Spotify access token in Redis. Spotify tokens stay on the server and are removed when they expire or the player disconnects.
-- Spotify tracks are matched against iTunes by normalized title, artist, and album. Only a usable iTunes preview enters the round pool; duplicate or ambiguous tracks are removed. Spotify features return an unavailable response when their credentials are not configured.
+- Spotify tracks are matched against the catalog by normalized title, artist, and album. Only a usable exact match enters the round pool; Audius tracks without matching album metadata cannot satisfy this requirement. Spotify features return an unavailable response when their credentials are not configured.
 
 ### Hosting and deployment boundary
 
@@ -84,7 +88,7 @@ The Kotlin `shared/` module defines the wire contract used by both Android and t
 ```
 MusicAppProject/
 ├── shared/   # Kotlin Multiplatform — DTOs shared between server and Android
-├── server/   # Ktor backend (game engine, Redis, iTunes/Spotify/Firebase)
+├── server/   # Ktor backend (game engine, Redis, music catalogs, Spotify, Firebase)
 ├── app/      # Android client (Jetpack Compose)
 ├── hosting/  # Android App Links verification, APK, and fallback page
 ├── docs/     # Checked-in screenshots and project documentation
@@ -171,7 +175,7 @@ The SHA-256 signing certificate in `hosting/.well-known/assetlinks.json` must ma
 
 - **Transport**: Authenticated Ktor REST actions with long-poll room events
 - **State**: Redis (ephemeral, TTL-based cleanup)
-- **Music and artwork**: iTunes Search API (preview clips and album artwork)
+- **Music and artwork**: iTunes Search API, with Deezer and Audius fallbacks
 - **Identity**: Firebase Anonymous Auth
 - **Recovery**: optional Google account linking through Firebase Auth
 
@@ -182,16 +186,16 @@ The SHA-256 signing certificate in `hosting/.well-known/assetlinks.json` must ma
 3. Other players join with the six-character code through `POST /rooms/{code}/join`.
 4. Clients poll `GET /rooms/{code}/events`; the server long-polls for up to 20 seconds and returns queued events.
 5. The host starts the game. Players choose songs in manual mode, or the server obtains Spotify tracks in one of the automatic modes.
-6. The server resolves playable entries through iTunes, builds the round pool, and broadcasts preview, voting, reveal, and score events.
+6. The server verifies playable entries through the catalog, builds the round pool, and broadcasts preview, voting, reveal, and score events.
 7. After the configured rounds, `GAME_RESULTS` is sent. The host can play again or end the room.
 
 Rooms, runtime state, rate-limit counters, OAuth state, and chat history are stored in Redis. Chat remains available for the life of the room and is deleted when the room is ended or its TTL expires.
 
 ### Song-pool rules
 
-Manual mode requires every human player to contribute at least one playable song. The server resolves title and artist through iTunes and uses iTunes preview URLs and artwork. Two-player rooms receive genre-matched `Nobody / Decoy` tracks; rooms with three or more players do not add a decoy.
+Manual mode requires every human player to contribute at least one playable song. The server resolves iTunes tracks by title and artist and verifies Deezer or Audius tracks by provider ID. Two-player rooms receive genre-matched `Nobody / Decoy` tracks; rooms with three or more players do not add a decoy.
 
-For **Recently Played** and **Top Tracks**, each connected player contributes Spotify tracks. A Spotify track enters the playable pool only when iTunes has a match with the same normalized title, artist, and album. Tracks without a usable iTunes preview are skipped, and duplicate recordings or ambiguous ownership are removed before the round pool is built. Two-player Spotify games also receive genre-matched decoys.
+For **Recently Played** and **Top Tracks**, each connected player contributes Spotify tracks. A Spotify track enters the playable pool only when the catalog has a match with the same normalized title, artist, and album. Tracks without a usable matching preview are skipped, and duplicate recordings or ambiguous ownership are removed before the round pool is built. Two-player Spotify games also receive genre-matched decoys.
 
 The shared rules cap rooms at 10 players and 30 rounds. A two-player game requires at least three rounds so both player songs and a decoy can be represented. Voting timers are 10, 15, 20, or 30 seconds. `RoundPoolBuilder`, `RecentPlayedPoolBuilder`, and `RecentTrackDeduplicator` enforce these rules on the server.
 
@@ -201,8 +205,8 @@ The shared rules cap rooms at 10 players and 30 rounds. A two-player game requir
 - `RoomManager` owns room creation, lookup, cleanup, host reassignment, and room TTL behavior.
 - `RoomSession` is the authoritative state machine for lobby, submission, playing, results, chat, votes, timers, and room end.
 - `RoomRepository`, `RoomRuntimeRepository`, and `RoomChatRepository` persist Redis-backed state.
-- `MusicService` limits external requests, caches catalog searches, resolves Spotify metadata through iTunes, and selects genre-matched tracks.
-- `ItunesClient` is the source for playable previews and artwork.
+- `MusicService` limits external requests, caches primary-catalog searches, resolves selected tracks, and selects genre-matched tracks.
+- `ItunesClient` is the primary catalog; `FallbackMusicCatalogClient` uses Deezer and Audius when it fails or returns no matches. Audius availability and matching can differ from mainstream catalogs.
 - `SpotifyOAuth` and `SpotifyClient` handle PKCE, token exchange, top tracks, recent tracks, and playlist reads.
 - `FirebaseTokenVerifier` validates Firebase ID tokens before room, music, Spotify, and crash-log operations.
 - `RateLimiter` protects room creation, actions, polling, search, Spotify calls, and chat.
@@ -223,7 +227,7 @@ All routes below require `Authorization: Bearer <Firebase ID token>` unless mark
 | `GET` | `/rooms/{code}/chat` | Read room chat history |
 | `POST` | `/rooms/{code}/chat` | Send a room chat message |
 | `POST` | `/rooms/{code}/actions` | Send a shared `ClientMessage` action |
-| `GET` | `/music/search?q=...` | Search iTunes through the server proxy |
+| `GET` | `/music/search?q=...` | Search music catalogs through the server proxy |
 | `GET` | `/music/top` | Get catalog suggestions |
 | `GET` | `/spotify/auth-url?client=android` | Start Spotify OAuth with server-side PKCE |
 | `GET` | `/spotify/callback` | Complete Spotify OAuth |
@@ -286,7 +290,7 @@ For a production release, use Android Studio's **Build → Generate Signed Bundl
 
 ## Cautions and provider limits
 
-- The iTunes Search API supplies the preview URLs and artwork. Treat its use as non-commercial in this project; obtain permission or replace the provider before a commercial launch.
+- Track availability and use depend on each catalog and the rights associated with its content.
 - The current Spotify developer setup is intended for a maximum of five allowlisted users. Spotify-backed features also require each tester to have Spotify Premium. Confirm Spotify's current developer and product terms before expanding access.
 - Spotify tokens are user-specific and expire. The server stores them in Redis and removes them when authorization expires or the user disconnects.
 - Keep the Android App Links association file in sync with the signing certificate used by the APK.

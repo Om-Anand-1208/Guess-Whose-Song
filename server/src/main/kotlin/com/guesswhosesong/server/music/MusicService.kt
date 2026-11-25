@@ -10,9 +10,11 @@ import kotlinx.coroutines.sync.withPermit
 
 internal data class ResolvedSong(val song: SongEntry, val genreName: String)
 
-/** Uses iTunes as the catalog and source for track previews and artwork. */
+/** Searches the configured catalogs for playable tracks. */
 class MusicService(
-    private val itunesClient: MusicCatalogClient = ItunesClient()
+    private val itunesClient: MusicCatalogClient = FallbackMusicCatalogClient(
+        listOf(ItunesClient(), DeezerCatalogClient(), AudiusCatalogClient())
+    )
 ) {
 
     // Simple thread-safe LRU cache using LinkedHashMap, bounded to 200 items.
@@ -23,6 +25,11 @@ class MusicService(
             }
         }
     )
+    private val knownTracks = java.util.Collections.synchronizedMap(
+        object : java.util.LinkedHashMap<String, TrackSearchResult>(500, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, TrackSearchResult>?): Boolean = size > 500
+        }
+    )
     private val externalRequestLimit = Semaphore(8)
 
     suspend fun search(query: String, limit: Int = 10): List<TrackSearchResult> {
@@ -31,7 +38,12 @@ class MusicService(
             searchCache[cacheKey]?.let { return@withPermit it }
 
             // A catalog failure throws, so only real search responses enter the cache.
-            searchCatalog(query, limit).also { searchCache[cacheKey] = it }
+            searchCatalog(query, limit).also { tracks ->
+                // A fallback result should not hide recovery of the primary catalog.
+                if (tracks.isNotEmpty() && tracks.none { it.id.startsWith("audius:") || it.id.startsWith("deezer:") }) {
+                    searchCache[cacheKey] = tracks
+                }
+            }
         }
     }
 
@@ -67,7 +79,7 @@ class MusicService(
         val candidates = mutableListOf<TrackSearchResult>()
         for (artist in artists) {
             val artistKey = normalize(artist)
-            val artistResults = searchCatalog(artist, maxOf(limit * 6, 20))
+            val artistResults = searchCatalog(artist.removeSuffix(" (Audius)"), maxOf(limit * 6, 20))
             val exactArtistResults = artistResults.filter { normalize(it.artist) == artistKey }
             exactArtistResults
                 .asSequence()
@@ -156,6 +168,35 @@ class MusicService(
         }
 
     internal suspend fun resolveEntryWithGenre(entry: SongEntry): ResolvedSong? = externalRequestLimit.withPermit {
+        if (entry.songId.startsWith("audius:") || entry.songId.startsWith("deezer:")) {
+            val verified = try {
+                itunesClient.findById(entry.songId)
+            } catch (_: MusicCatalogUnavailableException) {
+                null
+            } ?: return@withPermit null
+            if (!sameMetadata(verified.title, entry.title) || !sameMetadata(verified.artist, entry.artist)) {
+                return@withPermit null
+            }
+            return@withPermit ResolvedSong(
+                song = entry.copy(
+                    title = verified.title,
+                    artist = verified.artist,
+                    albumArtUrl = verified.albumArtUrl,
+                    previewUrl = verified.previewUrl
+                ),
+                genreName = verified.genreName
+            )
+        }
+        // A catalog-issued result is already trusted. Reuse it rather than
+        // dropping a player's pick if a later catalog request fails.
+        val known = knownTracks[entry.songId]
+        if (known != null && sameMetadata(known.title, entry.title) && sameMetadata(known.artist, entry.artist)) {
+            return@withPermit ResolvedSong(
+                song = entry.copy(title = known.title, artist = known.artist,
+                    albumArtUrl = known.albumArtUrl, previewUrl = known.previewUrl),
+                genreName = known.genreName
+            )
+        }
         val query = "${entry.title.trim()} ${entry.artist.trim()}".trim()
 
         val results = try {
@@ -179,7 +220,9 @@ class MusicService(
     }
 
     private suspend fun searchCatalog(query: String, limit: Int): List<TrackSearchResult> =
-        itunesClient.search(query, limit)
+        itunesClient.search(query, limit).also { results ->
+            results.forEach { knownTracks[it.id] = it }
+        }
 
     private fun trackKey(title: String, artist: String): String =
         "${normalize(title)}|${normalize(artist)}"

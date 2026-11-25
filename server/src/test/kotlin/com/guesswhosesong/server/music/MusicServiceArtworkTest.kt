@@ -13,6 +13,24 @@ import org.junit.jupiter.api.Test
 
 class MusicServiceArtworkTest {
     @Test
+    fun `a catalog-issued pick still resolves when the catalog later fails`() = runBlocking {
+        var available = true
+        val catalog = object : MusicCatalogClient {
+            override suspend fun search(query: String, limit: Int): List<TrackSearchResult> {
+                if (!available) throw MusicCatalogUnavailableException()
+                return listOf(track("itunes-1", "https://art.example/cover.jpg"))
+            }
+            override fun close() = Unit
+        }
+        val service = MusicService(catalog)
+        val result = service.search("Blue Monday").single()
+        available = false
+        val pick = SongEntry(result.id, result.title, result.artist, previewUrl = "https://attacker.example/audio")
+        assertEquals(result.previewUrl, service.resolveEntry(pick)?.previewUrl)
+        assertNull(service.resolveEntry(pick.copy(title = "Different Song")))
+    }
+
+    @Test
     fun `a failed catalog request is not cached as no matches`() = runBlocking {
         var calls = 0
         val catalog = object : MusicCatalogClient {

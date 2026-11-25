@@ -68,10 +68,19 @@ fun GameScreen(
 
     val context = LocalContext.current
     val isPreviewPhase = uiState.roundPhase == RoundPhase.PLAYING_PREVIEW
-    val exoPlayer = remember(uiState.previewUrl, uiState.roundIndex) {
+    val exoPlayer = remember(uiState.previewUrl, uiState.roundIndex, uiState.previewDurationMs) {
         if (uiState.previewUrl.isNotBlank()) {
             ExoPlayer.Builder(context).build().apply {
-                setMediaItem(MediaItem.fromUri(uiState.previewUrl))
+                setMediaItem(
+                    MediaItem.Builder()
+                        .setUri(uiState.previewUrl)
+                        .setClippingConfiguration(
+                            MediaItem.ClippingConfiguration.Builder()
+                                .setEndPositionMs(uiState.previewDurationMs)
+                                .build()
+                        )
+                        .build()
+                )
                 prepare()
                 playWhenReady = true
             }
