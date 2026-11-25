@@ -60,6 +60,22 @@ class ItunesClient : MusicCatalogClient {
                         parameter("limit", limit)
                         header("User-Agent", "Mozilla/5.0")
                     }
+                    if (response.status.value !in 200..299) {
+                        // Restrict logs to routing and retry metadata; do not log the
+                        // search term, cookies, or arbitrary upstream headers.
+                        val diagnosticHeaders = listOf("server", "via", "x-cache", "cf-ray", "retry-after", "content-type")
+                            .mapNotNull { name ->
+                                response.headers[name]?.let { value ->
+                                    "$name=${value.replace(Regex("[\\r\\n]"), " ").take(120)}"
+                                }
+                            }
+                        logger.warn(
+                            "iTunes catalog response HTTP {} from {} ({})",
+                            response.status.value,
+                            response.call.request.url.host,
+                            diagnosticHeaders.joinToString(", ")
+                        )
+                    }
                     ItunesHttpResponse(response.status.value, response.bodyAsText())
                 },
                 onRetry = { attempt, status, bodyLength ->
